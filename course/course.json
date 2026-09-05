@@ -27,12 +27,12 @@
     "code": "PHYS161",
     "codeSpaced": "PHYS 161",
     "index_html": {
-      "title": "PHYS161 Practice Quiz",
-      "og:title": "PHYS161 Practice Quiz",
+      "title": "PHYS 161 Practice Quiz",
+      "og:title": "PHYS 161 Practice Quiz",
       "og:description": "Interactive physics practice quiz: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring.",
       "og:url": "https://your-domain.com/PHYS161_Practice_Quiz.html",
       "og:image": "course/preview.png",
-      "twitter:title": "PHYS161 Practice Quiz",
+      "twitter:title": "PHYS 161 Practice Quiz",
       "twitter:description": "Interactive physics practice quiz for PHYS 161 course at Nazarbayev University.",
       "twitter:image": "course/preview.png",
       "landing_eyebrow_practice": "PHYS161 · Practice Mode",
@@ -41,7 +41,7 @@
       "eyebrow_solve": "PHYS161 · Solve Mode"
     },
     "offline_html": {
-      "title": "You're offline — PHYS161 Practice Quiz"
+      "title": "You're offline — PHYS 161 Practice Quiz"
     }
   }
 }
