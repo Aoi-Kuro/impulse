@@ -80,6 +80,7 @@ function applyCustomForCurrentMode(){
   s.setProperty('--svg-blue', der.accent); s.setProperty('--svg-red', der.accent2);
   s.setProperty('--radius-mult', String(draft.radius || 1));
   s.setProperty('--sans', fo.sans); s.setProperty('--mono', fo.mono);
+  if (typeof updateOnColorVars === 'function') updateOnColorVars();
 }
 window.__applyCustomOnModeChange = function(){ if (getColorTheme()==='custom') applyCustomForCurrentMode(); };
 
@@ -89,6 +90,29 @@ function themeFadeTick(){
   clearTimeout(_fadeTimer);
   _fadeTimer = setTimeout(()=>document.body.classList.remove('theme-swap'), 180);
 }
+
+/* ── Auto-contrast for text sitting on solid theme-colored fills ──
+   Preset themes hand-pick --chrome-dark for the accent button text, but
+   the custom theme builder lets people choose literally any accent
+   color, and a couple of spots (the check-answer button, the new
+   correct/partial/wrong score boxes) need to stay readable no matter
+   what. Rather than hard-code a text color per theme, read the *live*
+   computed fill color and pick black or white by perceived brightness
+   (YIQ) — recomputed every time a theme or day/night mode change could
+   have altered the underlying color. */
+function _onColorFor(varName){
+  const [r,g,b] = cssVarRgb(varName, document.body);
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 140 ? '#0d1117' : '#ffffff';
+}
+function updateOnColorVars(){
+  const s = document.body.style;
+  s.setProperty('--on-accent',  _onColorFor('--accent'));
+  s.setProperty('--on-correct', _onColorFor('--correct'));
+  s.setProperty('--on-partial', _onColorFor('--partial'));
+  s.setProperty('--on-wrong',   _onColorFor('--wrong'));
+}
+window.__updateOnColorVars = updateOnColorVars;
 
 function applyColorTheme(id, persist, skipFade){
   if (!skipFade) themeFadeTick();
@@ -101,6 +125,7 @@ function applyColorTheme(id, persist, skipFade){
     else document.body.setAttribute('data-theme', id);
   }
   if (persist) localStorage.setItem(THEME_KEY, id);
+  updateOnColorVars();
 }
 
 // Restore saved color theme immediately (avoid flash of default)

@@ -607,7 +607,104 @@
 }
 .stats-modal-btn.primary:hover { opacity: 0.85; }
 
-/* ── Table ── */
+/* ── All-problems overview (score-box grid) ──────────────────────────────── */
+/* Gray, neutral "no data yet" pill — sits alongside .score-box-correct/
+   -partial/-wrong (css/style.css) as the fourth state this view needs that
+   nothing else does. */
+.score-box-unattempted {
+  background: var(--border);
+  color: var(--muted);
+}
+
+.problems-overview-section {
+  margin-top: 1.4rem;
+}
+/* Last/Best switch — reuses .filter-mode-option/.mode-toggle-track(.small)
+   from css/style.css (the same Topic/Number and Include/Exclude toggles use)
+   for a consistent look. Sits inline in each quiz card's own header row
+   (badge · switch · attempted count) rather than a separate line — still a
+   single shared setting though: flipping any instance recolors every card
+   via _recolorProblemsOverview() (js/stats.js), which also syncs every
+   other instance's own active/knob state to match. */
+.po-mode-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+/* Only the Problems-overview per-quiz header needs to fit a third item
+   (the switch) alongside the badge and attempted-count — wraps gracefully
+   on narrow widths instead of squeezing three items onto one line. The
+   plain .stats-table-header (Attempt log, locked-quiz cards) is untouched. */
+.po-section-header {
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+}
+.problems-overview-body {
+  padding: 1rem 1.2rem 1.2rem;
+}
+/* Locked (not-yet-available) quiz card — same muted, centered treatment as
+   .stats-empty, just sized for a card body rather than the full table. */
+.problems-overview-locked {
+  padding: 1.6rem 1rem;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.problems-overview-footnote {
+  margin-top: 0.9rem;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+  text-align: center;
+}
+.problems-overview-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+  margin-bottom: 1rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.po-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.po-legend-swatch {
+  width: 1.1rem !important;
+  height: 1.1rem !important;
+  min-width: 0;
+  padding: 0 !important;
+}
+/* Column count is set inline per-grid via --po-cols (js/stats.js), snapped
+   to a "round" multiple of 5 (5/10/15/20/25/30…) rather than however many
+   happen to exactly tile the container at the box's natural width — a grid
+   (not the flex-wrap .recent-attempt-boxes uses) so every row has exactly
+   that many equal-width columns, ragged only on the final row. */
+.problems-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--po-cols, 10), minmax(0, 1fr));
+  gap: 0.35rem;
+}
+/* Boxes here fill their grid cell instead of the fixed ch-based width
+   .score-box normally uses (css/style.css) — the grid itself, not the
+   content, is what keeps every box the same size in this view. */
+.problems-overview-grid .score-box {
+  width: 100%;
+  cursor: pointer;
+  transition: background-color 0.3s ease, color 0.3s ease, transform 0.12s, filter 0.12s;
+}
+.problems-overview-grid .score-box:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+@media (max-width: 480px) {
+  .problems-overview-body { padding: 0.9rem 0.9rem 1rem; }
+}
 .stats-table-section {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -686,6 +783,41 @@
   margin-right: 0.35rem;
 }
 .review-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Attempt log preview collapse — only set to a fixed max-height (inline,
+   js/stats.js) when there are more than ATTEMPT_LOG_PREVIEW_COUNT rows and
+   the log hasn't been expanded yet; otherwise this is just a plain
+   passthrough wrapper. */
+.attempt-log-scroll {
+  position: relative;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+.attempt-log-fade {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 84px;
+  background: linear-gradient(to bottom, transparent, var(--surface) 75%);
+  pointer-events: none;
+}
+.attempt-log-showall-btn {
+  position: absolute;
+  left: 50%; bottom: 14px;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--surface);
+  border: 1.5px solid var(--accent);
+  padding: 0.4rem 1rem;
+  border-radius: calc(20px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.attempt-log-showall-btn:hover {
+  background: rgba(var(--accent-rgb),0.1);
+}
 
 .stats-table {
   width: 100%;
@@ -889,6 +1021,24 @@
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+/* Same .score-box component as the live quiz's result breakdown and the
+   "Last attempts" mini-panel (css/style.css) — here each pill also jumps
+   to its problem's card below, so it doubles as a mini table of contents
+   for the attempt. */
+.review-score-boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.review-score-boxes .score-box {
+  cursor: pointer;
+  transition: transform 0.12s, filter 0.12s;
+}
+.review-score-boxes .score-box:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
 }
 
 /* Same list layout #quizContainer (<main>, css/style.css) uses for a live

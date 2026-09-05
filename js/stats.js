@@ -60,6 +60,7 @@ function saveStats(arr) {
 function clearLocalAttemptsCache() {
   localStorage.removeItem(STATS_KEY);
   if (typeof _isStatsScreenOpen === 'function' && _isStatsScreenOpen()) renderStats();
+  if (typeof onAttemptRecorded === 'function') onAttemptRecorded();
 }
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
@@ -122,6 +123,12 @@ async function recordAttemptFromQuiz(score, maxScore, mode, answers) {
   // the attempt's synced:false as it already was, with the "not synced"
   // badge/Sync button covering the rest (see renderTable/syncAttempts).
   if (typeof syncAttempts === 'function') syncAttempts();
+  // Lets the live quiz screen refresh its "last 5 attempts" mini-panel
+  // (js/quiz-engine.js) right when this attempt actually lands in
+  // storage, rather than immediately after checkAll() returns — the hash
+  // computation above is async, so the save above happens strictly later
+  // than checkAll() finishes.
+  if (typeof onAttemptRecorded === 'function') onAttemptRecorded();
 }
 
 async function deleteAttempt(hash) {
@@ -131,6 +138,7 @@ async function deleteAttempt(hash) {
 
   saveStats(loadStats().filter(a => a.hash !== hash));
   renderStats();
+  if (typeof onAttemptRecorded === 'function') onAttemptRecorded();
 
   // Also delete server-side (delete-quiz-attempt Edge Function) so it
   // doesn't just reappear on the next sync/other device. Best-effort: if
@@ -159,12 +167,17 @@ function findReviewProblem(quizNum, problemId) {
 // 'rv-forum-' prefix (js/forum.js) — see that call site for why.
 let _reviewProblemsForCounts = null;
 
+let _reviewReturnScrollY = 0;
+
 function openAttemptReview(hash) {
   const attempt = loadStats().find(a => a.hash === hash);
   if (!attempt) return;
+  _reviewReturnScrollY = typeof captureScreenScroll === 'function' ? captureScreenScroll() : (window.scrollY || 0);
   renderAttemptReview(attempt);
   document.getElementById('statsScreen')?.classList.remove('visible');
   document.getElementById('reviewScreen')?.classList.add('visible');
+  if (typeof scrollScreenToTop === 'function') scrollScreenToTop();
+  else window.scrollTo(0, 0);
   // Per-problem forum buttons just came into view — same 5s counts poll
   // live quiz cards use (idempotent, safe even if already running from
   // elsewhere).
@@ -172,17 +185,36 @@ function openAttemptReview(hash) {
 }
 
 function closeAttemptReview() {
+  // If the user got here by clicking a review score-box, its smooth
+  // scrollIntoView() may still be animating. That animation belongs to the
+  // review page, but the moment we hide the review it can keep running against
+  // the newly-restored Stats DOM. The result is a brief squashed/widened Stats
+  // layout and, more importantly, it can fight the saved scroll restoration.
+  // Cancel any in-flight document scroll before swapping the screens.
+  const currentY = window.scrollY || window.pageYOffset || 0;
+  window.scrollTo({ top: currentY, left: 0, behavior: 'auto' });
+
   document.getElementById('reviewScreen')?.classList.remove('visible');
   document.getElementById('statsScreen')?.classList.add('visible');
+  if (typeof restoreScreenScroll === 'function') restoreScreenScroll(_reviewReturnScrollY);
+  else window.scrollTo(0, _reviewReturnScrollY);
   if (typeof stopForumProblemCountsPolling === 'function') stopForumProblemCountsPolling();
   _reviewProblemsForCounts = null;
 }
 
 function _escAttr(s) { return (s || '').replace(/"/g, '&quot;'); }
 
+// Clicked from a pill in #reviewScoreBoxes — jumps down to that problem's
+// full card in #reviewProblems (see the matching reviewCard-N id set in
+// renderAttemptReview()).
+function scrollToReviewCard(idx) {
+  document.getElementById(`reviewCard-${idx}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 function renderAttemptReview(attempt) {
   const metaEl = document.getElementById('reviewMeta');
   const listEl = document.getElementById('reviewProblems');
+  const boxesEl = document.getElementById('reviewScoreBoxes');
   if (!metaEl || !listEl) return;
 
   const quizName = QUIZZES[attempt.quizNum - 1]?.name || '';
@@ -202,10 +234,21 @@ function renderAttemptReview(attempt) {
   // closeAttemptReview starting/stopping the shared poll.
   _reviewProblemsForCounts = attempt.answers.map(a => ({ id: a.problem_id, _quizNum: a.quiz_num }));
 
+  // Same score-box pill row the live quiz's result breakdown and the
+  // "Last attempts" mini-panel use (js/quiz-engine.js) — each pill jumps to
+  // that problem's card in the list below instead of just being decorative.
+  if (boxesEl) {
+    boxesEl.innerHTML = attempt.answers.map((a, idx) => {
+      const cls = a.points === 1 ? 'score-box-correct' : a.points === 0.9 ? 'score-box-partial' : 'score-box-wrong';
+      return `<span class="score-box ${cls}" title="${a.points} pt" onclick="scrollToReviewCard(${idx})">${a.problem_id}</span>`;
+    }).join('');
+  }
+
   listEl.innerHTML = '';
   attempt.answers.forEach((a, idx) => {
     const p = findReviewProblem(a.quiz_num, a.problem_id);
     const card = document.createElement('div');
+    card.id = `reviewCard-${idx}`;
     card.className = 'problem-card review-problem-card';
     const forumRowHtml = `
         <div class="card-check-row" id="rv-forum-row-${idx}">
@@ -300,6 +343,7 @@ function openStatsScreen() {
   // carrying over whatever was left selected from the last visit.
   sfQuizzes = new Set([1, 2, 3, 4]);
   sfMode = 'all';
+  _attemptLogExpanded = false;
   // Hide field lines so they don't bleed through
   if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(false);
   landing.classList.add('fading-out');
@@ -390,6 +434,7 @@ function renderStats() {
   renderFilters();
   drawChart();
   renderTable();
+  renderProblemsOverview();
   if (typeof updateExportButtonState === 'function') updateExportButtonState();
 }
 
@@ -619,6 +664,51 @@ function initChartTooltip() {
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────
+// Only the first ATTEMPT_LOG_PREVIEW_COUNT rows show at full strength by
+// default — the rest render normally underneath but sit under a bottom
+// fade + a "Show all" overlay button (attempt-log-fade/-showall-btn, css/
+// stats.css) until expanded. _attemptLogExpanded persists across re-renders
+// triggered while the panel stays open (polling, filter changes, returning
+// from a per-problem forum visit) and is only reset back to collapsed on a
+// fresh openStatsScreen() — same "reset to default on fresh open" rule the
+// filters already follow.
+const ATTEMPT_LOG_PREVIEW_COUNT = 5;
+let _attemptLogExpanded = false;
+
+function expandAttemptLog() {
+  // renderTable() rebuilds #attemptLogScroll from scratch (new element, not
+  // a patched one), so the usual "measure the same element before/after"
+  // height animation doesn't apply here — instead: measure the old capped
+  // height first, let the rebuild happen (now uncapped, all rows already in
+  // the DOM), then re-cap the *new* element back down to that same starting
+  // height and animate it open. Rows are already there under the cap, so
+  // growing the max-height is what reveals them instead of a jump straight
+  // to full height.
+  const oldScroll = document.getElementById('attemptLogScroll');
+  const startH = oldScroll ? oldScroll.getBoundingClientRect().height : 0;
+
+  _attemptLogExpanded = true;
+  renderTable();
+
+  const newScroll = document.getElementById('attemptLogScroll');
+  if (!newScroll || !startH) return;
+  const endH = newScroll.scrollHeight;
+  if (endH <= startH) return; // nothing to animate
+  // .attempt-log-scroll (css/stats.css) already carries overflow:hidden and
+  // a max-height transition for the collapsed state — reuse that same
+  // transition here instead of declaring a second one, so growing to full
+  // height feels like the same animation, not a different one bolted on.
+  newScroll.style.maxHeight = startH + 'px';
+  void newScroll.offsetHeight; // force reflow so the next assignment transitions
+  requestAnimationFrame(() => { newScroll.style.maxHeight = endH + 'px'; });
+  const cleanup = () => {
+    newScroll.style.maxHeight = '';
+    newScroll.removeEventListener('transitionend', cleanup);
+  };
+  newScroll.addEventListener('transitionend', cleanup);
+  setTimeout(cleanup, 420);
+}
+
 function renderTable() {
   const wrap = document.getElementById('statsTableWrap');
   const attempts = getFiltered().slice().reverse(); // newest first
@@ -679,20 +769,237 @@ function renderTable() {
     </tr>`;
   }).join('');
 
+  const needsCollapse = !_attemptLogExpanded && attempts.length > ATTEMPT_LOG_PREVIEW_COUNT;
+
   wrap.innerHTML = `
     <div class="stats-table-section">
       ${header}
-      <div style="overflow-x:auto">
-        <table class="stats-table">
-          <thead><tr>
-            <th>Quiz</th><th>Mode</th><th>Date &amp; Time</th>
-            <th>Duration</th><th>Score</th><th style="width:104px">Actions</th>
-          </tr></thead>
-          <tbody>${tbody}</tbody>
-        </table>
+      <div class="attempt-log-scroll" id="attemptLogScroll">
+        <div style="overflow-x:auto">
+          <table class="stats-table">
+            <thead><tr>
+              <th>Quiz</th><th>Mode</th><th>Date &amp; Time</th>
+              <th>Duration</th><th>Score</th><th style="width:104px">Actions</th>
+            </tr></thead>
+            <tbody>${tbody}</tbody>
+          </table>
+        </div>
+        ${needsCollapse ? `
+          <div class="attempt-log-fade"></div>
+          <button class="attempt-log-showall-btn" onclick="expandAttemptLog()">Show all ${attempts.length} attempts</button>` : ''}
       </div>
     </div>`;
+
+  // Height is measured off the real rendered rows (thead + first N tbody
+  // rows) rather than a guessed pixel value, so it stays correct across
+  // font-size/padding changes (e.g. the @600px responsive tweaks above)
+  // without needing to be kept in sync by hand.
+  if (needsCollapse) {
+    const scrollEl = document.getElementById('attemptLogScroll');
+    const table = scrollEl && scrollEl.querySelector('table');
+    if (table) {
+      const rows = table.querySelectorAll('tbody tr');
+      let h = table.querySelector('thead')?.getBoundingClientRect().height || 0;
+      for (let i = 0; i < Math.min(ATTEMPT_LOG_PREVIEW_COUNT, rows.length); i++) {
+        h += rows[i].getBoundingClientRect().height;
+      }
+      // +40px lets the next row peek through under the fade instead of
+      // cutting off exactly on a row boundary.
+      scrollEl.style.maxHeight = (h + 40) + 'px';
+    }
+  }
+
   if (typeof _setSyncButtonState === 'function') _setSyncButtonState(_attemptsSyncing ? 'syncing' : 'idle');
+}
+
+// ── All-problems overview ────────────────────────────────────────────────────
+// One giant grid per enabled quiz, one pill per problem in that quiz's pool,
+// colored by either that problem's LATEST or BEST-EVER recorded score across
+// every attempt in history (not just the currently-filtered attempts) — a
+// switch above the grid(s) picks which, defaulting to "Last" —
+// wrong/partial/correct/never-attempted at a glance.
+
+const PO_MODE_KEY = STORAGE_PREFIX + '_po_mode'; // 'last' | 'best'
+let _poMode = localStorage.getItem(PO_MODE_KEY) === 'best' ? 'best' : 'last';
+
+// key: `${quizNum}_${problemId}` → { points, date } of the most recent
+// attempt that included that problem. Walks every attempt's own answers
+// array (not just quizNum/maxScore) since a cumulative attempt's answers
+// can span several quizzes at once.
+function _buildLatestProblemScores() {
+  const map = new Map();
+  loadStats().forEach(a => {
+    (a.answers || []).forEach(ans => {
+      const key = `${ans.quiz_num}_${ans.problem_id}`;
+      const prev = map.get(key);
+      if (!prev || new Date(a.date) > new Date(prev.date)) {
+        map.set(key, { points: ans.points, date: a.date });
+      }
+    });
+  });
+  return map;
+}
+
+// Same key shape as _buildLatestProblemScores, but keeps whichever attempt
+// scored HIGHEST for that problem, ties broken toward the more recent one
+// (so its title still reads as a real attempt rather than an arbitrary pick).
+function _buildBestProblemScores() {
+  const map = new Map();
+  loadStats().forEach(a => {
+    (a.answers || []).forEach(ans => {
+      const key = `${ans.quiz_num}_${ans.problem_id}`;
+      const prev = map.get(key);
+      if (!prev || ans.points > prev.points || (ans.points === prev.points && new Date(a.date) > new Date(prev.date))) {
+        map.set(key, { points: ans.points, date: a.date });
+      }
+    });
+  });
+  return map;
+}
+
+// Picks a "round" column count (multiples of 5) instead of whatever exactly
+// tiles the container width, per request — so a row reads as 5/10/15/20/25/30
+// boxes rather than an arbitrary number that happens to fit.
+function _computeProblemsOverviewCols(containerWidthPx) {
+  const targetBoxPx = 38; // desired approx width per box, gap included
+  const step = 5;
+  const cols = Math.floor(containerWidthPx / targetBoxPx / step) * step;
+  return Math.max(step, cols);
+}
+
+function _applyProblemsOverviewCols() {
+  document.querySelectorAll('.problems-overview-grid').forEach(grid => {
+    grid.style.setProperty('--po-cols', _computeProblemsOverviewCols(grid.clientWidth));
+  });
+}
+
+// Renders one Last/Best switch instance. Repeated once per quiz card
+// (rather than once above all of them) so the control lives inside the
+// section it affects — but it's still a single shared setting: flipping
+// any instance recolors every card via _recolorProblemsOverview() below,
+// which also syncs every other instance's own active/knob state to match.
+function _poModeSwitchRowHtml() {
+  return `
+    <div class="po-mode-switch-row">
+      <span class="filter-mode-option${_poMode === 'last' ? ' active' : ''}">Last attempt</span>
+      <div class="mode-toggle-track small${_poMode === 'best' ? ' on' : ''}" onclick="togglePoMode()"><div class="mode-toggle-knob"></div></div>
+      <span class="filter-mode-option${_poMode === 'best' ? ' active' : ''}">Best ever</span>
+    </div>`;
+}
+
+// Flips the Last/Best switch, persists the choice, and recolors every box
+// (plus every switch instance) in place — see _recolorProblemsOverview,
+// which patches existing elements' classes rather than rebuilding them, so
+// the .score-box background-color transition (css/style.css) actually has
+// something to animate between.
+function togglePoMode() {
+  _poMode = _poMode === 'best' ? 'last' : 'best';
+  localStorage.setItem(PO_MODE_KEY, _poMode);
+  _recolorProblemsOverview();
+}
+
+// In-place update used by togglePoMode() — never rebuilds the grid, so
+// each box's own transition animates from its old color to its new one
+// instead of popping straight to it. Also re-syncs every switch instance's
+// active label + knob position, since there's one per quiz card now.
+function _recolorProblemsOverview() {
+  const scores = _poMode === 'best' ? _buildBestProblemScores() : _buildLatestProblemScores();
+  document.querySelectorAll('.problems-overview-grid .score-box').forEach(box => {
+    const key = `${box.dataset.quiz}_${box.dataset.pid}`;
+    const rec = scores.get(key);
+    const cls = !rec ? 'score-box-unattempted'
+      : rec.points === 1 ? 'score-box-correct'
+      : rec.points === 0.9 ? 'score-box-partial'
+      : 'score-box-wrong';
+    box.classList.remove('score-box-unattempted', 'score-box-correct', 'score-box-partial', 'score-box-wrong');
+    box.classList.add(cls);
+    box.title = rec
+      ? `${box.dataset.pid} · ${_poMode === 'best' ? 'best' : 'latest'} attempt: ${rec.points} pt`
+      : `${box.dataset.pid} · not attempted yet`;
+  });
+  document.querySelectorAll('.po-mode-switch-row').forEach(row => {
+    const [lastLabel, track, bestLabel] = row.children;
+    if (lastLabel) lastLabel.classList.toggle('active', _poMode === 'last');
+    if (bestLabel) bestLabel.classList.toggle('active', _poMode === 'best');
+    if (track) track.classList.toggle('on', _poMode === 'best');
+  });
+}
+
+function renderProblemsOverview() {
+  const wrap = document.getElementById('statsProblemsOverviewWrap');
+  if (!wrap) return;
+
+  const anyEnabled = QUIZZES.some(q => q.enabled && Array.isArray(q.problems) && q.problems.length > 0);
+  if (!anyEnabled) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const scores = _poMode === 'best' ? _buildBestProblemScores() : _buildLatestProblemScores();
+
+  // One card per quiz slot (all 4, not just enabled ones) — same .quiz-badge
+  // look the Attempt log's "Quiz" column uses (color, dot, background) so
+  // this reads as the same quiz identity everywhere in Stats.
+  const sections = QUIZZES.map((q, i) => {
+    const quizNum = i + 1;
+    const color = quizColor(i);
+    const label = q.name ? `Quiz ${quizNum} : ${q.name}` : `Quiz ${quizNum}:`;
+    const badgeHtml = `<span class="quiz-badge" style="background:${color}22;color:${color}">` +
+      `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color}"></span>${label}</span>`;
+
+    const hasProblems = q.enabled && Array.isArray(q.problems) && q.problems.length > 0;
+
+    if (!hasProblems) {
+      return `
+        <div class="stats-table-section problems-overview-section">
+          <div class="stats-table-header">
+            ${badgeHtml}
+          </div>
+          <div class="problems-overview-locked">This quiz is not yet available.</div>
+        </div>`;
+    }
+
+    const total = q.problems.length;
+    const attemptedCount = q.problems.reduce((n, p) => n + (scores.has(`${quizNum}_${p.id}`) ? 1 : 0), 0);
+    const boxes = q.problems.map(p => {
+      const rec = scores.get(`${quizNum}_${p.id}`);
+      const cls = !rec ? 'score-box-unattempted'
+        : rec.points === 1 ? 'score-box-correct'
+        : rec.points === 0.9 ? 'score-box-partial'
+        : 'score-box-wrong';
+      const title = rec
+        ? `${p.id} · ${_poMode === 'best' ? 'best' : 'latest'} attempt: ${rec.points} pt`
+        : `${p.id} · not attempted yet`;
+      // Clickable straight into that problem's forum thread — same
+      // openForumForProblem() the in-quiz forum buttons use (js/forum.js),
+      // so it lands on the identical thread/context view. data-quiz/
+      // data-pid let _recolorProblemsOverview() find this exact box again
+      // without a full rebuild.
+      return `<span class="score-box ${cls}" title="${title}" data-quiz="${quizNum}" data-pid="${p.id}" onclick="openForumForProblem(${quizNum}, '${p.id}')">${p.id}</span>`;
+    }).join('');
+
+    return `
+      <div class="stats-table-section problems-overview-section">
+        <div class="stats-table-header po-section-header">
+          ${badgeHtml}
+          ${_poModeSwitchRowHtml()}
+          <span class="stats-table-count">${attemptedCount}/${total} attempted</span>
+        </div>
+        <div class="problems-overview-body">
+          <div class="problems-overview-legend">
+            <span class="po-legend-item"><span class="score-box score-box-correct po-legend-swatch"></span>correct</span>
+            <span class="po-legend-item"><span class="score-box score-box-partial po-legend-swatch"></span>value only</span>
+            <span class="po-legend-item"><span class="score-box score-box-wrong po-legend-swatch"></span>wrong</span>
+            <span class="po-legend-item"><span class="score-box score-box-unattempted po-legend-swatch"></span>not attempted</span>
+          </div>
+          <div class="problems-overview-grid">${boxes}</div>
+          <div class="problems-overview-footnote">Results shown are for Random ${QUIZ_SIZE} mode only: Solve Them All attempts aren't reflected here.</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  wrap.innerHTML = sections;
+  _applyProblemsOverviewCols();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1067,9 +1374,12 @@ function renderTallyDial(svgId, value) {
   }
 }
 
-// ── Redraw chart on resize ────────────────────────────────────────────────────
+// ── Redraw chart / re-flow problems overview on resize ──────────────────────
 window.addEventListener('resize', () => {
-  if (document.getElementById('statsScreen').classList.contains('visible')) drawChart();
+  if (document.getElementById('statsScreen').classList.contains('visible')) {
+    drawChart();
+    _applyProblemsOverviewCols();
+  }
 });
 
 window.addEventListener('DOMContentLoaded', () => {

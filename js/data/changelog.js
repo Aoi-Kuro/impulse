@@ -25,6 +25,8 @@
 
 // WARNING! The version has to be bumped in three places: here, in version.json and in quiz-engine.js
 const CHANGELOG = [
+  { version: "10.0.0", note: "Stats panel now has table of all problems and you can now filter problem based on whether you tried them already.", scope: 1 }, 
+  { version: "10.0.0", note: "UI & Filters Reimagined!", scope: 1 }, 
   { version: "9.1.3", note: "Problem 92 (Q1) got the dynamic illustration.", scope: 1 }, 
   { version: "9.1.2", note: "Messages are now posted instantly without the lag.", scope: 0 }, 
   { version: "9.1.1", note: "Gemini now uses 3.6-flash! Then switches to 3.5-flash-lite.", scope: 0 }, 

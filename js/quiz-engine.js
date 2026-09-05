@@ -182,9 +182,26 @@ let checked = false;
 let selectedTopics = [];
 // Per-quiz topic selections for cumulative mode: { quizIdx -> Set of topics }
 let cumulativeTopics = {};
-// Per-quiz filter type ('topic' | 'number') and number-range filter, cumulative mode only
+// Per-quiz filter type: 'none' | 'topic' | 'number' | 'type', cumulative mode only
 let cumulativeFilterMode = {};
 let cumulativeNumFilter  = {}; // quizIdx -> { incexc: 'include'|'exclude', ranges: Set<number> }
+// Per-quiz "Type" filter (attempt-status based): quizIdx -> Set of
+// 'unattempted' | 'wrong' | 'partial' | 'correct'
+let cumulativeTypeFilter = {};
+
+// The four attempt-status checks the "Type" filter offers, in display order.
+// Internal keys line up with the score classification problemPassesFilter
+// and the Stats "Problems overview" grid both already use (1 / 0.9 / other).
+// `cls` is that same grid's .score-box-* class, reused here (see
+// renderFilterConfigArea's 'type' branch) as a small colored swatch next to
+// each label — so a box's color out in the quiz/Stats views can be matched
+// straight back to the checkbox that controls it.
+const FILTER_TYPE_STATUS_OPTIONS = [
+  { key: 'unattempted', label: 'Not attempted',            cls: 'score-box-unattempted' },
+  { key: 'wrong',        label: 'Attempted wrong',          cls: 'score-box-wrong' },
+  { key: 'partial',      label: 'Attempted almost correct', cls: 'score-box-partial' },
+  { key: 'correct',      label: 'Attempted correct',        cls: 'score-box-correct' },
+];
 
 // Parses "5-6, 3, 15-19" into a Set of integers
 function parseNumRanges(raw) {
@@ -205,27 +222,146 @@ function parseNumRanges(raw) {
   return set;
 }
 
-// Whether problem p passes quizIdx's active filter (topic or number mode)
+// Lazily-built, per-batch cache of problem attempt scores for the "Type"
+// filter — invalidated (see below) at the start of every newQuiz()/
+// _filterNarrowsCurrentPool() pass instead of being rebuilt on every single
+// problemPassesFilter() call within that pass (which, across a whole
+// cumulative-mode pool, can be called hundreds of times). Reads whichever
+// of Last-attempt/Best-ever js/stats.js's own Problems-overview switch
+// (_poMode) is currently set to, so "attempted correct" etc. here means the
+// same thing it means over there — one shared notion of "correct" rather
+// than a second, independent one.
+let _typeFilterScoresCache = null;
+function _invalidateTypeFilterScoresCache() { _typeFilterScoresCache = null; }
+function _typeFilterScores() {
+  if (_typeFilterScoresCache) return _typeFilterScoresCache;
+  const useBest = typeof _poMode !== 'undefined' && _poMode === 'best';
+  _typeFilterScoresCache = useBest && typeof _buildBestProblemScores === 'function'
+    ? _buildBestProblemScores()
+    : (typeof _buildLatestProblemScores === 'function' ? _buildLatestProblemScores() : new Map());
+  return _typeFilterScoresCache;
+}
+function _problemAttemptStatus(p, quizNum) {
+  const rec = _typeFilterScores().get(`${quizNum}_${p.id}`);
+  if (!rec) return 'unattempted';
+  return rec.points === 1 ? 'correct' : rec.points === 0.9 ? 'partial' : 'wrong';
+}
+
+// Whether problem p passes quizIdx's active filter.
 function problemPassesFilter(p, quizIdx) {
-  if ((cumulativeFilterMode[quizIdx] || 'topic') === 'number') {
+  const mode = cumulativeFilterMode[quizIdx] || 'topic';
+  if (mode === 'none') return true;
+  if (mode === 'number') {
     const nf = cumulativeNumFilter[quizIdx];
     if (!nf) return true;
     const num = parseInt(String(p.id).replace(/\D/g, ''), 10);
     const inSet = nf.ranges.has(num);
     return nf.incexc === 'exclude' ? !inSet : inSet;
   }
+  if (mode === 'type') {
+    const sel = cumulativeTypeFilter[quizIdx];
+    if (!sel || sel.size === 0) return true;
+    return sel.has(_problemAttemptStatus(p, quizIdx + 1));
+  }
   const filter = cumulativeTopics[quizIdx];
   return !filter || filter.size === 0 || filter.has(p.topic);
 }
 
-function resetFilterPreferences() {
-  if (!confirm('Reset all filter preferences? This will restore every quiz\'s topic and number filters to default and cannot be undone.')) return;
+// ── Reset button: tap-to-arm confirmation instead of a blocking confirm()
+// dialog ── First tap arms it: label swaps to "Sure?" and a red ring traces
+// out of its border over RESET_CONFIRM_MS (see _armResetConfirm/css
+// .reset-confirm-ring) as a visual countdown. A second tap while armed
+// commits the reset; letting the ring finish (no second tap) just disarms
+// back to normal — same "nothing happens unless you mean it" guarantee the
+// old confirm() gave, without stopping the page to ask.
+const RESET_CONFIRM_MS = 3000;
+let _resetConfirmArmed = false;
+let _resetConfirmTimer = null;
+
+function handleResetClick() {
+  const btn = document.getElementById('filterResetBtn');
+  if (!btn) return;
+  if (_resetConfirmArmed) {
+    _disarmResetConfirm(btn);
+    doResetFilterPreferences();
+    return;
+  }
+  _armResetConfirm(btn);
+}
+
+function _armResetConfirm(btn) {
+  _resetConfirmArmed = true;
+  btn.classList.add('confirming');
+  btn.title = 'Tap again to confirm reset';
+  const label = btn.querySelector('.filter-reset-label');
+  if (label) label.textContent = 'Sure?';
+
+  // Size the ring's rect to the button's *actual* current border box —
+  // same width/height, and the same corner radius the button's own CSS is
+  // using right now (read live via getComputedStyle rather than a
+  // hardcoded rx), inset by exactly half the stroke width so the stroke
+  // centers on the button's real edge. That's what keeps the line looking
+  // like the button's own border animating, instead of a separate,
+  // differently-sized-and-rounded shape sitting on top of it.
+  const ring = btn.querySelector('.reset-confirm-ring');
+  const rect = ring && ring.querySelector('rect');
+  if (ring && rect) {
+    const w = btn.offsetWidth, h = btn.offsetHeight;
+    const strokeW = 1.5;
+    const inset = strokeW / 2;
+    const radius = parseFloat(getComputedStyle(btn).borderTopLeftRadius) || 0;
+    ring.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    rect.setAttribute('x', inset);
+    rect.setAttribute('y', inset);
+    rect.setAttribute('width', Math.max(0, w - inset * 2));
+    rect.setAttribute('height', Math.max(0, h - inset * 2));
+    rect.setAttribute('rx', Math.max(0, radius - inset));
+    const len = rect.getTotalLength();
+    rect.style.transition = 'none';
+    rect.style.strokeDasharray = len;
+    rect.style.strokeDashoffset = 0; // fully visible outline (the "full 2π")
+    void rect.getBoundingClientRect(); // force reflow before transitioning
+    rect.style.transition = `stroke-dashoffset ${RESET_CONFIRM_MS}ms linear`;
+    // One dash the length of the whole perimeter, offset all the way around
+    // it: the visible portion recedes from the start point instead of the
+    // outline just fading, i.e. it un-draws itself back down to nothing.
+    requestAnimationFrame(() => { rect.style.strokeDashoffset = len; });
+  }
+
+  clearTimeout(_resetConfirmTimer);
+  _resetConfirmTimer = setTimeout(() => _disarmResetConfirm(btn), RESET_CONFIRM_MS);
+}
+
+function _disarmResetConfirm(btn) {
+  _resetConfirmArmed = false;
+  clearTimeout(_resetConfirmTimer);
+  _resetConfirmTimer = null;
+  // Removing "confirming" is also what hides the ring (opacity, css/
+  // style.css .reset-confirm-ring) — visibility is gated purely on that
+  // class rather than on the rect's own left-over stroke-dashoffset value,
+  // so there's no stale "fully drawn but nobody hid it" state to get stuck
+  // showing a permanent outline after the first arm/disarm cycle.
+  btn.classList.remove('confirming');
+  btn.title = 'Reset all filter preferences';
+  const label = btn.querySelector('.filter-reset-label');
+  if (label) label.textContent = '↺ Reset';
+}
+
+function doResetFilterPreferences() {
   Object.keys(localStorage).forEach(k => {
-    if (k.startsWith(STORAGE_PREFIX + '_topics_q') || k.startsWith(STORAGE_PREFIX + '_filtermode_q') || k.startsWith(STORAGE_PREFIX + '_numfilter_q')) {
+    if (k.startsWith(STORAGE_PREFIX + '_topics_q') || k.startsWith(STORAGE_PREFIX + '_filtermode_q') ||
+        k.startsWith(STORAGE_PREFIX + '_numfilter_q') || k.startsWith(STORAGE_PREFIX + '_typefilter_q')) {
       localStorage.removeItem(k);
     }
   });
-  initTopics();
+  // initTopics() clears and rebuilds #topicSelector's own children in
+  // place (same element, not a replacement one) — exactly what
+  // _animateHeightChange expects, so switching from whatever filter was
+  // showing back down to "No filter" (now much shorter — see the mode
+  // fallback above) animates smoothly instead of the container snapping
+  // straight to its new, shorter height.
+  const container = document.getElementById('topicSelector');
+  _animateHeightChange(container, () => initTopics());
 }
 
 function loadTopicsForQuiz(quizIdx) {
@@ -239,80 +375,212 @@ function loadTopicsForQuiz(quizIdx) {
   return { allTopics, sel };
 }
 
+// Loads (or defaults, all-checked, same convention as topics) this quiz's
+// saved Type-filter selection.
+function loadTypeFilterForQuiz(quizIdx) {
+  const key = STORAGE_PREFIX + '_typefilter_q' + (quizIdx + 1);
+  const allKeys = FILTER_TYPE_STATUS_OPTIONS.map(o => o.key);
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(key)); } catch(e) {}
+  let sel = Array.isArray(saved) ? saved.filter(k => allKeys.includes(k)) : [];
+  if (sel.length === 0) sel = [...allKeys];
+  return sel;
+}
+
+// Animates `el` between its pre- and post-mutation heights instead of
+// letting a fresh innerHTML swap just pop to the new size — measures the
+// real before/after heights (rather than guessing) so it holds up for any
+// combination of filter blocks (a one-line number input vs. a wrapping
+// grid of topic/type chips) without per-case tuning.
+function _animateHeightChange(el, mutateFn) {
+  if (!el) { mutateFn(); return; }
+  const startH = el.getBoundingClientRect().height;
+  mutateFn();
+  const endH = el.scrollHeight;
+  if (Math.abs(endH - startH) < 1) return; // nothing worth animating
+  el.style.overflow = 'hidden';
+  el.style.height = startH + 'px';
+  void el.offsetHeight; // force reflow so the next assignment transitions
+  el.style.transition = 'height 0.32s ease';
+  requestAnimationFrame(() => { el.style.height = endH + 'px'; });
+  const cleanup = () => {
+    el.style.transition = '';
+    el.style.height = '';
+    el.style.overflow = '';
+    el.removeEventListener('transitionend', cleanup);
+  };
+  el.addEventListener('transitionend', cleanup);
+  // Belt-and-braces cleanup in case transitionend never fires (e.g. the
+  // element got hidden/removed mid-transition).
+  setTimeout(cleanup, 400);
+}
+
+// Builds the config block for whichever filter type is currently active —
+// nothing for "No filter", topic chips, the number-range input, or the
+// Type (attempt-status) chips. Re-invoked (inside _animateHeightChange)
+// every time the 4-way switch changes; the individual chip/input change
+// handlers below patch their own state in place instead of re-calling this.
+function renderFilterConfigArea(quizIdx, area) {
+  const mode = cumulativeFilterMode[quizIdx] || 'topic';
+  area.innerHTML = '';
+  if (mode === 'none') return;
+
+  if (mode === 'topic') {
+    const { allTopics } = loadTopicsForQuiz(quizIdx);
+    const topicKey = STORAGE_PREFIX + '_topics_q' + (quizIdx + 1);
+    const block = document.createElement('div');
+    block.className = 'topic-chip-block';
+    allTopics.forEach(topic => {
+      const isChecked = cumulativeTopics[quizIdx].has(topic);
+      const lbl = document.createElement('label');
+      lbl.className = 'topic-chip' + (isChecked ? ' active' : '');
+      lbl.innerHTML = `<input type="checkbox" value="${topic}" ${isChecked ? 'checked' : ''}>${topic}`;
+      lbl.querySelector('input').addEventListener('change', e => {
+        if (e.target.checked) { cumulativeTopics[quizIdx].add(topic); lbl.classList.add('active'); }
+        else { cumulativeTopics[quizIdx].delete(topic); lbl.classList.remove('active'); }
+        localStorage.setItem(topicKey, JSON.stringify([...cumulativeTopics[quizIdx]]));
+        updateFilterActiveNote();
+      });
+      block.appendChild(lbl);
+    });
+    area.appendChild(block);
+    return;
+  }
+
+  if (mode === 'number') {
+    const numKey = STORAGE_PREFIX + '_numfilter_q' + (quizIdx + 1);
+    // Displays the raw text last typed (rangesRaw), not a string rebuilt
+    // from the parsed Set — rebuilding would flatten "5-6, 3, 15-19" into
+    // individual enumerated numbers on every switch away and back.
+    const numMeta = { incexc: cumulativeNumFilter[quizIdx]?.incexc || 'include',
+                       ranges: cumulativeNumFilter[quizIdx]?.rangesRaw || '' };
+    const block = document.createElement('div');
+    block.className = 'num-filter-block';
+    block.innerHTML = `
+      <div class="incexc-row">
+        <span class="filter-mode-option${numMeta.incexc !== 'exclude' ? ' active' : ''}" data-opt="include">Include</span>
+        <div class="mode-toggle-track small${numMeta.incexc === 'exclude' ? ' on' : ''}" id="incExcToggle_${quizIdx}"><div class="mode-toggle-knob"></div></div>
+        <span class="filter-mode-option${numMeta.incexc === 'exclude' ? ' active' : ''}" data-opt="exclude">Exclude</span>
+      </div>
+      <input type="text" class="num-filter-input" id="numRangesInput_${quizIdx}" placeholder="e.g. 5-6, 3, 15-19" value="${numMeta.ranges || ''}">`;
+    area.appendChild(block);
+    const track = block.querySelector(`#incExcToggle_${quizIdx}`);
+    const [includeLbl, excludeLbl] = block.querySelectorAll('.filter-mode-option');
+    track.addEventListener('click', () => {
+      const next = cumulativeNumFilter[quizIdx].incexc === 'exclude' ? 'include' : 'exclude';
+      cumulativeNumFilter[quizIdx].incexc = next;
+      localStorage.setItem(numKey, JSON.stringify({ incexc: next, ranges: cumulativeNumFilter[quizIdx].rangesRaw }));
+      track.classList.toggle('on', next === 'exclude');
+      includeLbl.classList.toggle('active', next !== 'exclude');
+      excludeLbl.classList.toggle('active', next === 'exclude');
+      updateFilterActiveNote();
+    });
+    block.querySelector(`#numRangesInput_${quizIdx}`).addEventListener('input', e => {
+      cumulativeNumFilter[quizIdx].rangesRaw = e.target.value;
+      cumulativeNumFilter[quizIdx].ranges = parseNumRanges(e.target.value);
+      localStorage.setItem(numKey, JSON.stringify({ incexc: cumulativeNumFilter[quizIdx].incexc, ranges: e.target.value }));
+      updateFilterActiveNote();
+    });
+    return;
+  }
+
+  if (mode === 'type') {
+    const typeKey = STORAGE_PREFIX + '_typefilter_q' + (quizIdx + 1);
+    // Three-column grid (checkbox / label / sample score-box) instead of
+    // the topic filter's wrapping chips — a fixed column layout reads
+    // better here since every row needs to line up with the others, and
+    // the third column doubles as a color key back to the score-box grid
+    // (Stats "Problems overview") and in-quiz score boxes: same classes,
+    // same colors, just a stand-in "P0" id since no real problem applies.
+    // One shared parent grid (not four independent per-row grids) is what
+    // actually keeps column 3 aligned regardless of how long each row's
+    // label text runs — each row is a `label` element kept in normal flow
+    // via `display: contents` (css/style.css .type-filter-row) so its three
+    // children slot directly into the parent's three grid columns while the
+    // label itself still toggles its checkbox on a click anywhere in the row.
+    const block = document.createElement('div');
+    block.className = 'type-filter-grid';
+    FILTER_TYPE_STATUS_OPTIONS.forEach(opt => {
+      const isChecked = cumulativeTypeFilter[quizIdx].has(opt.key);
+      const lbl = document.createElement('label');
+      lbl.className = 'type-filter-row';
+      lbl.innerHTML = `
+        <input type="checkbox" class="type-filter-checkbox" value="${opt.key}" ${isChecked ? 'checked' : ''}>
+        <span class="type-filter-label">${opt.label}</span>
+        <span class="score-box ${opt.cls} type-filter-swatch">P0</span>`;
+      lbl.querySelector('input').addEventListener('change', e => {
+        if (e.target.checked) cumulativeTypeFilter[quizIdx].add(opt.key);
+        else cumulativeTypeFilter[quizIdx].delete(opt.key);
+        localStorage.setItem(typeKey, JSON.stringify([...cumulativeTypeFilter[quizIdx]]));
+        updateFilterActiveNote();
+      });
+      block.appendChild(lbl);
+    });
+    area.appendChild(block);
+    return;
+  }
+}
+
+// Switches quizIdx's filter type (No filter / Topic / Number / Type),
+// persists it, re-syncs every button's active state, and animates the
+// config area to its new content's height instead of letting it jump.
+function setFilterMode(quizIdx, mode, tabsRow) {
+  cumulativeFilterMode[quizIdx] = mode;
+  localStorage.setItem(STORAGE_PREFIX + '_filtermode_q' + (quizIdx + 1), mode);
+  tabsRow.querySelectorAll('.filter-type-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  const area = document.getElementById(`filterConfigArea_${quizIdx}`);
+  _animateHeightChange(area, () => renderFilterConfigArea(quizIdx, area));
+  updateFilterActiveNote();
+}
+
 function buildQuizTopicBlock(container, quizIdx, label) {
-  const { allTopics, sel } = loadTopicsForQuiz(quizIdx);
+  const { sel } = loadTopicsForQuiz(quizIdx);
   cumulativeTopics[quizIdx] = new Set(sel);
+  cumulativeTypeFilter[quizIdx] = new Set(loadTypeFilterForQuiz(quizIdx));
 
-  const topicKey = STORAGE_PREFIX + '_topics_q'     + (quizIdx + 1);
-  const modeKey  = STORAGE_PREFIX + '_filtermode_q' + (quizIdx + 1);
-  const numKey   = STORAGE_PREFIX + '_numfilter_q'  + (quizIdx + 1);
+  const modeKey = STORAGE_PREFIX + '_filtermode_q' + (quizIdx + 1);
+  const numKey  = STORAGE_PREFIX + '_numfilter_q'  + (quizIdx + 1);
 
-  const mode = localStorage.getItem(modeKey) === 'number' ? 'number' : 'topic';
+  const savedMode = localStorage.getItem(modeKey);
+  // Default (no saved preference — including right after Reset, which wipes
+  // this same key) is "No filter", not "Topic": resetting should hand back
+  // the full, unfiltered pool rather than silently re-opting into one
+  // particular filter type.
+  const mode = ['none', 'topic', 'number', 'type'].includes(savedMode) ? savedMode : 'none';
   let numMeta;
   try { numMeta = JSON.parse(localStorage.getItem(numKey)); } catch(e) {}
   if (!numMeta || typeof numMeta !== 'object') numMeta = { incexc: 'include', ranges: '' };
 
   cumulativeFilterMode[quizIdx] = mode;
-  cumulativeNumFilter[quizIdx]  = { incexc: numMeta.incexc, ranges: parseNumRanges(numMeta.ranges) };
+  cumulativeNumFilter[quizIdx]  = { incexc: numMeta.incexc, ranges: parseNumRanges(numMeta.ranges), rangesRaw: numMeta.ranges || '' };
 
   const header = document.createElement('div');
   header.className = 'topic-selector-header';
   header.textContent = label;
   container.appendChild(header);
 
-  // ── Filter-type toggle: Topic vs Number ──
-  const modeRow = document.createElement('div');
-  modeRow.className = 'filter-mode-row';
-  modeRow.innerHTML = `
-    <span class="filter-mode-option${mode === 'topic' ? ' active' : ''}">Topic</span>
-    <div class="mode-toggle-track small${mode === 'number' ? ' on' : ''}" id="filterModeToggle_${quizIdx}"><div class="mode-toggle-knob"></div></div>
-    <span class="filter-mode-option${mode === 'number' ? ' active' : ''}">Number</span>
-  `;
-  container.appendChild(modeRow);
-  modeRow.querySelector(`#filterModeToggle_${quizIdx}`).addEventListener('click', () => {
-    localStorage.setItem(modeKey, mode === 'topic' ? 'number' : 'topic');
-    initTopics();
+  // ── Filter-type tabs: No filter / Topic / Number / Type ──
+  const tabsRow = document.createElement('div');
+  tabsRow.className = 'filter-type-tabs';
+  tabsRow.innerHTML = [
+    { key: 'none',   label: 'No filter' },
+    { key: 'topic',  label: 'Topic' },
+    { key: 'number', label: 'Number' },
+    { key: 'type',   label: 'Type' },
+  ].map(t => `<button type="button" class="filter-type-tab${mode === t.key ? ' active' : ''}" data-mode="${t.key}">${t.label}</button>`).join('');
+  container.appendChild(tabsRow);
+  tabsRow.querySelectorAll('.filter-type-tab').forEach(btn => {
+    btn.addEventListener('click', () => setFilterMode(quizIdx, btn.dataset.mode, tabsRow));
   });
 
-  // ── Topic chips ──
-  const topicBlock = document.createElement('div');
-  topicBlock.className = 'topic-chip-block' + (mode === 'number' ? ' filter-dimmed' : '');
-  allTopics.forEach(topic => {
-    const isChecked = cumulativeTopics[quizIdx].has(topic);
-    const lbl = document.createElement('label');
-    lbl.className = 'topic-chip' + (isChecked ? ' active' : '');
-    lbl.innerHTML = `<input type="checkbox" value="${topic}" ${isChecked ? 'checked' : ''}>${topic}`;
-    lbl.querySelector('input').addEventListener('change', e => {
-      if (e.target.checked) { cumulativeTopics[quizIdx].add(topic); lbl.classList.add('active'); }
-      else { cumulativeTopics[quizIdx].delete(topic); lbl.classList.remove('active'); }
-      localStorage.setItem(topicKey, JSON.stringify([...cumulativeTopics[quizIdx]]));
-    });
-    topicBlock.appendChild(lbl);
-  });
-  container.appendChild(topicBlock);
-
-  // ── Number-range filter ──
-  const numBlock = document.createElement('div');
-  numBlock.className = 'num-filter-block' + (mode === 'topic' ? ' filter-dimmed' : '');
-  numBlock.innerHTML = `
-    <div class="incexc-row">
-      <span class="filter-mode-option${numMeta.incexc !== 'exclude' ? ' active' : ''}">Include</span>
-      <div class="mode-toggle-track small${numMeta.incexc === 'exclude' ? ' on' : ''}" id="incExcToggle_${quizIdx}"><div class="mode-toggle-knob"></div></div>
-      <span class="filter-mode-option${numMeta.incexc === 'exclude' ? ' active' : ''}">Exclude</span>
-    </div>
-    <input type="text" class="num-filter-input" id="numRangesInput_${quizIdx}" placeholder="e.g. 5-6, 3, 15-19" value="${numMeta.ranges || ''}">
-  `;
-  container.appendChild(numBlock);
-  numBlock.querySelector(`#incExcToggle_${quizIdx}`).addEventListener('click', () => {
-    numMeta.incexc = numMeta.incexc === 'exclude' ? 'include' : 'exclude';
-    localStorage.setItem(numKey, JSON.stringify(numMeta));
-    initTopics();
-  });
-  numBlock.querySelector(`#numRangesInput_${quizIdx}`).addEventListener('input', e => {
-    numMeta.ranges = e.target.value;
-    cumulativeNumFilter[quizIdx].ranges = parseNumRanges(numMeta.ranges);
-    localStorage.setItem(numKey, JSON.stringify(numMeta));
-  });
+  // ── Config area for whichever tab is active ──
+  const area = document.createElement('div');
+  area.className = 'filter-config-area';
+  area.id = `filterConfigArea_${quizIdx}`;
+  container.appendChild(area);
+  renderFilterConfigArea(quizIdx, area);
 }
 
 function initTopics() {
@@ -321,15 +589,19 @@ function initTopics() {
   cumulativeTopics = {};
   cumulativeFilterMode = {};
   cumulativeNumFilter = {};
+  cumulativeTypeFilter = {};
+  _invalidateTypeFilterScoresCache();
 
   if (selectedCumulativeMode === 'cumulative' && selectedQuizNum >= 2) {
     for (let i = 0; i < selectedQuizNum; i++) {
       buildQuizTopicBlock(container, i, `Quiz #${i + 1} · ${QUIZZES[i].name}`);
     }
   } else {
-    // Single quiz mode — shares the same Topic/Number filter block (and
-    // localStorage keys) as this quiz number's slot in cumulative mode,
-    // via the same quizIdx = selectedQuizNum - 1.
+    // Single quiz mode — shares the same filter block (and localStorage
+    // keys) as this quiz number's slot in cumulative mode, via the same
+    // quizIdx = selectedQuizNum - 1. Every filter type here (No filter/
+    // Topic/Number/Type) therefore already applies identically whichever
+    // mode the quiz itself is drawn in.
     buildQuizTopicBlock(container, selectedQuizNum - 1, 'Problem Pool Filter');
   }
 }
@@ -368,6 +640,11 @@ function updateFilterActiveNote() {
 }
 
 function newQuiz() {
+  // A fresh draw should reflect any attempt just recorded (checkAll()) —
+  // e.g. a "Not attempted" Type-filter pool shrinking now that the
+  // previous round's problems have a status. Cheap: just clears the cache,
+  // the first problemPassesFilter() call below rebuilds it once.
+  _invalidateTypeFilterScoresCache();
   if (selectedCumulativeMode === 'cumulative' && selectedQuizNum >= 2) {
     let prevPool = [];
     for (let i = 0; i < selectedQuizNum - 1; i++) {
@@ -391,8 +668,9 @@ function newQuiz() {
 
   checked = false;
   document.getElementById("resultPanel").classList.remove("show");
+  document.getElementById("recentAttemptsPanel").classList.remove("show");
   document.getElementById("checkBtn").disabled = false;
-  document.getElementById("resultMaxScore").textContent = `final score / ${quiz.length}`;
+  document.getElementById("resultMaxScore").textContent = "Final Score";
   updateFilterActiveNote();
   render();
   // Mirrors the reveal in checkAll() — new attempt, nothing checked yet,
@@ -517,13 +795,13 @@ function checkAll() {
 
   const panel = document.getElementById("resultPanel");
   const disp  = Number.isInteger(totalPts) ? totalPts : totalPts.toFixed(1);
-  document.getElementById("resultScore").textContent = disp;
+  document.getElementById("resultScore").innerHTML =
+    `<span class="result-score-num">${disp}</span><span class="result-score-den">/${quiz.length}</span>`;
   document.getElementById("resultBreakdown").innerHTML =
     breakdown.map(b => {
-      const cls = b.pts === 1 ? "c" : b.pts === 0.9 ? "p" : "w";
-      const sym = b.pts === 1 ? "✓" : b.pts === 0.9 ? "½" : "✗";
-      return `<span class="${cls}">${b.id}</span> ${sym}`;
-    }).join("&nbsp;&nbsp;");
+      const cls = b.pts === 1 ? "score-box-correct" : b.pts === 0.9 ? "score-box-partial" : "score-box-wrong";
+      return `<span class="score-box ${cls}" title="${b.pts} pt">${b.id}</span>`;
+    }).join("");
   panel.classList.add("show");
   panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   // ── Forum: FAB and per-problem "Discuss" buttons only make sense once
@@ -549,6 +827,72 @@ function checkAll() {
       answers
     );
   }
+}
+
+// ─── Recent attempts mini-panel (last 5, shown under the result panel) ─────
+// recordAttemptFromQuiz() (js/stats.js) is async — its localStorage save
+// only actually lands after an `await crypto.subtle.digest(...)` call, so
+// the freshly-finished attempt is NOT yet in loadStats() synchronously
+// right here in checkAll(). renderRecentAttemptsMini() is instead called
+// from onAttemptRecorded(), a hook stats.js fires right after it saves —
+// see that file. Calling it once here too would just flash a version of
+// the list missing the attempt that was literally just taken.
+function onAttemptRecorded() {
+  renderRecentAttemptsMini();
+}
+
+function renderRecentAttemptsMini() {
+  const panel = document.getElementById('recentAttemptsPanel');
+  const list  = document.getElementById('recentAttemptsList');
+  if (!panel || !list || typeof loadStats !== 'function') return;
+
+  // Most recent 5 across every quiz/mode — loadStats() is append-ordered
+  // (oldest first), so the tail is the newest.
+  const recent = loadStats().slice(-5).reverse();
+
+  if (recent.length === 0) {
+    list.innerHTML = '<div class="recent-attempts-empty">No previous attempts yet.</div>';
+  } else {
+    list.innerHTML = recent.map(a => {
+      const quizName = (typeof QUIZZES !== 'undefined' && QUIZZES[a.quizNum - 1]) ? QUIZZES[a.quizNum - 1].name : '';
+      const dateStr = new Date(a.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+      const scoreStr = Number.isInteger(a.score) ? a.score : a.score.toFixed(1);
+      const boxes = (a.answers || []).map(ans => {
+        const cls = ans.points === 1 ? 'score-box-correct' : ans.points === 0.9 ? 'score-box-partial' : 'score-box-wrong';
+        const problemId = String(ans.problem_id || '').replace(/'/g, "\\'");
+        return `<span class="score-box score-box-sm ${cls} recent-attempt-problem" title="Open ${ans.problem_id} forum" role="button" tabindex="0" onclick="openForumForProblem(${ans.quiz_num || a.quizNum}, '${problemId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">${ans.problem_id}</span>`;
+      }).join('');
+      return `
+        <div class="recent-attempt-row">
+          <span class="recent-attempt-meta">
+            <span class="score">${scoreStr}/${a.maxScore}</span> · Q${a.quizNum}${quizName ? ' · ' + quizName : ''} · ${dateStr}
+          </span>
+          <span class="recent-attempt-boxes">${boxes}</span>
+        </div>`;
+    }).join('');
+  }
+
+  panel.classList.add('show');
+}
+
+// Safely leaves the active quiz screen and lands on the full Stats screen —
+// openStatsScreen() (js/stats.js) assumes it's being called from the
+// landing screen (it only fades *that* out), so appPage needs to be hidden
+// here first or the quiz would keep showing underneath it. Mirrors the
+// "leaving appPage" half of goToMainMenu()'s fromApp branch, just without
+// the "go to landing" second half.
+function openFullStatsFromQuiz() {
+  const appPage = document.getElementById('appPage');
+  if (!appPage.classList.contains('visible')) {
+    if (typeof openStatsScreen === 'function') openStatsScreen();
+    return;
+  }
+  appPage.classList.add('fading-out');
+  setTimeout(() => {
+    appPage.classList.remove('visible', 'fading-out');
+    if (typeof stopForumProblemCountsPolling === 'function') stopForumProblemCountsPolling();
+    if (typeof openStatsScreen === 'function') openStatsScreen();
+  }, 280);
 }
 
 // ─── Solve-all mode ──────────────────────────────────────────────────────────
@@ -775,12 +1119,12 @@ function _startSolveAllCore(order) {
   // Hide normal quiz UI
   document.querySelector('main').style.display = 'none';
   document.querySelector('.actions').style.display = 'none';
-  document.querySelector('.topic-selector').style.display = 'none';
+  document.querySelector('.topic-selector-wrap').style.display = 'none';
   document.getElementById('resultPanel').style.display = 'none';
+  document.getElementById('recentAttemptsPanel').style.display = 'none';
   document.getElementById('guideMain').style.display = 'none';
   document.querySelector('.quiz-top-row').style.display = 'none';
   document.querySelector('header').style.display = 'none';
-  document.getElementById('filterResetRow').style.display = 'none';
 
   // Show solve-all mode
   const modeEl = document.getElementById('solveAllMode');
@@ -809,12 +1153,12 @@ function _startSolveAllCore(order) {
 function _exitSolveAllScreenDom() {
   document.querySelector('main').style.display = '';
   document.querySelector('.actions').style.display = '';
-  document.querySelector('.topic-selector').style.display = '';
+  document.querySelector('.topic-selector-wrap').style.display = '';
   document.getElementById('resultPanel').style.display = '';
+  document.getElementById('recentAttemptsPanel').style.display = '';
   document.getElementById('guideMain').style.display = '';
   document.querySelector('.quiz-top-row').style.display = '';
   document.querySelector('header').style.display = '';
-  document.getElementById('filterResetRow').style.display = '';
 
   document.getElementById('solveAllMode').classList.remove('active');
   document.getElementById('stickyScore').classList.remove('visible');
@@ -1528,6 +1872,10 @@ function toggleTheme() {
   document.getElementById('themeTrack').classList.toggle('on', isLight);
   localStorage.setItem(STORAGE_PREFIX + '-theme', isLight ? 'light' : 'dark');
   if (window.__applyCustomOnModeChange) window.__applyCustomOnModeChange();
+  // Day/night also flips --accent/--correct/--partial/--wrong for preset
+  // themes (not just custom, which __applyCustomOnModeChange already
+  // covers above) — recompute text-on-color contrast either way.
+  if (window.__updateOnColorVars) window.__updateOnColorVars();
   if (window.__onModeChanged) window.__onModeChanged();
 }
 
@@ -1538,6 +1886,7 @@ function toggleTheme() {
     document.getElementById('themeTrack').classList.add('on');
   }
   if (window.__applyCustomOnModeChange) window.__applyCustomOnModeChange();
+  if (window.__updateOnColorVars) window.__updateOnColorVars();
 })();
 
 // ─── Guide hint toggle (reusable for main quiz + solve-all mode) ──────────────
@@ -1658,6 +2007,32 @@ function toggleMode() {
     document.getElementById('cumLabelSingle').classList.add('active');
     document.getElementById('cumLabelCumulative').classList.remove('active');
   }
+}
+
+// ─── Screen scroll helpers ───────────────────────────────────────────────────
+// Full-screen views are normal in-flow pages, so hiding one while the window
+// is scrolled leaves window.scrollY unchanged. When the replacement view is
+// shown, that old offset can therefore land the user halfway down the new
+// page. Keep the host page's exact position and explicitly start replacement
+// views at the top.
+function captureScreenScroll() {
+  return window.scrollY || window.pageYOffset || 0;
+}
+
+function scrollScreenToTop() {
+  window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+}
+
+function restoreScreenScroll(y) {
+  const top = Number.isFinite(y) ? y : 0;
+  // Wait until the restored screen is back in flow so the browser has a real
+  // document height to scroll against. Two frames also covers browsers that
+  // defer layout after a display/class change.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      window.scrollTo({ top, left: 0, behavior: 'auto' });
+    });
+  });
 }
 
 // ─── Screen transition helpers ────────────────────────────────────────────────
@@ -1829,7 +2204,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '9.1.3';
+const CURRENT_VERSION = '10.0.0';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

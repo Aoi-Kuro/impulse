@@ -372,15 +372,29 @@
 
 <div class="result-panel" id="resultPanel">
   <div class="result-big" id="resultScore"></div>
-  <div class="result-label" id="resultMaxScore">final score / 6</div>
+  <div class="result-label" id="resultMaxScore">Final Score</div>
   <div class="result-breakdown" id="resultBreakdown"></div>
 </div>
 
-<div class="filter-reset-row" id="filterResetRow">
-  <button class="btn btn-secondary filter-reset-btn" onclick="resetFilterPreferences()">↺ Reset filter preferences</button>
+<div class="recent-attempts-panel" id="recentAttemptsPanel">
+  <div class="recent-attempts-header">Last attempts</div>
+  <div class="recent-attempts-list" id="recentAttemptsList"></div>
+  <button class="btn btn-secondary see-full-stats-btn" onclick="openFullStatsFromQuiz()">See full stats →</button>
 </div>
-<div class="topic-selector" id="topicSelector">
-  <div class="topic-selector-header">Problem Pool Filter</div>
+
+<!-- Wrapper holds the reset button OUTSIDE #topicSelector: initTopics() does
+     `topicSelector.innerHTML = ''` on every rebuild (topic/number toggle,
+     quiz switch, etc.), which was wiping out the reset button since it used
+     to live inside that same element. Living here instead, it now survives
+     every rebuild. -->
+<div class="topic-selector-wrap" id="topicSelectorWrap">
+  <button class="filter-reset-btn" id="filterResetBtn" onclick="handleResetClick()" title="Reset all filter preferences">
+    <svg class="reset-confirm-ring" viewBox="0 0 100 32" preserveAspectRatio="none"><rect x="1.5" y="1.5" rx="7"></rect></svg>
+    <span class="filter-reset-label">↺ Reset</span>
+  </button>
+  <div class="topic-selector" id="topicSelector">
+    <div class="topic-selector-header">Problem Pool Filter</div>
+  </div>
 </div>
 
 <!-- ── Solve-all mode ── -->
@@ -474,7 +488,16 @@
   <div id="mistakesContainer"></div>
 </div>
 
-<!-- ── Mistakes order modal ── -->
+</div><!-- /#appPage -->
+
+<!-- ── Mistakes order modal (outside #appPage to avoid transform containing-block
+     issue — #appPage's fadeInPage/fadeOutPage keyframes apply a `transform`,
+     which creates a new containing block for this modal's `position: fixed`,
+     so instead of centering on the viewport it centered on #appPage's own
+     box — which, with a 150-problem quiz rendered inside, is huge and
+     scrolled, so the modal appeared to "float" somewhere down around
+     problems 89-90 instead of the middle of the screen. Same fix already
+     applied to #stickyScore below. ) ── -->
 <div class="modal-backdrop" id="mistakesModal">
   <div class="modal-box">
     <button class="modal-close" onclick="closeMistakesModal()">✕</button>
@@ -486,9 +509,6 @@
     </div>
   </div>
 </div>
-
-
-</div><!-- /#appPage -->
 
 <!-- ── Sticky score badge (outside #appPage to avoid transform containing-block issue) ── -->
 <div id="stickyScore">
@@ -580,6 +600,12 @@
     </div>
     <div class="stats-filters" id="statsFilters"></div>
     <div id="statsTableWrap"></div>
+    <!-- ── All-problems overview: every problem in the pool as a score-box
+         pill (same component as the result breakdown / "Last attempts"
+         panel / review screen), colored by that problem's LATEST recorded
+         score across all attempt history. Rendered by
+         renderProblemsOverview() in js/stats.js. -->
+    <div id="statsProblemsOverviewWrap"></div>
   </div>
 </div>
 
@@ -595,6 +621,10 @@
     <div class="review-header">
       <button class="stats-close-btn" onclick="closeAttemptReview()">✕ Close</button>
       <div class="review-meta" id="reviewMeta"><!-- Rendered by renderAttemptReview() --></div>
+      <!-- Same score-box pill row used for the live quiz's result breakdown
+           and the "Last attempts" mini-panel — click a box to jump straight
+           to that problem's full card below. -->
+      <div class="review-score-boxes" id="reviewScoreBoxes"><!-- Rendered by renderAttemptReview() --></div>
     </div>
     <div class="review-problems" id="reviewProblems"><!-- Rendered by renderAttemptReview() --></div>
   </div>

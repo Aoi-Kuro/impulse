@@ -3873,24 +3873,28 @@ const FORUM_FAB_HOSTS = [
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'statsScreen',
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'reviewScreen',
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'choicePage',
     isVisible: el => !el.classList.contains('hidden'),
     hide:      el => el.classList.add('hidden'),
     show:      el => el.classList.remove('hidden', 'fading-out'),
+    scrollY: 0,
   },
 ];
 
@@ -3932,6 +3936,7 @@ function openForumFromFab() {
   if (!host) { openForumScreen(); return; }
 
   const hostEl = document.getElementById(host.id);
+  host.scrollY = typeof captureScreenScroll === 'function' ? captureScreenScroll() : (window.scrollY || 0);
 
   stopForumPolling();
   if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(false);
@@ -3942,6 +3947,8 @@ function openForumFromFab() {
     forumFabHostId = host.id;
     forum.classList.add('visible');
     forumScreenOpen = true;
+    if (typeof scrollScreenToTop === 'function') scrollScreenToTop();
+    else window.scrollTo(0, 0);
     resetForumComposerScope();
     refreshForumIdentityUI();
     renderForumPinnedBanner();
@@ -3990,7 +3997,11 @@ function closeForumScreen(forceLanding) {
     if (hostId) {
       const host = FORUM_FAB_HOSTS.find(h => h.id === hostId);
       const hostEl = host && document.getElementById(hostId);
-      if (host && hostEl) host.show(hostEl);
+      if (host && hostEl) {
+        host.show(hostEl);
+        if (typeof restoreScreenScroll === 'function') restoreScreenScroll(host.scrollY);
+        else window.scrollTo(0, host.scrollY || 0);
+      }
       return;
     }
 

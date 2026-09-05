@@ -372,7 +372,7 @@
   #update-banner .banner-text strong { color: var(--text); }
   #update-banner .banner-reload {
     background: var(--accent);
-    color: var(--chrome-dark);
+    color: var(--on-accent, var(--chrome-dark));
     border: none;
     border-radius: calc(4px * var(--radius-mult));
     padding: 0.32rem 0.85rem;
@@ -1017,13 +1017,19 @@
   }
   .btn:hover  { opacity: 0.85; }
   .btn:active { opacity: 0.7; }
-  .btn-primary   { background: var(--accent); color: var(--chrome-dark); font-weight: 600; }
+  .btn-primary   { background: var(--accent); color: var(--on-accent, var(--chrome-dark)); font-weight: 600; }
   .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 
   /* ── Topic Selector ── */
-  .topic-selector {
+  /* Positioning context for .filter-reset-btn now lives on the wrapper
+     (not #topicSelector itself), since #topicSelector's innerHTML gets
+     wiped and rebuilt by initTopics() — see index.html comment. */
+  .topic-selector-wrap {
+    position: relative;
     max-width: 760px;
     margin: 1.5rem auto 0;
+  }
+  .topic-selector {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: calc(6px * var(--radius-mult));
@@ -1048,6 +1054,7 @@
   .topic-selector-header:first-child {
     margin-top: 0;
     padding-top: 0;
+    padding-right: 5.5rem; /* keep clear of the reset button pinned top-right */
     border-top: none;
   }
 
@@ -1079,17 +1086,112 @@
     display: none;
   }
 
-  /* ── Filter reset button ── */
-  .filter-reset-row {
-    max-width: 760px;
-    margin: 1.5rem auto 0;
-    display: flex;
-    justify-content: flex-end;
+  /* ── Filter reset button ── now pinned inside the top-right corner of the
+     .topic-selector box itself (previously a separate row above it) ── */
+  .filter-reset-btn {
+    position: relative;
+    top: 0.85rem;
+    right: 1.1rem;
+    z-index: 2;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.02em;
+    background: var(--bg);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: calc(4px * var(--radius-mult));
+    padding: 0.32rem 0.7rem;
+    cursor: pointer;
+    transition: all 0.15s;
   }
-  .filter-reset-btn { font-size: 0.75rem; padding: 0.4rem 0.8rem; }
+  /* .topic-selector-header:first-child's padding-right assumed the button
+     was position:absolute (out of flow); it's now position:relative (so the
+     .reset-confirm-ring below can anchor to it) but still pinned into the
+     same top-right spot via the wrapping .topic-selector-wrap. */
+  .topic-selector-wrap { position: relative; }
+  .topic-selector-wrap > .filter-reset-btn { position: absolute; top: 0.85rem; right: 1.1rem; }
+  .filter-reset-btn:hover {
+    color: var(--wrong);
+    border-color: var(--wrong);
+  }
+  /* ── Tap-to-confirm ring ── armed by handleResetClick()/_armResetConfirm()
+     (js/quiz-engine.js): a single dash the length of the button's whole
+     perimeter, drawn fully visible, then its offset animates over
+     RESET_CONFIRM_MS so the outline recedes back to nothing — a 3-second
+     "you have until this closes" countdown traced right on the button's own
+     border instead of a separate progress bar. Only visible while
+     .confirming is set (opacity below) — not gated on the rect's own
+     stroke-dashoffset — so there's no leftover "fully drawn" state that
+     could get stuck showing after the ring's first use. */
+  .reset-confirm-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .filter-reset-btn.confirming .reset-confirm-ring { opacity: 1; }
+  .reset-confirm-ring rect {
+    fill: none;
+    stroke: var(--wrong);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+  /* The button's own real border goes transparent (not red) while
+     confirming — same width, so nothing shifts — so the only edge visible
+     is the ring's line itself, drawn at the same size and corner radius
+     (see _armResetConfirm) rather than a second, mismatched outline
+     sitting alongside it. */
+  .filter-reset-btn.confirming {
+    color: var(--wrong);
+    border-color: transparent;
+  }
 
-  /* ── Per-quiz filter mode (Topic / Number) ── */
-  .filter-mode-row, .incexc-row {
+  /* ── Per-quiz filter type: No filter / Topic / Number / Type ──
+     Four-way segmented control (filter-type-tabs/-tab) replacing the old
+     Topic⇄Number two-way toggle — only one config block (topic chips,
+     number-range input, or Type/attempt-status chips) shows at a time,
+     inside .filter-config-area, whose height animates between them (see
+     _animateHeightChange, js/quiz-engine.js) instead of jumping. */
+  .filter-type-tabs {
+    width: 100%;
+    display: flex;
+    gap: 0.4rem;
+    margin: 0.3rem 0 0.9rem;
+  }
+  .filter-type-tab {
+    flex: 1;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0.45rem 0.3rem;
+    border-radius: calc(4px * var(--radius-mult));
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .filter-type-tab:hover { border-color: var(--muted); }
+  .filter-type-tab.active {
+    background: rgba(var(--accent-rgb),0.1);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  @media (max-width: 480px) {
+    .filter-type-tab { font-size: 0.62rem; padding: 0.4rem 0.15rem; }
+  }
+
+  .filter-config-area {
+    width: 100%;
+  }
+
+  .incexc-row {
     width: 100%;
     display: flex;
     align-items: center;
@@ -1111,14 +1213,54 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.6rem;
-    transition: opacity 0.2s;
   }
   .num-filter-block { flex-direction: column; align-items: center; }
 
-  .filter-dimmed {
-    opacity: 0.35;
-    pointer-events: none;
-    filter: grayscale(0.6);
+  /* ── "Type" filter rows: checkbox / label / sample score-box ──
+     One grid for all four rows (not four separate ones) is what keeps
+     column 3 aligned no matter how long a given row's label text is —
+     every row's three cells slot into the same three grid columns. */
+  .type-filter-grid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    row-gap: 0.55rem;
+    column-gap: 0.7rem;
+  }
+  /* display:contents takes the <label> itself out of the box model so its
+     three children (checkbox/label/swatch) become direct grid items of
+     .type-filter-grid — the label still toggles its checkbox on click
+     anywhere in the row, since that behavior comes from the DOM
+     relationship, not from how the label is laid out. */
+  .type-filter-row {
+    display: contents;
+    cursor: pointer;
+  }
+  .type-filter-checkbox {
+    width: 1.05rem;
+    height: 1.05rem;
+    accent-color: var(--accent);
+    cursor: pointer;
+    justify-self: center;
+  }
+  .type-filter-label {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    transition: color 0.2s;
+  }
+  .type-filter-row:hover .type-filter-label { color: var(--text); }
+  .type-filter-row:has(.type-filter-checkbox:checked) .type-filter-label {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  /* Same fixed-width score-box the quiz view and Stats "Problems overview"
+     grid use, just right-aligned into column 3 and holding a stand-in
+     "P0" id — its color is the actual point: matching a row's checkbox to
+     the same-colored boxes it will include/exclude elsewhere. */
+  .type-filter-swatch {
+    justify-self: end;
   }
 
   .num-filter-input {
@@ -1149,10 +1291,18 @@
 
   .result-big {
     font-family: var(--mono);
-    font-size: 2.8rem;
-    font-weight: 600;
+    font-size: 3.4rem;
+    font-weight: 700;
     color: var(--accent);
     line-height: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 0.15rem;
+  }
+  .result-big .result-score-den {
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--muted);
   }
   .result-label {
     font-family: var(--mono);
@@ -1164,13 +1314,159 @@
     margin-bottom: 1.1rem;
   }
   .result-breakdown {
-    font-size: 0.86rem;
-    color: var(--muted);
-    line-height: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
-  .result-breakdown .c { color: var(--correct); font-family: var(--mono); }
-  .result-breakdown .p { color: var(--partial); font-family: var(--mono); }
-  .result-breakdown .w { color: var(--wrong);   font-family: var(--mono); }
+
+  /* ── Score boxes: filled color = correctness, problem id shown inside ──
+     Shared component, reused (smaller, via .score-box-sm) for the recent-
+     attempts history below. */
+  .score-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Fixed (not min-) width, sized off the font's monospace `ch` unit for
+       the longest problem id the pool actually has ("P" + up to 3 digits =
+       4 characters, e.g. "P127") plus the horizontal padding — so every
+       box is exactly the same width whether it holds "P8" or "P127",
+       instead of 3-digit ids being visibly wider than 1-2 digit ones. */
+    width: calc(4ch + 1rem);
+    height: 2.2rem;
+    padding: 0 0.5rem;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    border-radius: calc(4px * var(--radius-mult));
+    line-height: 1;
+    /* Lets a class swap (score-box-wrong → -correct, etc.) animate smoothly
+       instead of popping — only visible when the element itself is patched
+       in place rather than rebuilt; see _recolorProblemsOverview (js/stats.js). */
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  .score-box-correct { background: var(--correct); color: var(--on-correct, #fff); }
+  .score-box-partial  { background: var(--partial); color: var(--on-partial, #fff); }
+  .score-box-wrong    { background: var(--wrong);   color: var(--on-wrong, #fff); }
+
+  .score-box-sm {
+    width: calc(4ch + 0.8rem);
+    height: 1.7rem;
+    padding: 0 0.4rem;
+    font-size: 0.64rem;
+  }
+
+  /* ── Recent attempts (last 5) ── */
+  .recent-attempts-panel {
+    max-width: 760px;
+    margin: 1.2rem auto 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: calc(6px * var(--radius-mult));
+    padding: 1.2rem 1.5rem;
+    display: none;
+  }
+  .recent-attempts-panel.show { display: block; }
+
+  .recent-attempts-header {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.9rem;
+  }
+  /* Grid (not flex) so the "boxes" column lines up at the same x on every
+     row. With a flex row per attempt, the boxes column started right after
+     the meta text — so a wider meta string on one row (e.g. a fractional
+     score "0.9/7", which is wider than "0/7" or "1/7") pushed that row's
+     boxes further right than the others. A grid auto-sizes each column to
+     its widest cell across ALL rows, so every row's meta column ends up the
+     same width and the boxes column always starts flush. Each
+     .recent-attempt-row is `display: contents` so its two children drop
+     straight into the grid's column tracks instead of being nested boxes
+     the grid can't see into. */
+  .recent-attempts-list {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    align-items: center;
+    row-gap: 0.8rem;
+    column-gap: 0.9rem;
+    margin-bottom: 1.1rem;
+  }
+  .recent-attempts-empty {
+    grid-column: 1 / -1;
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-bottom: 1.1rem;
+  }
+  .recent-attempt-row {
+    display: contents;
+  }
+  .recent-attempt-meta {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .recent-attempt-meta .score {
+    color: var(--text);
+    font-weight: 600;
+    /* Right-aligned in a fixed-width slot so "0.9/7" and "0/7" occupy the
+       same width and don't shift the rest of the row's text (and in turn
+       the grid's own meta-column width, which is sized off this text). */
+    display: inline-block;
+    min-width: 2.8rem;
+    text-align: right;
+  }
+  .recent-attempt-boxes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+  /* The panel already provides the surrounding border, so a second boxed
+     button felt visually heavy. Treat this as a quiet footer action instead. */
+  .see-full-stats-btn {
+    width: 100%;
+    margin-top: 0.15rem;
+    padding: 0.85rem 0.15rem 0.05rem;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-align: right;
+    opacity: 0.9;
+    transition: color 0.15s, opacity 0.15s, transform 0.15s;
+  }
+  .see-full-stats-btn:hover {
+    color: var(--text);
+    opacity: 1;
+    transform: translateX(2px);
+  }
+  .see-full-stats-btn:active {
+    opacity: 0.7;
+  }
+
+  /* Problem pills in the recent-attempts preview behave like the clickable
+     problem pills in the full Stats view: open that problem's forum thread. */
+  .recent-attempt-problem {
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.12s, filter 0.12s;
+  }
+  .recent-attempt-problem:hover {
+    filter: brightness(1.12);
+    transform: translateY(-1px);
+  }
+  .recent-attempt-problem:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 
   /* ── Solve-all button ── */
   .solve-all-wrap {
