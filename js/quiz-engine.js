@@ -1797,7 +1797,20 @@ function exitAppOrChoiceToLanding() {
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
-window.addEventListener("DOMContentLoaded", () => {
+// Deliberately NOT gated on DOMContentLoaded. That event only fires once the
+// parser reaches the end of the document — which, with every <script> tag
+// down here being a plain blocking one (no defer/async), means waiting on
+// EVERY script listed after this one too: forum.js, manual.js,
+// push-notifications.js, and the external jsdelivr-hosted supabase-js CDN
+// script in particular. On a slow connection that CDN fetch alone can take
+// a while, and none of those scripts have anything to do with the quiz
+// button grid. Meanwhile <script src="js/quiz-engine.js"> itself sits near
+// the end of <body>, after the landing screen's markup (#quizSelectGrid,
+// #modeLabelQuiz, etc.) and after the course/quizzes/*.js data files that
+// feed QUIZZES/QUIZ_SIZE — so by the time THIS script is executing, the DOM
+// nodes below already exist and the data they need is already loaded. No
+// need to wait for anything past this point: run it right here, inline.
+{
   // Render quiz selection buttons from the QUIZZES registry
   renderQuizButtons();
   // Sync the landing title / header <h1> to the actually-selected quiz's
@@ -1812,7 +1825,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const modeLabelQuiz = document.getElementById('modeLabelQuiz');
   if (modeLabelQuiz) modeLabelQuiz.textContent = `🎯 Random ${QUIZ_SIZE}`;
   // Landing screen is shown by default; quiz is initialized when user hits Start
-});
+}
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
