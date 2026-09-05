@@ -1,18 +1,14 @@
-# Flux — Physics Practice Quiz Platform
+# Impulse & Flux — Physics Practice Quiz Platforms
 
-Flux is a solo-built, vanilla-JS practice quiz platform for university physics
-courses. It started as one HTML file with six random problems for a PHYS 161
-summer term and grew into a full multi-mode quiz app with theming, cross-device
-stats, a moderated class forum with an AI participant, a searchable manual, and
-offline support — no framework, no build step, no bundler.
-
-This repo is the **framework**: one course's content (currently PHYS 161) lives
+This repo is the **framework**: one course's content (currently PHYS 161 or 162) lives
 inside it in a way that's designed to be swapped out wholesale, so the same
-codebase can be redeployed for a different course (PHYS 162, etc.) as its own
+codebase can be redeployed for a different course as its own
 separate site with its own database. See [Deploying a new course](#deploying-a-new-course)
 for exactly how.
 
 > Live site: https://phys161.netlify.app
+
+> Live site: https://phys162.netlify.app
 
 ---
 
