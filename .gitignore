@@ -1,0 +1,15 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+
+# Node (in case any tooling gets added later)
+node_modules/
+
+# Local env files — never commit real secrets even if one shows up later
+.env
+.env.local
+*.local

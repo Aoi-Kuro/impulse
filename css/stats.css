@@ -1,0 +1,920 @@
+/* ─── Stats Screen ─────────────────────────────────────────────────────────── */
+
+/* Quiz series colors as CSS custom props (reused in JS too) */
+:root {
+  --q1: var(--accent);
+  --q2: var(--correct);
+  --q3: #e07ff3;
+  --q4: #ff9e64;
+}
+
+#statsScreen {
+  display: none;
+  min-height: 100vh;
+  background: var(--bg);
+  overflow-y: auto;
+  font-family: var(--sans);
+}
+#statsScreen.visible {
+  display: block;
+  animation: fadeInPage 0.38s ease forwards;
+}
+#statsScreen.fading-out {
+  animation: fadeOutPage 0.28s ease forwards;
+  pointer-events: none;
+}
+/* Idle pause — after 5 minutes with no interaction while this screen is
+   open, the Attempt log and Forum & Site panels stop actively refreshing
+   (js/stats.js _statsActivityPing/_armStatsIdleTimer) and their buttons dim
+   to signal the view has gone stale. Buttons stay fully clickable — using
+   one is itself an interaction, so it wakes things back up rather than
+   needing a separate step first. Relies on each button's own existing
+   `transition: all …` (see .sf-chip/.stats-io-btn/.review-btn/.del-btn) to
+   animate the fade both ways. Forum chat polling is untouched by this. */
+#statsScreen.stats-idle .sf-chip,
+#statsScreen.stats-idle .stats-io-btn,
+#statsScreen.stats-idle .review-btn,
+#statsScreen.stats-idle .del-btn {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.stats-wrap {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 2rem 1.4rem 4rem;
+}
+
+/* ── Header ── */
+.stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.8rem;
+}
+.stats-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+.stats-title {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.stats-subtitle {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.stats-close-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  padding: 0.38rem 0.75rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.stats-close-btn:hover { color: var(--text); border-color: var(--text); }
+
+/* ── Legend ── */
+.stats-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.2rem;
+  margin-bottom: 1rem;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Forum & site stats box ── */
+.stats-forum-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+  padding: 1rem 1.1rem 1.2rem;
+  margin-bottom: 1.4rem;
+}
+.sfp-title {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+/* Identity row — my avatar + claimed nickname (or "Not registered yet") +
+   join date, with the "my ___" number cells (.sfp-identity-stats) sharing
+   this same row instead of sitting in their own row below a divider —
+   they're both about the same person, so one row reads more clearly than
+   two. flex-wrap lets the stats drop to their own line on narrow screens
+   instead of squeezing the name/avatar. */
+.sfp-identity-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.4rem;
+  margin-bottom: 0.9rem;
+}
+.sfp-identity-avatar .forum-message-avatar {
+  width: 38px;
+  height: 38px;
+  margin-top: 0;
+  border-radius: calc(7px * var(--radius-mult));
+}
+.sfp-identity-avatar .forum-message-avatar img.gemini-mark { width: 22px; height: 22px; }
+.sfp-identity-avatar .forum-message-avatar-initials { font-size: 1rem; }
+.sfp-identity-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.sfp-identity-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.sfp-identity-name {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Gear button next to the nickname, opening a small dropdown with the
+   three identity actions as full-text items: Change nickname
+   (openSfpNicknameEditor — also doubles as the initial claim flow if
+   nothing's claimed yet), Your PIN (openForumPinModal), and Exit
+   (openForumExitDeviceModal). Toggled/closed via toggleSfpSettingsMenu /
+   closeSfpSettingsMenu in js/stats.js, same outside-click-to-close pattern
+   as the color theme panel (js/themes.js). PIN and Exit items only mean
+   anything once a nickname is actually claimed, so renderSfpIdentity()
+   hides them (display:none) until then. */
+.sfp-settings-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+.sfp-settings-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.2rem 0.3rem;
+  border-radius: calc(4px * var(--radius-mult));
+  transition: all 0.15s;
+}
+.sfp-settings-btn:hover { color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
+.sfp-settings-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  z-index: 20;
+  flex-direction: column;
+  min-width: 140px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(7px * var(--radius-mult));
+  box-shadow: 0 4px 24px color-mix(in srgb, var(--shadow) 45%, transparent);
+  padding: 0.3rem;
+}
+.sfp-settings-menu.open { display: flex; }
+.sfp-settings-item {
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: calc(5px * var(--radius-mult));
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.sfp-settings-item:hover { color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
+.sfp-identity-joined {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+/* The two "my ___" lines — pushed to the right edge of the identity row via
+   margin-left:auto (wraps onto its own line first, before it'd ever crowd
+   the avatar/name, thanks to .sfp-identity-row's flex-wrap above). A grid,
+   not independent flex rows per cell — that's what makes both labels start
+   at the same left edge regardless of length, and both values' right edges
+   align regardless of digit count: grid columns share one width across
+   every row, unlike each .sfp-cell sizing itself independently. .sfp-cell
+   itself becomes display:contents so its label/value children act as
+   direct grid items instead of being isolated inside their own box. */
+.sfp-identity-stats {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  row-gap: 0.3rem;
+  column-gap: 0.5rem;
+  margin-left: auto;
+}
+.sfp-identity-stats .sfp-cell {
+  display: contents;
+}
+.sfp-identity-stats .sfp-label {
+  margin-bottom: 0;
+  text-align: left;
+}
+.sfp-identity-stats .sfp-label::after {
+  content: ':';
+}
+.sfp-identity-stats .sfp-value {
+  font-size: 0.95rem;
+  text-align: right;
+}
+.sfp-label {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.2rem;
+}
+.sfp-value {
+  font-family: var(--mono);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text);
+}
+/* Small "live" indicator — reused for both the Attempt log sync dot
+   (#attemptsSyncDot) and the Forum & Site panel dot (#sfpLiveDot, now next
+   to the panel title): a quiet pulse confirming the panel's data is still
+   refreshing, not an alarm. State transitions are driven by
+   _settleLiveDot() in js/attempts-sync.js. */
+.sfp-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--correct);
+  display: inline-block;
+  animation: sfpLivePulse 2s ease-in-out infinite;
+  /* Lets state changes (green/gray/red/hidden) morph into each other instead
+     of popping — background-color/opacity/transform are all transitioned,
+     independent of whichever one the pulse keyframes happen to be driving
+     at the moment the class changes. */
+  transition: background-color 0.35s ease, opacity 0.35s ease, transform 0.35s ease;
+}
+@keyframes sfpLivePulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+/* Mid-sync (or queued-but-not-yet-confirmed) — the exact same pulse, just
+   gray instead of green. Only background-color is overridden here, so the
+   pulse animation is never interrupted going into this state — it just
+   morphs color mid-beat. The "stop pulsing entirely" treatment below is
+   reserved for states that are genuinely at rest (error/hidden), which is
+   also why this class alone is never enough to trigger the animationiteration
+   hand-off in _settleLiveDot (js/attempts-sync.js) — going TO this state
+   never needs to wait for anything. */
+.sfp-live-dot.sfp-live-dot-syncing {
+  background: var(--muted);
+}
+/* Sync failed — solid red, no pulse (a resting "problem" state, not a "still
+   working" one; the background poll keeps retrying regardless). Reached only
+   via _settleLiveDot()'s "wait for the current pulse cycle to finish, then
+   freeze" hand-off, so the pulse always comes to rest at its own natural low
+   point instead of being cut off mid-swing. Stays up across every background
+   retry, not just failures caught while a panel is being actively watched —
+   the gray syncing state above only shows for each retry's brief in-flight
+   moment, so red is what's visible the rest of the time until a retry
+   actually succeeds. */
+.sfp-live-dot.sfp-live-dot-error {
+  background: var(--wrong);
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+/* No claimed identity yet — nothing to sync to, so there's nothing to show.
+   Also only ever reached via the graceful settle hand-off. */
+.sfp-live-dot.sfp-live-dot-hidden {
+  opacity: 0;
+  transform: scale(0.4);
+  animation: none;
+}
+
+/* The tally-counter graphic, reused three times in a row (forum
+   participants / visits / quizzes taken — all platform-wide, "everybody"
+   numbers, as opposed to the "my ___" grid above). One shared top divider
+   on the row rather than one per dial. */
+.sfp-dial-row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+.sfp-dial-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 1 auto;
+}
+.sfp-dial-wrap .sfp-label { justify-content: center; text-align: center; }
+.sfp-dial {
+  width: 132px;
+  height: 141px;
+}
+@media (max-width: 560px) {
+  .sfp-dial-row { gap: 0.5rem; }
+  .sfp-dial-wrap .sfp-label { font-size: 0.58rem; }
+  .sfp-dial { width: 98px; height: 105px; }
+  .sfp-identity-stats { margin-left: 0; }
+}
+
+/* Body/case */
+.sfp-tally-body {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.sfp-tally-shine {
+  fill: var(--text);
+  opacity: 0.06;
+}
+.sfp-tally-grip {
+  stroke: var(--border);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+/* Thumb lever + ring on top */
+.sfp-tally-bracket {
+  stroke: var(--border);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.sfp-tally-ring {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 3;
+}
+.sfp-tally-lever {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 1.5;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+/* This is what makes each poll that actually changes the count read as a
+   physical *click* of the thumb lever rather than a silent value swap —
+   only triggered when the displayed digits change (see
+   renderTallyDial in js/stats.js). */
+.sfp-tally-lever-press {
+  animation: sfpTallyPress 0.32s ease;
+}
+@keyframes sfpTallyPress {
+  0%   { transform: translateY(0); }
+  40%  { transform: translateY(3px); }
+  100% { transform: translateY(0); }
+}
+
+/* Digit window */
+.sfp-tally-window {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.sfp-tally-divider {
+  stroke: var(--border);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+.sfp-tally-wheel {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.sfp-tally-count {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-weight: 700;
+  fill: var(--text);
+}
+.sfp-tally-count-pulse {
+  animation: sfpCountPulse 0.5s ease;
+}
+@keyframes sfpCountPulse {
+  0%   { fill: var(--accent); }
+  100% { fill: var(--text); }
+}
+
+/* ── Chart ── */
+.stats-chart-wrap {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+  padding: 1rem 0.5rem 0.5rem;
+  margin-bottom: 1.4rem;
+  overflow: hidden;
+}
+#statsChart {
+  display: block;
+  width: 100%;
+  height: 240px;
+  cursor: crosshair;
+}
+.chart-tooltip {
+  position: absolute;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.4rem 0.65rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  white-space: nowrap;
+  z-index: 10;
+}
+.chart-tooltip.visible { opacity: 1; }
+
+/* ── Filters ── */
+.stats-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.4rem;
+  align-items: center;
+  margin-bottom: 1.4rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(8px * var(--radius-mult));
+}
+.sf-group {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.sf-label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.sf-chip {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: calc(20px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.sf-chip:hover { color: var(--text); border-color: var(--muted); }
+.sf-chip.active {
+  background: color-mix(in srgb, var(--chip-color, var(--accent)) 15%, transparent);
+  border-color: var(--chip-color, var(--accent));
+  color: var(--chip-color, var(--accent));
+}
+.sf-chip.mode-active {
+  background: rgba(var(--accent-rgb),0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sf-divider {
+  width: 1px;
+  height: 1.2rem;
+  background: var(--border);
+  margin: 0 0.2rem;
+}
+
+/* ── IO button ──
+   Lives inline in the attempt-log table header now (stats-table-header-right,
+   below) rather than its own row above the table — see renderTable() in
+   js/stats.js. Sized down from the old standalone version to sit comfortably
+   next to the row count. */
+.stats-io-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.32rem 0.7rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.stats-io-btn:hover { color: var(--text); border-color: var(--accent); }
+.stats-io-btn.danger:hover { color: var(--wrong); border-color: var(--wrong); }
+.stats-io-btn:disabled { cursor: default; opacity: 0.5; }
+.stats-io-btn:disabled:hover { color: var(--muted); border-color: var(--border); }
+
+/* Import merge modal */
+.stats-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--shadow) calc(0.6 * 100%), transparent);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s;
+}
+.stats-modal-backdrop.visible { opacity: 1; pointer-events: all; }
+.stats-modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult));
+  padding: 1.8rem 2rem;
+  max-width: 360px;
+  width: 90%;
+  text-align: center;
+}
+.stats-modal-title {
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+.stats-modal-desc {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 1.4rem;
+  line-height: 1.6;
+}
+.stats-modal-actions {
+  display: flex;
+  gap: 0.2rem;
+  justify-content: center;
+  margin-top: 0.7rem;
+}
+.stats-modal-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.stats-modal-btn:hover { border-color: var(--accent); color: var(--accent); }
+.stats-modal-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--chrome-light);
+}
+.stats-modal-btn.primary:hover { opacity: 0.85; }
+
+/* ── Table ── */
+.stats-table-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+  overflow: hidden;
+}
+.stats-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.2rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+.stats-table-title {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.stats-table-count {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.stats-table-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+/* Sync button — same visual weight as .stats-close-btn (an outlined,
+   secondary action), not the filled accent look, since it's something the
+   person taps often (every panel open, potentially) rather than a rare
+   destructive/primary action. */
+.stats-sync-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.stats-sync-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.stats-sync-btn:disabled { opacity: 0.6; cursor: default; }
+.stats-sync-btn.sync-btn-failed { color: var(--wrong); border-color: var(--wrong); }
+
+/* "not synced" — sits under the date/time cell (renderTable, js/stats.js)
+   for any attempt that hasn't made it to the server yet (no connection at
+   the time it was recorded, or sync hasn't run since). Small and quiet —
+   this is informational, not an error the person needs to act on, since
+   the Sync button/next panel-open already covers retrying it. */
+.attempt-not-synced {
+  font-size: 0.62rem;
+  color: var(--partial);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.15rem;
+}
+
+/* Review button — text-style like .del-btn's icon button, but wider (has a
+   word in it, not just a glyph) so the two sit naturally side by side in
+   the same narrow Actions column. */
+.review-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  padding: 0.28rem 0.5rem;
+  border-radius: calc(5px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-right: 0.35rem;
+}
+.review-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.stats-table th {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  padding: 0.5rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  background: var(--surface);
+}
+.stats-table td {
+  padding: 0.62rem 1rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  vertical-align: middle;
+}
+.stats-table tr:last-child td { border-bottom: none; }
+.stats-table tbody tr {
+  transition: background 0.12s;
+}
+.stats-table tbody tr:hover {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+/* Quiz badge */
+.quiz-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  font-weight: 600;
+  padding: 0.18rem 0.55rem;
+  border-radius: calc(4px * var(--radius-mult));
+  white-space: nowrap;
+}
+/* Mode badge */
+.mode-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: calc(4px * var(--radius-mult));
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mode-badge.single {
+  background: rgba(var(--accent-rgb),0.1);
+  color: var(--accent);
+}
+.mode-badge.cumulative {
+  background: rgba(var(--correct-rgb),0.1);
+  color: var(--correct);
+}
+
+/* Score cell */
+.score-cell {
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+.score-perfect { color: var(--correct); }
+.score-good    { color: var(--accent); }
+.score-ok      { color: var(--partial); }
+.score-low     { color: var(--wrong); }
+
+/* Duration cell */
+.duration-cell { color: var(--muted); }
+
+/* Delete button */
+.del-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  width: 28px;
+  height: 28px;
+  border-radius: calc(5px * var(--radius-mult));
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  transition: all 0.15s;
+}
+.del-btn:hover {
+  border-color: var(--wrong);
+  color: var(--wrong);
+  background: rgba(var(--wrong-rgb),0.08);
+}
+
+/* Empty state */
+.stats-empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.stats-empty-icon {
+  font-size: 2rem;
+  margin-bottom: 0.7rem;
+}
+
+/* ── Stats button on landing ── */
+.stats-launch-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  background: rgba(var(--accent-rgb),0.07);
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.55rem 1.2rem;
+  border-radius: calc(8px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.18s;
+  margin-top: 0.6rem;
+  box-shadow: 0 0 0 0 rgba(var(--accent-rgb),0.15);
+}
+.stats-launch-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(var(--accent-rgb),0.14);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.12);
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .stats-table th:nth-child(3),
+  .stats-table td:nth-child(3) { display: none; } /* hide date on small screens */
+  #statsChart { height: 180px; }
+  .stats-table th, .stats-table td { padding: 0.5rem 0.6rem; font-size: 0.72rem; }
+}
+
+/* ─── Attempt review screen ────────────────────────────────────────────────── */
+/* Top-level screen, same show/hide + fade mechanics as #statsScreen above —
+   toggled via .visible, faded via .fading-out if that transition is ever
+   added here too. */
+#reviewScreen {
+  display: none;
+  min-height: 100vh;
+  background: var(--bg);
+  overflow-y: auto;
+  font-family: var(--sans);
+}
+#reviewScreen.visible {
+  display: block;
+  animation: fadeInPage 0.38s ease forwards;
+}
+
+.review-wrap {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2rem 1.4rem 4rem;
+}
+.review-header {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.8rem;
+}
+/* .stats-close-btn is reused as-is for the ✕ Close button (index.html) —
+   same secondary-outlined look every other screen's close button has. */
+
+/* Stands in for the topic-filter sidebar a live Random 6 attempt would show
+   here — this attempt's own metadata instead, since none of that filtering
+   UI means anything for a screen with exactly one fixed attempt to show. */
+.review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+  padding: 0.9rem 1.2rem;
+}
+.review-meta-item {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.review-meta-label {
+  font-size: 0.62rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Same list layout #quizContainer (<main>, css/style.css) uses for a live
+   attempt's cards — kept identical on purpose so a reviewed attempt reads
+   as "the same screen, but finished and read-only" rather than a
+   differently-laid-out report. */
+.review-problems {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+/* .problem-card and its correct/partial/wrong + .answer-input/.unit-input +
+   .feedback children are reused unstyled here (css/style.css already
+   covers all of it) — the only review-specific override is disabling
+   interaction on the readonly inputs, since [readonly] alone still shows a
+   text-edit cursor on hover/focus otherwise. */
+.review-problem-card .answer-input,
+.review-problem-card .unit-input {
+  cursor: default;
+}
+.review-problem-card .answer-input:focus,
+.review-problem-card .unit-input:focus {
+  outline: none;
+}
+
+@media (max-width: 480px) {
+  .review-meta { gap: 0.6rem 1rem; padding: 0.75rem 0.9rem; }
+  .review-meta-item { font-size: 0.74rem; }
+}

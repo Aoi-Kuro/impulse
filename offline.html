@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head data-course="phys161">
+<!-- data-course must match the one on index.html's <head> — see
+     js/course-config.js's COURSES.<course>.display (the <title> above is
+     a placeholder, overwritten at load; edit course-config.js instead). -->
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>You're offline — PHYS161 Practice Quiz</title>
+<link rel="icon" href="favicon/favicon.svg" type="image/svg+xml" />
+
+<!-- Same family as the rest of the site (see css/style.css's @import) — but
+     this page is what shows up with NO internet, so this @import can't be
+     relied on to actually load here. It's left in as a progressive
+     enhancement for the rare case this page is opened while online; the
+     font stack below always has a solid offline-safe fallback regardless. -->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;1,400&display=swap');
+</style>
+
+<!-- The ACTUAL theme colors (:root, body.light, and every
+     body[data-theme="x"] preset) live only here — this page no longer
+     keeps its own copy of them, so a color change in style.css shows up
+     here too with no separate edit. -->
+<link rel="stylesheet" href="css/style.css" />
+
+<style>
+  :root { --serif: 'STIX Two Text', Georgia, 'Cambria', serif; }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 2rem 1.5rem;
+  }
+
+  /* ── Top-right controls: theme swatches + day/night toggle ── */
+  .offline-controls {
+    position: absolute;
+    top: 1rem;
+    right: 1.2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .offline-swatches {
+    display: flex;
+    gap: 0.35rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: calc(20px * var(--radius-mult));
+    padding: 0.3rem;
+  }
+  .offline-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+  }
+  .offline-swatch.active { border-color: var(--text); }
+  .offline-daynight {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: calc(20px * var(--radius-mult));
+    width: 34px;
+    height: 34px;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .offline-daynight:hover, .offline-swatch:hover { filter: brightness(1.15); }
+
+  .offline-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3rem;
+    max-width: 1100px;
+    width: 100%;
+    margin-top: 2.5rem;
+  }
+  .offline-art { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; }
+  .offline-art img { width: 100%; max-width: 420px; height: auto; display: block; }
+
+  .offline-copy { flex: 1 1 0; min-width: 0; }
+  .offline-copy h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(2.4rem, 5vw, 4rem);
+    line-height: 1.1;
+    margin: 0 0 0.9rem;
+    color: var(--text);
+  }
+  .offline-copy p {
+    font-family: var(--sans);
+    font-size: 1rem;
+    color: var(--muted);
+    margin: 0 0 1.6rem;
+    max-width: 34ch;
+  }
+  .offline-retry {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: calc(8px * var(--radius-mult));
+    padding: 0.6rem 1.2rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .offline-retry:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── "Meanwhile, look at..." law-of-the-moment panel ── */
+  .offline-law {
+    width: 100%;
+    max-width: 640px;
+    margin: 2.5rem auto 0;
+    padding: 1.2rem 1.5rem 1.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: calc(10px * var(--radius-mult));
+    text-align: center;
+  }
+  .offline-law-intro {
+    font-family: var(--sans);
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin: 0 0 0.2rem;
+  }
+  .offline-law-name {
+    font-family: var(--serif);
+    font-size: 1.15rem;
+    color: var(--accent);
+    margin: 0 0 0.7rem;
+  }
+  .offline-law-eq { font-size: 1.1rem; min-height: 1.6em; }
+
+  @media (max-width: 720px) {
+    .offline-wrap { flex-direction: column; gap: 1.5rem; text-align: center; margin-top: 3.5rem; }
+    .offline-art { flex: 0 0 auto; }
+    .offline-art img { max-width: 280px; }
+    .offline-copy p { max-width: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Must load before the inline script right below, which needs
+     STORAGE_PREFIX immediately (before paint). -->
+<script src="js/course-config.js"></script>
+
+<script>
+  // Applied immediately (before paint) to avoid a flash of the wrong
+  // mode — same key/values the main site itself reads/writes (see
+  // js/quiz-engine.js / js/easter.js): '<prefix>-theme' = 'light'/'dark'.
+  // Which PRESET (data-theme attribute) is active is handled a few lines
+  // down by the real js/themes.js once it loads, same as index.html.
+  try {
+    if (localStorage.getItem(STORAGE_PREFIX + '-theme') === 'light') document.body.classList.add('light');
+  } catch (e) { /* localStorage can throw in some locked-down contexts — falls back to dark */ }
+</script>
+
+<div class="offline-controls">
+  <div class="offline-swatches" id="offlineSwatches"></div>
+  <button class="offline-daynight" id="offlineDayNightBtn" onclick="offlineToggleDayNight()" title="Toggle day/night"></button>
+</div>
+
+<div class="offline-wrap">
+  <div class="offline-art">
+    <img id="offlineArt" src="images/offline/dark.png" alt="A scattered pile of red, white, and blue cubes" />
+  </div>
+  <div class="offline-copy">
+    <h1>You are offline!</h1>
+    <p>Looks like there's no connection right now. Once you're back online, this page will reload on its own. Or you can just try again.</p>
+    <button class="offline-retry" onclick="location.reload()">Try again</button>
+  </div>
+</div>
+
+<div class="offline-law">
+  <p class="offline-law-intro">Meanwhile, look at:</p>
+  <p class="offline-law-name" id="offlineLawName">—</p>
+  <div class="offline-law-eq" id="offlineLawEq">$$\ $$</div>
+</div>
+
+<!-- ── MathJax (STIX Two font), loaded from the local vendor copy so this
+     still works with zero connection — see index.html's own copy of this
+     same config block for why MathJaxReady exists. ── -->
+<script>
+  window.MathJaxReady = new Promise(resolve => {
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      chtml: { fontURL: 'vendor/mathjax/fonts/woff' },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] },
+      startup: { typeset: false, ready() { MathJax.startup.defaultReady(); resolve(); } }
+    };
+  });
+</script>
+<script defer id="MathJax-script" src="vendor/mathjax/mathjax-stix2.js"></script>
+
+<!-- Same two files, same order, as index.html — this is what makes the
+     theme colors/preset list/custom-theme math REFERENCED rather than
+     duplicated: THEMES, deriveTheme(), applyColorTheme(), getCustomDraft()
+     etc. below all come from this actual js/themes.js, not a copy of it. -->
+<script src="js/banner-manager.js"></script>
+<script src="js/themes.js"></script>
+
+<script>
+  // ── Theme switcher + day/night toggle ──
+  // Builds its own small swatch row (no matching #themeGrid markup here for
+  // renderThemeGrid() to target) but calls the REAL applyColorTheme() /
+  // getCustomDraft() / deriveTheme() from js/themes.js above for every
+  // color decision — this page never hardcodes a theme's hex values.
+  function offlineRenderSwatches() {
+    var wrap = document.getElementById('offlineSwatches');
+    var cur = getColorTheme();
+    var isLight = document.body.classList.contains('light');
+    var custom = getCustomDraft();
+    wrap.innerHTML = '';
+    THEMES.forEach(function (t) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'offline-swatch' + (cur === t.id ? ' active' : '');
+      b.style.background = isLight ? t.day.bg : t.night.bg;
+      b.title = t.name;
+      b.onclick = function () { applyColorTheme(t.id, true); offlineRenderSwatches(); };
+      wrap.appendChild(b);
+    });
+    var cb = document.createElement('button');
+    cb.type = 'button';
+    cb.className = 'offline-swatch' + (cur === 'custom' ? ' active' : '');
+    cb.style.background = isLight ? custom.day.bg : custom.night.bg;
+    cb.title = 'Custom';
+    cb.onclick = function () { applyColorTheme('custom', true); offlineRenderSwatches(); };
+    wrap.appendChild(cb);
+  }
+
+  function offlineUpdateDayNightBtn() {
+    document.getElementById('offlineDayNightBtn').textContent =
+      document.body.classList.contains('light') ? '☀️' : '🌙';
+  }
+
+  function offlineToggleDayNight() {
+    var isLight = document.body.classList.toggle('light');
+    localStorage.setItem(STORAGE_PREFIX + '-theme', isLight ? 'light' : 'dark');
+    if (typeof window.__applyCustomOnModeChange === 'function') window.__applyCustomOnModeChange();
+    document.getElementById('offlineArt').src = isLight ? 'images/offline/light.png' : 'images/offline/dark.png';
+    offlineUpdateDayNightBtn();
+    offlineRenderSwatches();
+  }
+
+  document.getElementById('offlineArt').src = document.body.classList.contains('light')
+    ? 'images/offline/light.png' : 'images/offline/dark.png';
+  offlineUpdateDayNightBtn();
+  offlineRenderSwatches();
+
+  // ── Law of the moment ──
+  // course/offline-laws.json is precached by sw.js alongside this page,
+  // so this fetch resolves from Cache Storage with no network at all —
+  // one random law shown per page load.
+  function renderOfflineMath() {
+    var el = document.getElementById('offlineLawEq');
+    if (window.MathJax && window.MathJax.typesetPromise) {
+      MathJax.typesetPromise([el]).catch(function (err) { console.error('MathJax render error:', err); });
+    } else if (window.MathJaxReady) {
+      window.MathJaxReady.then(function () {
+        MathJax.typesetPromise([el]).catch(function (err) { console.error('MathJax render error:', err); });
+      });
+    }
+  }
+  fetch('course/offline-laws.json')
+    .then(function (r) { return r.json(); })
+    .then(function (laws) {
+      var law = laws[Math.floor(Math.random() * laws.length)];
+      document.getElementById('offlineLawName').textContent = law.name;
+      document.getElementById('offlineLawEq').textContent = '$$' + law.latex + '$$';
+      renderOfflineMath();
+    })
+    .catch(function (err) { console.error('Could not load offline laws:', err); });
+
+  // Auto-retry once the browser tells us connectivity is back, so the
+  // person doesn't have to remember to hit "Try again" themselves.
+  window.addEventListener('online', () => location.reload());
+</script>
+
+</body>
+</html>

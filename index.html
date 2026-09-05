@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="en">
+<head data-course="phys161">
+<!-- Manual Edit -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PHYS162 Practice Quiz</title>
+
+<!-- ── Open Graph / Telegram / Social preview ─────────────────────────────── -->
+<meta property="og:type"        content="website" />
+<meta property="og:title"       content="PHYS 161 Practice Quiz" />
+<meta property="og:description" content="Interactive physics practice quiz: classical mechanics, thermodynamics, and vectors. Instant feedback with scoring." />
+<meta property="og:image"       content="course/preview.png" />
+<meta property="og:url"         content="https://your-domain.com/PHYS162_Practice_Quiz.html" />
+<meta name="twitter:card"       content="summary_large_image" />
+<meta name="twitter:title"      content="PHYS 161 Practice Quiz" />
+<meta name="twitter:description" content="Interactive physics practice quiz for PHYS 161 course at Nazarbayev University." />
+<meta name="twitter:image"      content="course/preview.png" />
+<!-- ── Keep these two lines' course-config.js values (display.ogDescription
+     etc.) in sync with whatever you paste here — they're intentionally
+     duplicated, not read from each other. ─────────────────────────────── -->
+
+
+<link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=1.0.3" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg?v=1.0.3" />
+<link rel="shortcut icon" href="/favicon/favicon.ico?v=1.0.3" />
+<link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png?v=1.0.3" />
+<meta name="apple-mobile-web-app-title" content="Flux" />
+<link rel="manifest" href="/favicon/site.webmanifest?v=1.0.3" />
+
+<!-- ── Google Sans Flex (official, free under SIL OFL via Google Fonts) —
+     used only for the "Gemini" bot label/messages in the forum, so the
+     official bot reads as visually distinct in its own real brand font. ── -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400..700&display=swap" rel="stylesheet">
+
+<!-- ── Styles ── -->
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/stats.css">
+<link rel="stylesheet" href="css/forum.css">
+<link rel="stylesheet" href="css/manual.css">
+
+<!-- ── MathJax (math rendering, STIX Two font) ── -->
+<script>
+  // MathJax-script below is `defer`, so it doesn't actually execute until
+  // after the document finishes parsing — but the plain (non-defer) scripts
+  // near the end of <body> (forum.js etc.) run immediately as the parser
+  // reaches them, which is BEFORE that deferred script runs. Anything that
+  // calls renderMathIn() at load time (e.g. forum.js building its
+  // insert-equation quick grid) would otherwise find `MathJax.typesetPromise`
+  // missing and silently skip typesetting, permanently. window.MathJaxReady
+  // resolves once MathJax has actually finished starting up, so callers can
+  // await it instead of racing it.
+  // Some users' browsers had previously toggled MathJax's a11y "Explorer"
+  // on via its right-click context menu, which MathJax persists to
+  // localStorage — so it kept coming back on reload even with the menu
+  // itself disabled below. Wipe any stored setting so everyone starts clean.
+  try { localStorage.removeItem('MathJax-Menu-Settings'); } catch (e) {}
+
+  window.MathJaxReady = new Promise(resolve => {
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      chtml: {
+        fontURL: 'vendor/mathjax/fonts/woff'
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+        // Disable MathJax's built-in accessibility popups (Explorer speech
+        // text + braille overlay, right-click menu, assistive MathML) —
+        // these were showing up as intrusive white boxes over equations.
+        enableMenu: false,
+        menuOptions: {
+          settings: {
+            assistiveMml: false,
+            collapsible: false,
+            explorer: false,
+            inTabOrder: false
+          }
+        }
+      },
+      startup: {
+        typeset: false,
+        ready() {
+          MathJax.startup.defaultReady();
+          resolve();
+        }
+      }
+    };
+  });
+</script>
+<script defer id="MathJax-script" src="vendor/mathjax/mathjax-stix2.js"></script>
+</head>
+<body>
+
+<!-- ── Course identity — must load before ANY script that reads
+     STORAGE_PREFIX/SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY, which in
+     practice means before banner-manager.js below. See its own header
+     comment for what it does. ── -->
+<script src="js/course-config.js"></script>
+
+<!-- ── Version update notification banner ── -->
+<div id="update-banner" role="status" aria-live="polite">
+  <span class="banner-icon">🔔</span>
+  <span class="banner-text">New version available: <strong id="banner-new-version"></strong></span>
+  <button class="banner-reload" onclick="location.reload(true)">Reload</button>
+  <button class="banner-dismiss" onclick="dismissUpdate()" title="Dismiss">✕</button>
+</div>
+
+<!-- ── Bug report nudge banner ── -->
+<div id="bug-report-banner" role="status" aria-live="polite">
+  <span class="banner-icon">🐛</span>
+  <span class="banner-text">Found a bug or mistake? <strong><a href="https://t.me/Aoi_Kuro" target="_blank" rel="noopener" id="bug-report-link">Report on Telegram</a></strong></span>
+  <button class="banner-dismiss" onclick="dismissBugBanner()" title="Dismiss">✕</button>
+</div>
+
+<!-- ── Theme nudge banner ── -->
+<div id="theme-nudge-banner" role="status" aria-live="polite">
+  <span class="banner-icon">🎨</span>
+  <span class="banner-text">Trying the <strong id="theme-nudge-name">Theme</strong> theme — check the palette icon for more</span>
+  <button class="banner-dismiss" onclick="dismissThemeNudge()" title="Dismiss">✕</button>
+</div>
+
+<!-- ── Custom theme modal ──
+     Nothing here touches the live page until "Save & apply" — see themes.js. -->
+<div class="theme-modal-overlay" id="customThemeOverlay" onclick="if(event.target===this)closeCustomThemeModal()">
+  <div class="theme-modal">
+    <div class="theme-modal-header"><span>🎛 Custom theme</span><button onclick="closeCustomThemeModal()">✕</button></div>
+    <div class="theme-modal-tabs">
+      <button class="ctm-tab" data-mode="night" onclick="ctmTabClick('night')">🌙 Night</button>
+      <button class="ctm-tab" data-mode="day" onclick="ctmTabClick('day')">☀️ Day</button>
+    </div>
+    <div class="ctm-field"><label>Background</label><input type="color" id="ctm-bg" oninput="updateCustomField('bg', this.value)"></div>
+    <div class="ctm-field"><label>Text</label><input type="color" id="ctm-text" oninput="updateCustomField('text', this.value)"></div>
+    <div class="ctm-field"><label>Accent 1</label><input type="color" id="ctm-accent" oninput="updateCustomField('accent', this.value)"></div>
+    <div class="ctm-field"><label>Accent 2</label><input type="color" id="ctm-accent2" oninput="updateCustomField('accent2', this.value)"></div>
+
+    <div class="ctm-divider"></div>
+
+    <div class="ctm-field"><label>Roundness</label><input type="range" id="ctm-radius" min="0.15" max="1.8" step="0.05" oninput="updateCustomRadius(this.value)"></div>
+    <div class="ctm-field">
+      <label>Font</label>
+      <select id="ctm-font" onchange="updateCustomFont(this.value)">
+        <option value="plex">Plex</option>
+        <option value="grotesk">Grotesk</option>
+        <option value="quicksand">Quicksand</option>
+        <option value="mono">All-mono</option>
+      </select>
+    </div>
+
+    <div class="ctm-preview" id="ctm-preview">
+      <div class="ctm-preview-inner">
+        <div class="ctm-preview-row">
+          <span class="ctm-preview-chip accent">Accent</span>
+          <span class="ctm-preview-chip accent2">Accent 2</span>
+        </div>
+        <div class="ctm-preview-text">The quick brown fox jumps.</div>
+      </div>
+    </div>
+
+    <div class="ctm-actions">
+      <button class="ctm-btn" onclick="closeCustomThemeModal()">Cancel</button>
+      <button class="ctm-btn primary" onclick="saveCustomTheme()">Save &amp; apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- Site logo -->
+<a id="siteLogoLink" class="site-logo-link" href="#" onclick="goToMainMenu();return false;" title="Main menu">
+  <img src="favicon/favicon.svg" alt="Logo" class="site-logo-img">
+</a>
+
+<!-- Theme toggle -->
+<div class="theme-toggle-wrap">
+  <button class="palette-icon-btn" id="manualBtn" onclick="toggleManualScreen()" title="User manual">📖</button>
+  <button class="palette-icon-btn" id="paletteBtn" onclick="toggleThemePanel(event)" title="Color themes">🎨</button>
+  <span class="theme-icon">🌙</span>
+  <div class="toggle-track" id="themeTrack" onclick="toggleTheme()">
+    <div class="toggle-knob"></div>
+  </div>
+  <span class="theme-icon">☀️</span>
+</div>
+
+<!-- Theme picker panel -->
+<div class="theme-panel" id="themePanel">
+  <div class="theme-panel-title">Color theme</div>
+  <div class="theme-grid" id="themeGrid"></div>
+  <button class="theme-custom-btn" id="customThemeBtn" onclick="openCustomThemeModal()">🎛 Edit custom…</button>
+</div>
+
+<!-- ── Landing screen ── -->
+<div id="landingScreen">
+  <div class="landing-box">
+    <div class="landing-eyebrow" id="eyebrowLandingPractice">PHYS162 · Practice Mode</div>
+    <h1 class="landing-title" id="landingTitle">Electricity &amp; Fields <span>Quiz</span></h1>
+    <div class="mc-splash-wrap"><span class="mc-splash" id="splashText" role="button" tabindex="0" title="Tap for another" onclick="showNewSplash()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showNewSplash();}"></span></div>
+
+    <!-- Signed-in identity avatar — mirrors the splash badge: same height,
+         opposite (left) side of the box, tilted the other way. Static
+         identicon, tap to open Stats. Hidden until a nickname is claimed;
+         see renderLandingIdentity in js/forum.js. -->
+    <div class="landing-identity-wrap">
+      <button type="button" class="landing-identity-btn" id="landingIdentityBtn" onclick="handleLandingIdentityClick()" title="Open stats" style="display:none;">
+        <span class="landing-identity-avatar" id="landingIdentityAvatar"></span>
+      </button>
+    </div>
+
+    <p class="landing-sub">Choose a quiz set, pick a mode, and hit start</p>
+
+    <div class="quiz-select-grid" id="quizSelectGrid">
+      <!-- Buttons are rendered dynamically by renderQuizButtons() -->
+    </div>
+
+    <div class="mode-switch-section">
+      <div class="mode-switch-label">Mode</div>
+      <div class="mode-switch-row">
+        <span class="mode-option active" id="modeLabelQuiz">🎯 Random 6</span>
+        <div class="mode-toggle-track" id="modeToggle" onclick="toggleMode()">
+          <div class="mode-toggle-knob"></div>
+        </div>
+        <span class="mode-option" id="modeLabelSolveAll">⚡ Solve them all</span>
+      </div>
+      <div class="cumulative-switch-wrap" id="cumulativeSwitchWrap">
+        <div class="mode-switch-row">
+          <span class="mode-option active" id="cumLabelSingle">📝 Single quiz</span>
+          <div class="mode-toggle-track" id="cumulativeToggle" onclick="toggleCumulativeMode()">
+            <div class="mode-toggle-knob"></div>
+          </div>
+          <span class="mode-option" id="cumLabelCumulative">📚 Cumulative</span>
+        </div>
+      </div>
+    </div>
+
+    <button class="landing-start-btn" onclick="startSelected()">Start →</button>
+    <button class="stats-launch-btn" onclick="openStatsScreen()">📊 Stats</button>
+    <div class="forum-launch-wrap">
+      <button class="forum-launch-btn" onclick="openForumScreen()">💬 Forum</button>
+      <span class="forum-badge" id="forumUnreadBadge" style="display:none;"></span>
+      <span class="forum-at-badge" id="forumUnreadAtBadge" title="Someone tagged you">@</span>
+    </div>
+    <p style="margin-top:1.4rem;font-family:var(--mono);font-size:0.75rem;color:var(--muted);letter-spacing:0.05em;">
+      made by Ansar Seitkali · <a href="https://t.me/Aoi_Kuro" target="_blank" style="color:var(--accent);text-decoration:none;">@Aoi_Kuro</a> · Summer 2026
+    </p>
+
+    <!-- ── Changelog trigger button (electromagnetic charge UI) ── -->
+    <div class="changelog-trigger-wrap">
+      <button class="changelog-btn" id="changelogBtn" onclick="toggleChangelog()" title="Changelog">
+        <canvas id="chargeCanvas" width="32" height="32"></canvas>
+      </button>
+      <span class="changelog-btn-label" id="changelogBtnLabel">v<span id="changelogBtnVersion">—</span> · changelog</span>
+    </div>
+
+    <!-- ── Changelog panel ── -->
+    <div class="changelog-panel" id="changelogPanel">
+      <div class="changelog-header">
+        <span class="changelog-title">Changelog</span>
+        <div class="changelog-header-actions">
+          <button class="field-lines-toggle" id="fieldLinesToggle" onclick="toggleFieldLines()" title="Hide field lines">⚡ field lines</button>
+          <a class="changelog-github-link" href="https://github.com/Aoi-Kuro/impulse" target="_blank" rel="noopener" title="View source on GitHub">GitHub ↗</a>
+          <button class="changelog-close" onclick="toggleChangelog()" title="Close">✕</button>
+        </div>
+      </div>
+      <div class="changelog-list" id="changelogList">
+        <!-- Rendered by renderChangelog() -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Solve-all choice page ── -->
+<div id="choicePage" class="hidden">
+  <div class="landing-box">
+    <div class="landing-eyebrow" id="eyebrowLandingSolveAll">PHYS162 · Solve them all</div>
+    <h2 class="landing-title" style="margin-bottom:0.5rem;">Choose order</h2>
+    <p class="landing-sub" id="solveAllModalDesc" style="margin-bottom:1.2rem;"></p>
+    <div id="solveAllResumeRow" style="display:none;margin-bottom:0.9rem;">
+      <button class="modal-choice-btn" style="background:var(--accent);color:var(--chrome-light);width:100%;padding:1rem 0.5rem;" onclick="startSolveAll('resume')">▶ Resume<br><span style="font-size:0.68rem;opacity:0.85;">restore saved progress &amp; order</span></button>
+    </div>
+    <div class="modal-choices" style="margin-bottom:1.5rem;">
+      <button class="modal-choice-btn" onclick="startSolveAll('ordered')"><span id="solveAllOrderedLabel">1 → N</span><br><span id="solveAllOrderedSub" style="font-size:0.68rem;color:var(--muted);">ordered</span></button>
+      <button class="modal-choice-btn" onclick="startSolveAll('unordered')">⇄ Shuffled<br><span id="solveAllShuffledSub" style="font-size:0.68rem;color:var(--muted);">random order</span></button>
+    </div>
+    <button onclick="closeSolveAllModal()" style="background:none;border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:0.78rem;padding:0.5rem 1.2rem;border-radius:4px;cursor:pointer;transition:color 0.15s,border-color 0.15s;" onmouseover="this.style.color='var(--text)';this.style.borderColor='var(--text)'" onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">← Back</button>
+  </div>
+</div>
+
+<!-- ── App page (quiz content) ── -->
+<div id="appPage">
+
+<div class="guide is-collapsed" id="guideMain">
+  <div class="guide-header">
+    <div class="guide-header-title"><span class="icon">✎</span><span>How to enter your answer</span></div>
+    <button class="guide-close" onclick="hideGuideManual()" title="Hide hint" aria-label="Hide hint">✕</button>
+  </div>
+
+  <div class="guide-section">
+    <div class="guide-section-title">Numbers</div>
+    <div class="guide-chip-row">
+      <div class="guide-chip"><code>1.56E4</code><span class="desc">= 15600</span></div>
+      <div class="guide-chip"><code>5E-2</code><span class="desc">= 0.05</span></div>
+      <div class="guide-chip"><code>1.56*10^4</code><span class="desc">× power-of-ten</span></div>
+      <div class="guide-chip"><code>10^-3</code><span class="desc">pure power of ten</span></div>
+      <div class="guide-chip"><code>-3.2E7</code><span class="desc">negative value</span></div>
+    </div>
+    <div class="guide-invalid-row">
+      <div class="guide-invalid-item"><span class="x">✕</span><code>1.6x10^5</code><span class="why">use E or *10^, not x</span></div>
+      <div class="guide-invalid-item"><span class="x">✕</span><code>1E(-3)</code><span class="why">no parens around exponent</span></div>
+      <div class="guide-invalid-item"><span class="x">✕</span><code>4.1 E 5</code><span class="why">no spaces around E</span></div>
+    </div>
+  </div>
+
+  <div class="guide-section">
+    <div class="guide-section-title">Units</div>
+    <div class="guide-chip-row">
+      <div class="guide-chip"><code>N/C</code><span class="desc">slash = division</span></div>
+      <div class="guide-chip"><code>m s^(-1)</code><span class="desc">space = multiply</span></div>
+      <div class="guide-chip"><code>m/s</code><span class="desc">same as m s^(-1)</span></div>
+      <div class="guide-chip"><code>N m</code><span class="desc">space = multiply</span></div>
+      <div class="guide-chip"><code>m^2</code><span class="desc">exponent with ^</span></div>
+      <div class="guide-chip"><code>kN m^(-2)</code><span class="desc">neg exp needs ( )</span></div>
+      <div class="guide-chip"><code>kg m s^(-2)</code><span class="desc">= kg m/s² = N</span></div>
+      <div class="guide-chip"><code>N m^2 C^(-1)</code><span class="desc">permutations OK</span></div>
+    </div>
+    <div class="guide-invalid-row">
+      <div class="guide-invalid-item"><span class="x">✕</span><code>N*m</code><span class="why">* not supported — use space</span></div>
+      <div class="guide-invalid-item"><span class="x">✕</span><code>m/s^(-2)</code><span class="why">( ) only on negative exponents</span></div>
+      <div class="guide-invalid-item"><span class="x">✕</span><code>kn or KN</code><span class="why">units are case-sensitive</span></div>
+    </div>
+  </div>
+
+  <div class="guide-section">
+    <div class="guide-section-title">SI prefixes</div>
+    <div class="guide-chip-row">
+      <div class="guide-chip"><code>p n µ/u m c</code><span class="desc">10⁻¹² → 10⁻²</span></div>
+      <div class="guide-chip"><code>k M G T</code><span class="desc">10³ → 10¹²</span></div>
+      <div class="guide-chip"><code>mm km ns</code><span class="desc">prefix + unit, no space</span></div>
+      <div class="guide-chip"><code>kOhm MHz GPa</code><span class="desc">works on most SI units</span></div>
+    </div>
+    <div class="guide-note-inline">write prefix directly before the unit — e.g. <code>mm</code>, <code>km</code>, <code>ns</code>, <code>µF</code> or <code>uF</code> — not on <code>kg</code> (already prefixed)</div>
+  </div>
+
+  <div class="guide-footer">
+    <span><b>Score:</b> value✓+unit✓ = 1.0 · value✓+unit✗ = 0.9 · value✗ = 0 · ±1% tolerance</span>
+  </div>
+</div>
+
+<!-- Top row: recall button (left) shown while guide is collapsed, main menu (right, hidden while hint is open) -->
+<div class="quiz-top-row">
+  <div class="hint-recall-wrap visible" id="hintRecallWrap">
+    <button class="btn-recall-hint" onclick="showGuide()">
+      <span>📋</span> Show hint (units &amp; numbers)
+    </button>
+  </div>
+  <button class="btn-exit-solve quiz-top-row-menu" onclick="goToMainMenu()">☰ Main menu</button>
+</div>
+
+<header id="quizHeader">
+  <div class="eyebrow" id="eyebrowQuizHeader">PHYS162 · Practice Mode</div>
+  <h1>Electricity &amp; Fields <span>Quiz</span></h1>
+  <div class="filter-active-note" id="filterActiveNote" style="display:none;">Filter is active: this draw is pulling from a narrowed problem pool</div>
+</header>
+
+<main id="quizContainer"></main>
+
+<div class="actions">
+  <button class="btn btn-primary" id="checkBtn" onclick="checkAll()">Check answers</button>
+  <button class="btn btn-secondary" onclick="newQuiz()">New quiz ↺</button>
+</div>
+
+<div class="result-panel" id="resultPanel">
+  <div class="result-big" id="resultScore"></div>
+  <div class="result-label" id="resultMaxScore">final score / 6</div>
+  <div class="result-breakdown" id="resultBreakdown"></div>
+</div>
+
+<div class="filter-reset-row" id="filterResetRow">
+  <button class="btn btn-secondary filter-reset-btn" onclick="resetFilterPreferences()">↺ Reset filter preferences</button>
+</div>
+<div class="topic-selector" id="topicSelector">
+  <div class="topic-selector-header">Problem Pool Filter</div>
+</div>
+
+<!-- ── Solve-all mode ── -->
+<div id="solveAllMode">
+  <div class="guide is-collapsed" id="guideSolve">
+    <div class="guide-header">
+      <div class="guide-header-title"><span class="icon">✎</span><span>How to enter your answer</span></div>
+      <button class="guide-close" onclick="hideGuideManualSolve()" title="Hide hint" aria-label="Hide hint">✕</button>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-section-title">Numbers</div>
+      <div class="guide-chip-row">
+        <div class="guide-chip"><code>1.56E4</code><span class="desc">= 15600</span></div>
+        <div class="guide-chip"><code>5E-2</code><span class="desc">= 0.05</span></div>
+        <div class="guide-chip"><code>1.56*10^4</code><span class="desc">× power-of-ten</span></div>
+        <div class="guide-chip"><code>10^-3</code><span class="desc">pure power of ten</span></div>
+        <div class="guide-chip"><code>-3.2E7</code><span class="desc">negative value</span></div>
+      </div>
+      <div class="guide-invalid-row">
+        <div class="guide-invalid-item"><span class="x">✕</span><code>1.6x10^5</code><span class="why">use E or *10^, not x</span></div>
+        <div class="guide-invalid-item"><span class="x">✕</span><code>1E(-3)</code><span class="why">no parens around exponent</span></div>
+        <div class="guide-invalid-item"><span class="x">✕</span><code>4.1 E 5</code><span class="why">no spaces around E</span></div>
+      </div>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-section-title">Units</div>
+      <div class="guide-chip-row">
+        <div class="guide-chip"><code>N/C</code><span class="desc">slash = division</span></div>
+        <div class="guide-chip"><code>m s^(-1)</code><span class="desc">space = multiply</span></div>
+        <div class="guide-chip"><code>m/s</code><span class="desc">same as m s^(-1)</span></div>
+        <div class="guide-chip"><code>N m</code><span class="desc">space = multiply</span></div>
+        <div class="guide-chip"><code>m^2</code><span class="desc">exponent with ^</span></div>
+        <div class="guide-chip"><code>kN m^(-2)</code><span class="desc">neg exp needs ( )</span></div>
+        <div class="guide-chip"><code>kg m s^(-2)</code><span class="desc">= kg m/s² = N</span></div>
+        <div class="guide-chip"><code>N m^2 C^(-1)</code><span class="desc">permutations OK</span></div>
+      </div>
+      <div class="guide-invalid-row">
+        <div class="guide-invalid-item"><span class="x">✕</span><code>N*m</code><span class="why">* not supported — use space</span></div>
+        <div class="guide-invalid-item"><span class="x">✕</span><code>m/s^(-2)</code><span class="why">( ) only on negative exponents</span></div>
+        <div class="guide-invalid-item"><span class="x">✕</span><code>kn or KN</code><span class="why">units are case-sensitive</span></div>
+      </div>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-section-title">SI prefixes</div>
+      <div class="guide-chip-row">
+        <div class="guide-chip"><code>p n µ/u m c</code><span class="desc">10⁻¹² → 10⁻²</span></div>
+        <div class="guide-chip"><code>k M G T</code><span class="desc">10³ → 10¹²</span></div>
+        <div class="guide-chip"><code>mm km ns</code><span class="desc">prefix + unit, no space</span></div>
+        <div class="guide-chip"><code>kOhm MHz GPa</code><span class="desc">works on most SI units</span></div>
+      </div>
+      <div class="guide-note-inline">write prefix directly before the unit — e.g. <code>mm</code>, <code>km</code>, <code>ns</code>, <code>µF</code> or <code>uF</code> — not on <code>kg</code> (already prefixed)</div>
+    </div>
+
+    <div class="guide-footer">
+      <span><b>Score:</b> value✓+unit✓ = 1.0 · value✓+unit✗ = 0.9 · value✗ = 0 · ±1% tolerance</span>
+    </div>
+  </div>
+
+  <!-- Top row: recall button (left) shown while guide is collapsed, main menu (right, hidden while hint is open) -->
+  <div class="solve-top-row">
+    <div class="hint-recall-wrap visible" id="hintRecallWrapSolve">
+      <button class="btn-recall-hint" onclick="showGuideSolve()">
+        <span>📋</span> Hint
+      </button>
+    </div>
+    <button class="btn-exit-solve solve-top-row-menu" onclick="goToMainMenu()">☰ Main menu</button>
+  </div>
+
+  <header class="solve-all-quiz-header" id="solveAllHeader">
+    <div class="eyebrow" id="eyebrowSolveHeader">PHYS162 · Solve Mode</div>
+    <h1>Electricity &amp; Fields <span>Quiz</span></h1>
+    <div class="solve-all-tag">All Problems</div>
+  </header>
+
+  <div class="solve-all-actions-row">
+    <button class="btn-reset-progress" onclick="resetSolveAll()">🗑 Reset Progress</button>
+    <button class="btn-rerender-eqs" onclick="rerenderSolveAllEquations()">🔁 Rerender Equations</button>
+  </div>
+  <div id="solveAllContainer"></div>
+</div>
+
+<!-- ── Mistakes quiz mode ── -->
+<div id="mistakesMode">
+  <div class="mistakes-header">
+    <div class="mistakes-title">📋 Wrong Problems — Retry Quiz</div>
+    <button class="btn-exit-solve" onclick="exitMistakes()">← Back to Solve All</button>
+  </div>
+  <div id="mistakesContainer"></div>
+</div>
+
+<!-- ── Mistakes order modal ── -->
+<div class="modal-backdrop" id="mistakesModal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeMistakesModal()">✕</button>
+    <div class="modal-title">Quiz: wrong problems</div>
+    <div class="modal-desc" id="mistakesModalDesc">Practice only the problems you got wrong or had revealed. Choose order.</div>
+    <div class="modal-choices">
+      <button class="modal-choice-btn" onclick="startMistakes('ordered')">1 → N<br><span style="font-size:0.68rem;color:var(--muted);">ordered</span></button>
+      <button class="modal-choice-btn" onclick="startMistakes('unordered')">⇄ Shuffled<br><span style="font-size:0.68rem;color:var(--muted);">random order</span></button>
+    </div>
+  </div>
+</div>
+
+
+</div><!-- /#appPage -->
+
+<!-- ── Sticky score badge (outside #appPage to avoid transform containing-block issue) ── -->
+<div id="stickyScore">
+  <div class="sticky-score-val"><span id="stickyNum">0</span><span style="color:var(--muted);font-size:1rem;">/</span><span id="stickyDen">0</span></div>
+  <div class="sticky-score-label">solved <span class="sfp-live-dot sfp-live-dot-syncing" id="solveAllSyncDot" title="Not synced yet"></span></div>
+  <div class="sticky-breakdown">
+    <div class="sticky-stat">
+      <span class="sticky-stat-num s-correct" id="stickyCorrect">0</span>
+      <span class="sticky-stat-lbl">✓</span>
+    </div>
+    <div class="sticky-stat" style="color:var(--border);">
+      <span style="font-size:0.9rem;line-height:1;color:var(--border);">│</span>
+    </div>
+    <div class="sticky-stat">
+      <span class="sticky-stat-num s-partial" id="stickyPartial">0</span>
+      <span class="sticky-stat-lbl">½</span>
+    </div>
+    <div class="sticky-stat" style="color:var(--border);">
+      <span style="font-size:0.9rem;line-height:1;color:var(--border);">│</span>
+    </div>
+    <div class="sticky-stat">
+      <span class="sticky-stat-num s-wrong" id="stickyWrong">0</span>
+      <span class="sticky-stat-lbl">✗</span>
+    </div>
+  </div>
+  <button class="sticky-retry-btn" id="stickyRetryBtn" onclick="openMistakesModal()">📋 Quiz: wrong problems</button>
+</div>
+
+<!-- ── Stats Screen ── -->
+<div id="statsScreen">
+  <div class="stats-wrap">
+    <div class="stats-header">
+      <div class="stats-header-left">
+        <div>
+          <div class="stats-title">📊 Stats</div>
+        </div>
+      </div>
+      <button class="stats-close-btn" onclick="closeStatsScreen()">✕ Close</button>
+    </div>
+    <div class="stats-forum-panel" id="statsForumPanel">
+      <div class="sfp-title">👥 Forum &amp; Site <span class="sfp-live-dot" id="sfpLiveDot" title="Live" style="display:none;"></span></div>
+      <div class="sfp-identity-row" id="sfpIdentityRow">
+        <div class="sfp-identity-avatar" id="sfpAvatar"></div>
+        <div class="sfp-identity-info">
+          <div class="sfp-identity-name-row">
+            <div class="sfp-identity-name" id="sfpNickname">—</div>
+            <div class="sfp-settings-wrap">
+              <button type="button" class="sfp-settings-btn" id="sfpSettingsBtn" onclick="toggleSfpSettingsMenu(event)" title="Nickname settings">⚙︎</button>
+              <div class="sfp-settings-menu" id="sfpSettingsMenu">
+                <button type="button" class="sfp-settings-item" id="sfpSettingsGettingStartedItem" onclick="closeSfpSettingsMenu(); openSfpGettingStarted();" style="display:none;">Getting started</button>
+                <button type="button" class="sfp-settings-item" id="sfpSettingsChangeItem" onclick="closeSfpSettingsMenu(); openSfpNicknameEditor();">Change nickname</button>
+                <button type="button" class="sfp-settings-item" id="sfpSettingsPinItem" onclick="closeSfpSettingsMenu(); openForumPinModal();" style="display:none;">Your PIN</button>
+                <button type="button" class="sfp-settings-item" id="sfpSettingsExitItem" onclick="closeSfpSettingsMenu(); openForumExitDeviceModal();" style="display:none;">Exit</button>
+              </div>
+            </div>
+          </div>
+          <div class="sfp-identity-joined" id="sfpJoinedAt">—</div>
+        </div>
+        <div class="sfp-identity-stats" id="sfpGrid">
+          <div class="sfp-cell">
+            <div class="sfp-label">My total forum messages</div>
+            <div class="sfp-value" id="sfpMyMessages">—</div>
+          </div>
+          <div class="sfp-cell">
+            <div class="sfp-label">My total quizzes taken</div>
+            <div class="sfp-value" id="sfpMyQuizzes">—</div>
+          </div>
+        </div>
+      </div>
+      <div class="sfp-dial-row">
+        <div class="sfp-dial-wrap">
+          <div class="sfp-label">Total forum participants</div>
+          <svg class="sfp-dial" id="sfpDialParticipants" viewBox="0 0 150 160"></svg>
+        </div>
+        <div class="sfp-dial-wrap">
+          <div class="sfp-label">Total visits</div>
+          <svg class="sfp-dial" id="sfpDialVisits" viewBox="0 0 150 160"></svg>
+        </div>
+        <div class="sfp-dial-wrap">
+          <div class="sfp-label">Total quizzes taken</div>
+          <svg class="sfp-dial" id="sfpDialQuizzes" viewBox="0 0 150 160"></svg>
+        </div>
+      </div>
+    </div>
+    <div class="stats-legend" id="statsLegend"></div>
+    <div class="stats-chart-wrap">
+      <canvas id="statsChart"></canvas>
+      <div class="chart-tooltip" id="chartTooltip"></div>
+    </div>
+    <div class="stats-filters" id="statsFilters"></div>
+    <div id="statsTableWrap"></div>
+  </div>
+</div>
+
+<!-- ── Attempt review screen (read-only replay of one synced attempt) ──
+     Populated by openAttemptReview(hash) / renderAttemptReview() in
+     js/stats.js. Reuses .problem-card/.answer-row/.feedback etc from the
+     live quiz CSS so a reviewed attempt looks like an already-checked
+     Random 6 run — the "toolbar" area that would normally hold topic
+     filters instead shows this attempt's own metadata (quiz, mode, date,
+     duration, score), via #reviewMeta. -->
+<div id="reviewScreen">
+  <div class="review-wrap">
+    <div class="review-header">
+      <button class="stats-close-btn" onclick="closeAttemptReview()">✕ Close</button>
+      <div class="review-meta" id="reviewMeta"><!-- Rendered by renderAttemptReview() --></div>
+    </div>
+    <div class="review-problems" id="reviewProblems"><!-- Rendered by renderAttemptReview() --></div>
+  </div>
+</div>
+
+<!-- ── Forum Screen ── -->
+<div id="forumScreen">
+  <div class="forum-wrap">
+    <div class="forum-header">
+      <div class="forum-header-left">
+        <div>
+          <div class="forum-title">💬 Forum</div>
+        </div>
+      </div>
+      <div class="forum-header-right">
+        <button type="button" class="forum-search-toggle-btn" id="forumSearchToggleBtn" onclick="toggleForumSearch()" title="Search all messages">🔍</button>
+        <button type="button" class="forum-push-toggle-btn" id="forumPushToggleBtn" title="Get notified when someone tags you, even with the site closed">🔕</button>
+        <button class="forum-close-btn" onclick="closeForumScreen()">✕ Close</button>
+      </div>
+    </div>
+    <!-- Hidden until the 🔍 button is tapped. Searches every message in every
+         topic regardless of the Show filter below — see runForumSearch() in
+         forum.js. -->
+    <div class="forum-search-bar" id="forumSearchBar" style="display:none;">
+      <input type="text" id="forumSearchInput" class="forum-search-input" placeholder="Search all messages…" oninput="onForumSearchInput()">
+      <button type="button" class="forum-search-clear-btn" id="forumSearchClearBtn" onclick="exitForumSearch()" title="Close search">✕</button>
+    </div>
+    <!-- Only populated/shown when the forum is opened via a per-problem
+         forum button (openForumForProblem, js/forum.js) — a collapsed-by-
+         default readout of that problem's own text, so you don't have to
+         leave the thread to re-read what's being discussed. -->
+    <div class="forum-problem-context" id="forumProblemContext" style="display:none;">
+      <button type="button" class="forum-problem-context-toggle" id="forumProblemContextToggle" onclick="toggleForumProblemContext()">▸ Show problem</button>
+      <div class="forum-problem-context-body" id="forumProblemContextBody" style="display:none;"></div>
+    </div>
+    <div class="forum-composer" id="forumComposer">
+      <div class="forum-identity-area" id="forumIdentityArea">
+        <div class="forum-identity-unclaimed" id="forumIdentityUnclaimed">
+          <input type="text" id="forumNameInput" class="forum-name-input" placeholder="Your name" maxlength="40" oninput="saveForumName(this.value.trim())">
+          <button type="button" class="forum-identity-link-btn" onclick="openForumClaimModal('restore', document.getElementById('forumNameInput').value.trim())">Already claimed a nickname on another device?</button>
+        </div>
+        <div class="forum-identity-claimed" id="forumIdentityClaimed" style="display:none;">
+          <span class="forum-identity-label">
+            <span class="forum-identity-avatar" id="forumIdentityAvatar"></span>
+            <strong id="forumIdentityNicknameText">—</strong>
+          </span>
+          <div class="forum-identity-actions">
+            <button type="button" class="forum-identity-btn" onclick="openForumPinModal()" title="Show my PIN">PIN</button>
+            <button type="button" class="forum-identity-btn" onclick="openForumChangeNicknameModal()" title="Change nickname">Change</button>
+            <button type="button" class="forum-identity-btn" onclick="openForumExitDeviceModal()" title="Exit this device (keeps your nickname claimed)">Exit</button>
+          </div>
+        </div>
+      </div>
+      <!-- Shown/hidden by checkForumBanStatus() in js/forum.js. Non-dismissible
+           (unlike the bottom-of-page BannerManager banners) since it reflects
+           an actual server-enforced restriction, not a nudge. -->
+      <div class="forum-ban-banner" id="forumBanBanner" style="display:none;">
+        <span class="banner-icon">🚫</span>
+        <span class="banner-text">You're temporarily banned from posting (repeated flagged messages). Time left: <strong id="forumBanRemaining">—</strong></span>
+      </div>
+      <div class="forum-composer-scope-row" id="forumComposerScopeRow">
+        <select id="forumScopeQuizSelect" class="forum-scope-select" onchange="onForumScopeQuizChange()">
+          <option value="global">🌐 Global</option>
+        </select>
+        <select id="forumScopeProblemSelect" class="forum-scope-select" style="display:none;" onchange="onForumScopeProblemChange()"></select>
+      </div>
+      <div class="forum-reply-banner" id="forumReplyBanner" style="display:none;">
+        <span id="forumReplyBannerText"></span>
+        <button type="button" onclick="cancelForumReply()">✕</button>
+      </div>
+      <div class="forum-composer-body-row">
+        <div class="forum-body-input-wrap" id="forumBodyInputWrap">
+          <textarea id="forumBodyInput" class="forum-body-input" placeholder="Write a message, use LaTeX, tag your peers, or call @gemini" maxlength="1000" rows="2"></textarea>
+          <div class="forum-body-mirror" id="forumBodyMirror" aria-hidden="true"></div>
+          <div class="forum-mention-suggest" id="forumMentionSuggest" style="display:none;"></div>
+        </div>
+        <div class="forum-composer-actions" id="forumComposerActions">
+          <button type="button" id="forumEqBtn" class="forum-eq-btn" onclick="openForumEquationModal()" title="Insert equation">∑</button>
+          <button id="forumSendBtn" class="forum-send-btn" onclick="submitForumMessage()">Send</button>
+          <button type="button" id="forumRetryLatexBtn" class="forum-send-btn forum-latex-retry-btn" style="display:none;" onclick="submitForumMessage()" title="Try converting again">↻</button>
+          <button type="button" id="forumForceSendBtn" class="forum-send-btn forum-latex-force-btn" style="display:none;" onclick="submitForumMessage({ forceLatex: true })" title="Post without converting">Post as is</button>
+        </div>
+      </div>
+      <div class="forum-composer-status" id="forumComposerStatus"></div>
+    </div>
+    <div class="forum-filters sf-group" id="forumFilters">
+      <span class="sf-label">Show</span>
+      <button class="sf-chip active" data-filter="all" onclick="setForumFilter('all')">All</button>
+      <button class="sf-chip" data-filter="global" onclick="setForumFilter('global')">🌐 Global</button>
+      <button class="sf-chip" data-filter="q1" style="--chip-color:var(--q1)" onclick="setForumFilter('q1')">Quiz 1</button>
+      <button class="sf-chip" data-filter="q2" style="--chip-color:var(--q2)" onclick="setForumFilter('q2')">Quiz 2</button>
+      <button class="sf-chip" data-filter="q3" style="--chip-color:var(--q3)" onclick="setForumFilter('q3')">Quiz 3</button>
+      <button class="sf-chip" data-filter="q4" style="--chip-color:var(--q4)" onclick="setForumFilter('q4')">Quiz 4</button>
+      <select id="forumFilterProblemSelect" class="forum-filter-subselect" style="display:none;" onchange="onForumFilterProblemChange()"></select>
+    </div>
+    <!-- Pinned welcome message (id in COURSES.<course>.pinnedMessageId,
+         js/course-config.js) —
+         painted here by renderForumPinnedBanner() every time the forum
+         opens, from any entry point and any filter, until dismissed (own ✕)
+         or 24h after first shown, at which point it's just an ordinary
+         message again. Sits between the filters and the ordinary message
+         list — after the name/message panel and filters, right before the
+         rest of the thread. -->
+    <div class="forum-pinned-wrap" id="forumPinnedWrap" style="display:none;">
+      <!-- Rendered by renderForumPinnedBanner() -->
+    </div>
+    <div class="forum-list-wrap">
+      <div class="forum-new-msgs-pill" id="forumNewMsgsPill" style="display:none;" onclick="scrollForumToTop()"></div>
+      <div class="forum-list" id="forumMessageList">
+        <!-- Rendered by loadForumInitial() -->
+      </div>
+    </div>
+    <button class="forum-load-more-btn" id="forumLoadMoreBtn" onclick="loadForumOlder()" style="display:none;">Load older messages</button>
+  </div>
+</div>
+
+<!-- ── User manual screen ──
+     Structurally mirrors #forumScreen/#statsScreen (same open/close
+     animation, same header layout — see openManualScreen/closeManualScreen
+     in js/manual.js). Body is a two-column layout: a collapsible section/
+     subsection tree on the left (.manual-sidebar) and the selected
+     subsection's content on the right (.manual-content), empty until
+     something's picked. Content supports inline ($...$) and display
+     ($$...$$) LaTeX via the same renderMathIn() helper (js/math-render.js)
+     the forum and quiz screens use. -->
+<div id="manualScreen">
+  <div class="manual-wrap">
+    <div class="manual-header">
+      <div class="manual-header-left">
+        <div class="manual-title">📖 User manual</div>
+      </div>
+    </div>
+    <div class="manual-body">
+      <nav class="manual-sidebar" id="manualSidebar">
+        <!-- Rendered by renderManualSidebar() in js/manual.js -->
+      </nav>
+      <div class="manual-content" id="manualContent">
+        <div class="manual-placeholder">
+          <div class="manual-placeholder-icon">📖</div>
+          <div>Pick a topic on the left to read about it here.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Forum: hover preview for $...$/$$...$$ typed directly in the message box ── -->
+<div class="forum-eq-hover-preview" id="forumEqHoverPreview"></div>
+
+<!-- ── Forum: insert-equation modal ── -->
+<div class="forum-eq-modal-backdrop" id="forumEqModalBackdrop" onclick="if(event.target===this) closeForumEquationModal()">
+  <div class="forum-eq-modal-box">
+    <div class="forum-eq-modal-header">
+      <span>Insert equation</span>
+      <button onclick="closeForumEquationModal()">✕</button>
+    </div>
+    <textarea id="forumEqInput" class="forum-eq-input" rows="3" placeholder="e.g. E = mc^2" oninput="updateForumEquationPreview()"></textarea>
+    <div class="forum-eq-quick-grid" id="forumEqQuickGrid">
+      <!-- Rendered by renderForumEqQuickGrid() -->
+    </div>
+    <label class="forum-eq-display-toggle">
+      <input type="checkbox" id="forumEqDisplayToggle" onchange="updateForumEquationPreview()">
+      Own line (display equation)
+    </label>
+    <div class="forum-eq-preview-label">Preview</div>
+    <div class="forum-eq-preview" id="forumEqPreview">—</div>
+    <div class="forum-eq-modal-actions">
+      <button class="forum-eq-modal-btn" onclick="closeForumEquationModal()">Cancel</button>
+      <button class="forum-eq-modal-btn primary" onclick="insertForumEquation()">Insert</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Getting Started screen: shown once, before the nickname-claim modal,
+     the first time a device (no nickname claimed yet) hits quiz Start —
+     see startSelected() in js/quiz-engine.js. Purely informational: its
+     own button doesn't claim anything, it just hands off to
+     openForumClaimModal('create', ...) same as before. Lives in its own
+     .stats-modal-box (widened via .gs-modal-box) so the FAQ list has room
+     to breathe; see css/forum.css for the FAQ accordion rules and
+     js/forum.js for openGettingStartedModal()/toggleGsFaq(). -->
+<div class="stats-modal-backdrop" id="gettingStartedModalBackdrop" onclick="if(event.target===this) closeGettingStartedModal()">
+  <div class="stats-modal-box gs-modal-box">
+    <div class="stats-modal-title">Getting Started!</div>
+    <div class="stats-modal-desc gs-modal-desc">
+      To get started, choose a <strong>nickname</strong>. It’s used to label your quiz attempts and forum posts and sync your stats across devices. <strong>Your stats are private </strong>, and your nickname is only visible when you make a forum post.
+    </div>
+    <div class="stats-modal-actions gs-start-row">
+      <button type="button" class="stats-modal-btn primary gs-start-btn" onclick="proceedFromGettingStarted()">Start</button>
+    </div>
+    <div class="gs-faq">
+      <div class="gs-faq-heading">FAQ</div>
+      <div class="gs-faq-item">
+        <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
+          <span>What is a nickname?</span><span class="gs-faq-caret">›</span>
+        </button>
+        <div class="gs-faq-a">A short display name that is shown next to your forum posts and used to sync your quiz progress across your devices. No email, phone number, or real name involved. The nickname is not seen by anybody until you create your first post.</div>
+      </div>
+      <div class="gs-faq-item">
+        <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
+          <span>Is my data being tracked?</span><span class="gs-faq-caret">›</span>
+        </button>
+        <div class="gs-faq-a">The database of the platform only stores your forum posts linked to your nickname (seen by anybody) and your quiz attempts and progress (for sync across devices). Nothing else is stored by the platform. Some other data is collected by service providers, and you can read more about it in the manual (📖): go “📊 Stats and Synchronization”, then “What Gets Tracked”.</div>
+      </div>
+      <div class="gs-faq-item">
+        <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
+          <span>Why do I need to make a nickname?</span><span class="gs-faq-caret">›</span>
+        </button>
+        <div class="gs-faq-a">It's what your attempts and posts are labeled with, and what lets your stats follow you if you switch devices or use multiple of them. Your stats are only seen by you.</div>
+      </div>
+      <div class="gs-faq-item">
+        <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
+          <span>Can I go without a nickname?</span><span class="gs-faq-caret">›</span>
+        </button>
+        <div class="gs-faq-a">Unfortunately, no; a nickname is required to start. That said, you're still fully anonymous: it's just a name you make up so that the system can function properly, not tied to your real identity in any way.</div>
+      </div>
+      <div class="gs-faq-item">
+        <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
+          <span>Can I change my nickname later?</span><span class="gs-faq-caret">›</span>
+        </button>
+        <div class="gs-faq-a">Yes, any time, from the Stats screen. You'll need the 5-digit PIN you're given when you first claim a name, so keep it somewhere safe (or see it again in the forum panel).</div>
+      </div>
+      <div class="gs-faq-item">
+        <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
+          <span>What if I use the app on a different device?</span><span class="gs-faq-caret">›</span>
+        </button>
+        <div class="gs-faq-a">Enter your existing nickname and PIN there to restore it: your stats and forum identity will carry over instead of starting fresh. You can use the platform simultaneously on both devices, though.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Forum: claim / restore nickname modal ──
+     Two modes, set by openForumClaimModal(mode):
+       'restore' — person clicks "Already claimed a nickname on another
+                   device?" — both fields editable.
+       'verify'  — auto-claim on Send found the typed name already taken;
+                   nickname is prefilled/locked, only the PIN is needed,
+                   and on success the pending message is sent automatically. -->
+<div class="stats-modal-backdrop" id="forumClaimModalBackdrop" onclick="if(event.target===this) closeForumClaimModal()">
+  <div class="stats-modal-box">
+    <div class="stats-modal-title" id="forumClaimModalTitle">Restore your nickname</div>
+    <div class="stats-modal-desc" id="forumClaimModalDesc">
+      Enter the nickname and the 5-digit PIN you saved when you first claimed it.
+    </div>
+    <input type="text" id="forumClaimNicknameInput" class="forum-name-input" placeholder="Nickname" maxlength="40" style="margin-bottom:0.5rem;" oninput="this.value = this.value.replace(/\s+/g, '')" onkeydown="if(event.key==='Enter'){event.preventDefault();submitForumClaimModal();}">
+    <div id="forumClaimPinRow">
+      <input type="text" id="forumClaimPinInput" class="forum-name-input forum-pin-input" placeholder="5-digit PIN" maxlength="5" inputmode="numeric" pattern="[0-9]*" onkeydown="if(event.key==='Enter'){event.preventDefault();submitForumClaimModal();}">
+    </div>
+    <div class="forum-composer-status" id="forumClaimModalStatus"></div>
+    <button type="button" class="forum-identity-link-btn" id="forumClaimModalRestoreLink" style="display:none;" onclick="openForumClaimModal('restore', document.getElementById('forumClaimNicknameInput').value.trim(), forumClaimModalOnSuccess)">Already claimed a name on another device?</button>
+    <div class="stats-modal-actions">
+      <button class="stats-modal-btn" onclick="closeForumClaimModal()">Cancel</button>
+      <button class="stats-modal-btn primary" onclick="submitForumClaimModal()">Claim</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Forum: show-PIN modal ── -->
+<div class="stats-modal-backdrop" id="forumPinModalBackdrop" onclick="if(event.target===this) closeForumPinModal()">
+  <div class="stats-modal-box">
+    <div class="stats-modal-title">Your PIN</div>
+    <div class="stats-modal-desc">
+      Keep this secret. Anyone who has it can claim your nickname on another device or drop it entirely.
+    </div>
+    <div class="forum-pin-display" id="forumPinModalDisplay">—</div>
+    <div class="stats-modal-actions">
+      <button class="stats-modal-btn" onclick="closeForumPinModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Forum: change-nickname modal ── -->
+<div class="stats-modal-backdrop" id="forumChangeNicknameModalBackdrop" onclick="if(event.target===this) closeForumChangeNicknameModal()">
+  <div class="stats-modal-box">
+    <div class="stats-modal-title">Change nickname</div>
+    <div class="stats-modal-desc">Your PIN stays the same — you won't need to re-enter it.</div>
+    <input type="text" id="forumChangeNicknameInput" class="forum-name-input" placeholder="New nickname" maxlength="40" oninput="this.value = this.value.replace(/\s+/g, '')" onkeydown="if(event.key==='Enter'){event.preventDefault();submitForumChangeNickname();}">
+    <div class="forum-composer-status" id="forumChangeNicknameStatus"></div>
+    <div class="stats-modal-actions">
+      <button class="stats-modal-btn" onclick="closeForumChangeNicknameModal()">Cancel</button>
+      <button class="stats-modal-btn primary" onclick="submitForumChangeNickname()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Forum: exit-this-device confirmation modal ── -->
+<div class="stats-modal-backdrop" id="forumExitDeviceModalBackdrop" onclick="if(event.target===this) closeForumExitDeviceModal()">
+  <div class="stats-modal-box">
+    <div class="stats-modal-title">Exit this device?</div>
+    <div class="stats-modal-desc">
+      This only signs <strong id="forumExitDeviceName">this nickname</strong> out on this device — the nickname stays
+      claimed, your PIN keeps working, and any other device you've linked it to (phone/tablet/PC) is unaffected.
+      To use it here again later, you'll need the nickname and its PIN — make sure you have the PIN saved somewhere
+      before exiting.
+    </div>
+    <div class="forum-composer-status" id="forumExitDeviceStatus"></div>
+    <div class="stats-modal-actions">
+      <button class="stats-modal-btn" onclick="closeForumExitDeviceModal()">Cancel</button>
+      <button class="stats-modal-btn primary" onclick="submitForumExitDevice()">Yes, exit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Forum: edit message modal ── -->
+<div class="stats-modal-backdrop" id="forumEditMessageModalBackdrop" onclick="if(event.target===this) closeForumEditMessageModal()">
+  <div class="stats-modal-box">
+    <div class="stats-modal-title">Edit message</div>
+    <div class="forum-composer-scope-row" style="margin-bottom:0.5rem;">
+      <select id="forumEditQuizSelect" class="forum-scope-select" onchange="onForumEditQuizChange()">
+        <option value="global">🌐 Global</option>
+      </select>
+      <select id="forumEditProblemSelect" class="forum-scope-select" style="display:none;" onchange="onForumEditProblemChange()"></select>
+    </div>
+    <textarea id="forumEditBodyInput" class="forum-body-input forum-edit-body-input" maxlength="1000" rows="3"></textarea>
+    <div class="forum-composer-status" id="forumEditMessageStatus"></div>
+    
+    <div class="stats-modal-actions">
+      <button class="stats-modal-btn" onclick="closeForumEditMessageModal()">Cancel</button>
+      <button class="stats-modal-btn primary" onclick="submitForumEditMessage()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Forum: mention profile popup (tapping an @name chip in a message) ──
+     Deliberately its own markup/classes (forum-profile-modal-*), not
+     stats-modal-box like the other modals below — that class is the same
+     "Import Stats" merge-modal skin used for claim/PIN/rename/exit-device/
+     edit-message dialogs too, so reusing it here made this popup visually
+     read as "the Stats screen" opening rather than a person's profile. -->
+<div class="stats-modal-backdrop" id="forumMentionModalBackdrop" onclick="if(event.target===this) closeForumMentionProfile()">
+  <div class="forum-profile-modal-box">
+    <div class="forum-profile-modal-avatar" id="forumMentionModalAvatar" aria-hidden="true"></div>
+    <div class="forum-profile-modal-name" id="forumMentionModalName">—</div>
+    <div class="forum-profile-modal-stats" id="forumMentionModalBody">Loading…</div>
+    <div class="stats-modal-actions">
+      <button class="stats-modal-btn primary" onclick="closeForumMentionProfile()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Export format picker modal ──
+     Custom in-app modal (not a native OS file-type picker) offering the
+     4 export formats. Rendered by openExportFormatModal()/
+     closeExportFormatModal() in js/stats-export.js; runExport(format)
+     dispatches to the CSV/TXT/Excel/PDF generators in that file. -->
+<div class="stats-modal-backdrop" id="exportFormatModal" onclick="if(event.target===this) closeExportFormatModal()">
+  <div class="stats-modal-box">
+    <div class="stats-modal-title">Export Stats</div>
+    <div class="stats-modal-desc">Choose a format for your attempt log.</div>
+    <div class="stats-modal-actions" style="flex-wrap:wrap">
+      <button class="stats-modal-btn" onclick="runExport('pdf')">PDF</button>
+      <button class="stats-modal-btn" onclick="runExport('xlsx')">Excel (.xlsx)</button>
+      <button class="stats-modal-btn" onclick="runExport('csv')">CSV</button>
+      <button class="stats-modal-btn" onclick="runExport('txt')">Text (.txt)</button>
+    </div>
+    <div class="stats-modal-actions">
+      <button class="stats-modal-btn" onclick="closeExportFormatModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Forum: push-notification pre-permission modal ──
+     Our own explanation dialog shown before the real browser permission
+     prompt, so the person knows what they're agreeing to before Chrome's
+     own dialog (which just says "examphys wants to notify you") appears.
+     Tapping Allow here is what triggers subscribeToPush() -> the actual
+     Notification.requestPermission() call; tapping "Not now" just closes
+     this and never shows the browser prompt at all. See
+     openPushPermissionModal()/closePushPermissionModal() in
+     js/push-notifications.js. -->
+<div class="stats-modal-backdrop" id="pushPermissionModalBackdrop" onclick="if(event.target===this) closePushPermissionModal()">
+  <div class="stats-modal-box">
+    <div class="stats-modal-title">🔔 Turn on tag notifications?</div>
+    <div class="stats-modal-desc">
+      You'll be notified only when someone @ tags you in the Forum, even with the site closed.
+      No other notifications. No ads. Nothing else gets sent.
+      Tap Allow and your browser will ask you to confirm.
+    </div>
+    <div class="stats-modal-actions">
+      <button class="stats-modal-btn" onclick="closePushPermissionModal()">Not now</button>
+      <button class="stats-modal-btn primary" id="pushPermissionAllowBtn" onclick="onPushPermissionModalAllow()">Allow</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Floating Forum button (bottom-left) ──
+     A second entry point to the Forum, separate from the main-screen "💬
+     Forum" button — visible on any screen other than the landing screen
+     itself or a plain "Random 6" quiz (see syncForumFabVisibility() in
+     forum.js, which toggles .forum-fab-visible on this wrapper). Once
+     tapped open (from solve-all, mistakes, stats, or choice), it now stays
+     put instead of vanishing, and tapping it again closes the forum — see
+     toggleForumFab() in forum.js. Uses the same unread-count + "@ tagged
+     you" badges as the main-screen button, just a separate pair of
+     elements (see setForumUnreadBadge in forum.js, which updates both
+     pairs together). -->
+<div class="forum-fab-wrap" id="forumFabWrap">
+  <button class="forum-fab" id="forumFabBtn" onclick="toggleForumFab()" title="Forum" aria-label="Open forum">💬</button>
+  <span class="forum-badge" id="forumFabUnreadBadge" style="display:none;"></span>
+  <span class="forum-at-badge" id="forumFabUnreadAtBadge" title="Someone tagged you">@</span>
+</div>
+
+<!-- ── Full-screen loading transition (shown while a large solve-all batch
+       is being built + typeset — see math-render.js) ── -->
+<div class="loading-screen" id="solveAllLoadingScreen" aria-hidden="true">
+  <div class="collision-track">
+    <div class="electron"></div>
+    <div class="proton"></div>
+    <div class="collision-rings"><span></span><span></span><span></span></div>
+  </div>
+  <div class="loading-screen-label">Rendering equations…</div>
+  <div class="loading-screen-sub" id="solveAllLoadingSub">First time can take a few seconds — instant on later visits</div>
+</div>
+
+<!-- ── Easter egg (Pi Day / Pi Hour) — loads first to show before main UI ── -->
+<script src="js/banner-manager.js"></script>
+<script src="js/theme-colors.js"></script>
+<script src="js/themes.js"></script>
+<script src="js/splash.js"></script>
+<script src="js/easter.js"></script>
+
+<!-- ── Problem data: one file per quiz set ── -->
+<!-- Load data files first so QUIZZES registry can reference them -->
+<script src="course/quizzes/quiz1.js"></script>
+<script src="course/quizzes/quiz2.js"></script>
+<script src="course/quizzes/quiz3.js"></script>
+<script src="course/quizzes/quiz4.js"></script>
+
+<!-- ── Changelog data ── -->
+<script src="js/data/changelog.js"></script>
+
+<!-- ── Quiz registry: maps quiz slots to problem arrays ── -->
+<script src="course/quizzes/quizzes.js"></script>
+
+<!-- ── Stats module (must load before quiz-engine) ── -->
+<script src="js/stats.js"></script>
+<script src="js/stats-export.js"></script>
+<script src="js/attempts-sync.js"></script>
+<script src="js/solve-all-sync.js"></script>
+
+<!-- ── Persistent MathJax render cache (must load before quiz-engine) ── -->
+<script src="js/math-cache.js"></script>
+<script src="js/math-render.js"></script>
+
+<!-- ── Quiz engine: all app logic ── -->
+<script src="js/quiz-engine.js"></script>
+<script src="js/fig-attribution.js"></script>
+
+<!-- ── Changelog + electromagnetic cursor ── -->
+<script src="js/changelog.js"></script>
+
+<!-- ── Forum (Step 1: read-only feed) ── -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/site-visits.js"></script>
+<script src="js/forum.js"></script>
+
+<!-- Forum @mention push notifications: permission prompt, subscribe/
+     unsubscribe, and reacting to a tapped notification. Loaded after
+     forum.js (uses getForumDeviceId/openForumForProblem/openForumScreen/
+     setForumStatus) and supabase-config.js (SUPABASE_URL/KEY). -->
+<script src="js/push-notifications.js"></script>
+
+<!-- ── User manual (sidebar section/subsection tree + LaTeX content) ── -->
+<script src="js/manual.js"></script>
+
+<!-- Registers sw.js (offline.html fallback only — see that file's header
+     comment for exactly what it does and doesn't cache). Only takes effect
+     from the NEXT navigation onward, since the very first visit has nothing
+     installed yet to intercept it. -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch((err) => {
+        console.error('Service worker registration failed:', err);
+      });
+    });
+  }
+</script>
+
+</body>
+</html>

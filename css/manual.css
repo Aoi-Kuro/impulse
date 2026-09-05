@@ -1,0 +1,807 @@
+/* ─── User manual screen ────────────────────────────────────────────────────── */
+/* Structurally mirrors #forumScreen/#statsScreen (same open/close animation,
+   same header layout) — see openManualScreen/closeManualScreen in
+   js/manual.js. Body is a two-column docs layout: a collapsible section/
+   subsection tree on the left, selected content on the right. */
+
+#manualScreen {
+  display: none;
+  min-height: 100vh;
+  background: var(--bg);
+  font-family: var(--sans);
+  z-index: 200;
+}
+#manualScreen.visible {
+  display: block;
+  animation: fadeInPage 0.38s ease forwards;
+}
+#manualScreen.fading-out {
+  animation: fadeOutPage 0.28s ease forwards;
+  pointer-events: none;
+}
+
+.manual-wrap {
+  width: 100%;
+  /* Wider than the forum's chat column — this is a two-pane docs layout, so
+     it wants the room a single reading column doesn't need. */
+  max-width: clamp(760px, 78vw, 1240px);
+  margin: 0 auto;
+  padding: 2rem 1.4rem calc(3rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── Header (matches .stats-header) ── */
+.manual-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.6rem;
+}
+.manual-header-left { display: flex; align-items: center; gap: 0.9rem; }
+.manual-title {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+/* ── Body: sidebar + content ── */
+.manual-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.6rem;
+}
+
+/* ── Sidebar ── */
+.manual-sidebar {
+  flex: 0 0 260px;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  position: sticky;
+  top: 1.4rem;
+}
+
+.manual-section {
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.manual-section-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: none;
+  border: none;
+  padding: 0.65rem 0.8rem;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  transition: background 0.15s;
+}
+.manual-section-header:hover { background: rgba(var(--accent-rgb), 0.08); }
+
+.manual-section-chevron {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+.manual-section.expanded .manual-section-chevron { transform: rotate(90deg); }
+
+.manual-section-icon { flex-shrink: 0; font-size: 0.95rem; line-height: 1; }
+.manual-section-title { flex: 1 1 auto; min-width: 0; }
+
+.manual-subsection-list {
+  display: none;
+  flex-direction: column;
+  padding: 0 0.5rem 0.5rem;
+}
+.manual-section.expanded .manual-subsection-list { display: flex; }
+
+.manual-subsection-btn {
+  background: none;
+  border: none;
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.45rem 0.65rem 0.45rem 1.75rem;
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.manual-subsection-btn:hover { color: var(--text); background: rgba(var(--accent-rgb), 0.08); }
+.manual-subsection-btn.active {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.14);
+  font-weight: 600;
+}
+
+/* ── Content pane ── */
+.manual-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult));
+  background: var(--surface);
+  padding: 1.8rem 2rem;
+  min-height: 360px;
+}
+
+.manual-placeholder {
+  height: 100%;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  text-align: center;
+}
+.manual-placeholder-icon { font-size: 2rem; opacity: 0.6; }
+
+.manual-loading {
+  padding: 0.9rem 0.8rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.manual-content-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.4rem;
+}
+.manual-content-title {
+  font-family: var(--sans);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 1rem;
+}
+.manual-content-body {
+  color: var(--text);
+  font-family: 'STIX Two Text', var(--sans);
+  font-size: 0.94rem;
+  line-height: 1.65;
+}
+.manual-content-body p { margin: 0 0 1rem; }
+.manual-content-body p:last-child { margin-bottom: 0; }
+.manual-content-body h3 {
+  font-family: var(--sans);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 1.4rem 0 0.6rem;
+}
+.manual-content-body h3:first-child { margin-top: 0; }
+.manual-content-body ul {
+  margin: 0 0 1rem;
+  padding-left: 1.3rem;
+}
+.manual-content-body li { margin-bottom: 0.3rem; }
+.manual-content-body li:last-child { margin-bottom: 0; }
+.manual-content-body code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: rgba(var(--accent-rgb), 0.1);
+  padding: 0.1em 0.35em;
+  border-radius: calc(4px * var(--radius-mult));
+}
+.manual-content-body a { color: var(--accent); }
+/* MathJax display blocks already add their own vertical spacing; trim the
+   wrapping <p>'s margin so display equations don't get doubled-up gaps. */
+.manual-content-body p:has(mjx-container[display="true"]) { margin: 0.4rem 0; }
+
+/* ── Prefix / reference tables ── */
+.manual-content-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.9rem 0 1.2rem;
+  font-size: 0.86rem;
+}
+.manual-content-body th,
+.manual-content-body td {
+  text-align: left;
+  padding: 0.4rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+.manual-content-body th {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.manual-content-body td code { white-space: nowrap; }
+.manual-content-body tr:last-child td { border-bottom: none; }
+
+/* ── Interactive figure demo (Random 6 mode page) ──
+   Reuses the site's own six theme presets (dark+light each) as the swatch
+   options, but every color is overridden as a *local* CSS custom property
+   on .manual-fig-demo-preview rather than on body[data-theme], so flipping
+   it here never touches the manual's own chrome or the rest of the app —
+   the SVG inside just happens to read var(--surface)/var(--svg-blue)/
+   var(--svg-red)/currentColor same as it would live in a quiz, and those
+   names resolve to whatever this wrapper sets instead of the real theme. */
+.manual-fig-demo {
+  margin: 1.1rem 0 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult));
+  overflow: hidden;
+}
+.manual-fig-demo-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1.7rem 1rem;
+  background: var(--surface);
+  transition: background 0.35s ease;
+}
+.manual-fig-demo-preview svg {
+  width: 260px;
+  height: auto;
+  color: var(--text);
+  transition: color 0.35s ease;
+}
+.manual-fig-demo-preview svg * { transition: fill 0.35s ease, stroke 0.35s ease; }
+
+/* Six presets × two modes, values lifted straight from the site's real
+   body[data-theme=…] blocks in style.css. */
+.manual-fig-demo-preview[data-theme="default"][data-mode="dark"]  { --bg:#0d1117; --surface:#161b22; --text:#e6edf3; --svg-blue:#79AFFF; --svg-red:#FF8A98; }
+.manual-fig-demo-preview[data-theme="default"][data-mode="light"] { --bg:#ffffff; --surface:#f6f8fa; --text:#1f2328; --svg-blue:#2C6DD5; --svg-red:#C73A4A; }
+.manual-fig-demo-preview[data-theme="nord"][data-mode="dark"]     { --bg:#2E3440; --surface:#3B4252; --text:#ECEFF4; --svg-blue:#88C0D0; --svg-red:#B48EAD; }
+.manual-fig-demo-preview[data-theme="nord"][data-mode="light"]    { --bg:#ECEFF4; --surface:#E5E9F0; --text:#2E3440; --svg-blue:#4C7EA8; --svg-red:#8067A8; }
+.manual-fig-demo-preview[data-theme="sakura"][data-mode="dark"]   { --bg:#241A20; --surface:#34222A; --text:#F7E9EE; --svg-blue:#FF7AA8; --svg-red:#8FD6A8; }
+.manual-fig-demo-preview[data-theme="sakura"][data-mode="light"]  { --bg:#FFF5F7; --surface:#FFE9EF; --text:#4A2530; --svg-blue:#E8558A; --svg-red:#4FAE7A; }
+.manual-fig-demo-preview[data-theme="cyber"][data-mode="dark"]    { --bg:#05060A; --surface:#0D0F1A; --text:#D8F8FF; --svg-blue:#00F0FF; --svg-red:#FF2FD0; }
+.manual-fig-demo-preview[data-theme="cyber"][data-mode="light"]   { --bg:#F2F4FB; --surface:#E6E9F7; --text:#0A0C14; --svg-blue:#7A00E0; --svg-red:#D6009C; }
+.manual-fig-demo-preview[data-theme="forest"][data-mode="dark"]   { --bg:#141A13; --surface:#1E281C; --text:#E4ECDF; --svg-blue:#4F9D7A; --svg-red:#D98A3D; }
+.manual-fig-demo-preview[data-theme="forest"][data-mode="light"]  { --bg:#F5F2E8; --surface:#ECE5D3; --text:#2B2517; --svg-blue:#3F7D55; --svg-red:#B5651D; }
+.manual-fig-demo-preview[data-theme="solar"][data-mode="dark"]    { --bg:#002B36; --surface:#073642; --text:#F0ECD7; --svg-blue:#2AA1D6; --svg-red:#D98032; }
+.manual-fig-demo-preview[data-theme="solar"][data-mode="light"]   { --bg:#FDF6E3; --surface:#EEE8D5; --text:#43403A; --svg-blue:#1B7BAB; --svg-red:#B85C1E; }
+
+.manual-fig-demo-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  padding: 0.65rem 0.9rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.manual-fig-demo-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: calc(20px * var(--radius-mult));
+  padding: 0.32rem 0.75rem;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.manual-fig-demo-toggle:hover { border-color: var(--accent); }
+
+.manual-fig-demo-swatches { display: flex; gap: 0.4rem; }
+.manual-fig-demo-swatch {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.manual-fig-demo-swatch:hover { transform: scale(1.15); }
+.manual-fig-demo-swatch.active { border-color: var(--text); }
+
+.manual-fig-demo-caption {
+  padding: 0.6rem 0.9rem 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+}
+
+/* ── Live avatar demo (Posting & identity page) ──
+   Real DiceBear identicons, fetched live as the reader types, via the exact
+   same seed→SVG endpoint the forum itself uses at claim/rename time
+   (fetchForumIdenticonSvg in forum.js) — what's shown here is exactly what
+   claiming that nickname would actually produce. */
+.manual-avatar-demo {
+  margin: 1.1rem 0 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult));
+  overflow: hidden;
+}
+.manual-avatar-demo-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 168px;
+  padding: 1.4rem 1rem;
+  background: var(--surface);
+}
+.manual-avatar-demo-box {
+  width: 140px;
+  height: 140px;
+  border-radius: calc(10px * var(--radius-mult));
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s ease;
+}
+.manual-avatar-demo-preview.is-loading .manual-avatar-demo-box { opacity: 0.4; }
+.manual-avatar-demo-box svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.manual-avatar-demo-empty {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.manual-avatar-demo-controls {
+  padding: 0.65rem 0.9rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.manual-avatar-demo-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.45rem 0.6rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.manual-avatar-demo-input:focus { border-color: var(--accent); }
+.manual-avatar-demo-caption {
+  padding: 0.6rem 0.9rem 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+}
+
+/* ── Live LaTeX playground (Writing LaTeX in messages page) ──
+   A free-typing textarea, prefilled with a sample expression, whose
+   contents are wrapped in $$ $$ and re-typeset live below it as the reader
+   edits — same renderMathIn() pipeline as everywhere else, just fired on
+   a debounce instead of after a fetch/send. Mirrors .manual-avatar-demo's
+   box/controls/caption layout so the two "try it yourself" widgets on the
+   manual read as one family rather than two different components. */
+.manual-latex-demo {
+  margin: 1.1rem 0 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult));
+  overflow: hidden;
+}
+.manual-latex-demo-controls {
+  padding: 0.65rem 0.9rem;
+  background: var(--surface);
+}
+.manual-latex-demo-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 3.4rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.5rem 0.65rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.manual-latex-demo-input:focus { border-color: var(--accent); }
+.manual-latex-demo-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 4.6rem;
+  padding: 1.1rem 1rem;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+}
+.manual-latex-demo-preview mjx-container { font-size: 118% !important; }
+.manual-latex-demo-empty {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.manual-latex-demo-caption {
+  padding: 0.6rem 0.9rem 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+}
+
+/* ── Live GitHub repo card (About the project & Feedback pages) ──
+   Styled to look like an actual GitHub UI element rather than a themed
+   site widget: fixed GitHub dark-mode palette (not var(--surface)/
+   var(--accent), so it reads the same in every site theme) and GitHub's
+   own system-font stack instead of --sans/--mono. Colors match GitHub's
+   canvas/border/fg tokens (#0d1117, #30363d, #c9d1d9, #8b949e, #58a6ff). */
+.manual-github-demo {
+  --gh-canvas: var(--bg);
+  --gh-canvas-subtle: var(--surface);
+  --gh-border: #30363d;
+  --gh-border-muted: #21262d;
+  --gh-fg: #c9d1d9;
+  --gh-fg-muted: #8b949e;
+  --gh-accent: #58a6ff;
+  --gh-success: #3fb950;
+  --gh-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+
+  margin: 1.1rem 0 1.5rem;
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--gh-canvas);
+  font-family: var(--gh-font);
+}
+.manual-github-demo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--gh-border-muted);
+}
+.manual-github-demo-repo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gh-fg);
+}
+.manual-github-demo-repo-icon { color: var(--gh-fg-muted); flex: none; }
+.manual-github-demo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--gh-font);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gh-fg);
+  background: var(--gh-border-muted);
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  padding: 5px 12px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.manual-github-demo-link:hover { background: var(--gh-border); border-color: var(--gh-fg-muted); }
+.manual-github-demo-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+  padding: 12px 16px;
+}
+.manual-github-demo-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--gh-font);
+  font-size: 12px;
+  color: var(--gh-fg-muted);
+}
+.manual-github-demo-stat-icon { color: var(--gh-fg-muted); flex: none; }
+.manual-github-demo-stat-issues .manual-github-demo-stat-icon { color: var(--gh-success); }
+.manual-github-demo-loading,
+.manual-github-demo-error { color: var(--gh-fg-muted); font-size: 12px; }
+.manual-github-demo-commit {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--gh-border-muted);
+  background: var(--gh-canvas-subtle);
+  font-family: var(--gh-font);
+  font-size: 12px;
+  color: var(--gh-fg-muted);
+  line-height: 1.6;
+}
+.manual-github-demo-commit-icon { color: var(--gh-fg-muted); flex: none; margin-right: 2px; }
+.manual-github-demo-commit-msg { color: var(--gh-fg); }
+.manual-github-demo-commit-date { color: var(--gh-fg-muted); }
+
+/* GitHub's light-mode palette, swapped in whenever the site itself is in
+   light mode (body.light, set by the day/night toggle), so the card's fg/
+   bg contrast flips the same direction as the rest of the page instead of
+   staying dark-mode-only. */
+body.light .manual-github-demo {
+  --gh-border: #d0d7de;
+  --gh-border-muted: #d8dee4;
+  --gh-fg: #1f2328;
+  --gh-fg-muted: #656d76;
+  --gh-accent: #0969da;
+  --gh-success: #1a7f37;
+}
+
+/* ── Pull-quote (used by the "About the project" page) ──
+   A large decorative opening quotation mark bleeds into the top-left
+   corner, the quote itself sits in italic STIX against a faint accent
+   wash, and the attribution reads like a tiny caption line underneath —
+   distinct enough from ordinary body copy that it reads as "someone
+   else's words, set apart" rather than just another paragraph. */
+.manual-quote {
+  position: relative;
+  margin: 1.7rem 0 0.4rem;
+  max-width: 34rem;
+  padding: 1.3rem 1.4rem 1.2rem 2rem;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.1), rgba(var(--accent-rgb), 0.02));
+  border-left: 3px solid var(--accent);
+  border-radius: calc(10px * var(--radius-mult));
+}
+.manual-quote::before {
+  content: '\201C';
+  position: absolute;
+  top: 0.3rem;
+  left: 0.5rem;
+  font-family: 'STIX Two Text', serif;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.45;
+  pointer-events: none;
+}
+.manual-quote-text {
+  font-family: 'STIX Two Text', var(--sans);
+  font-style: italic;
+  font-size: 0.94rem;
+  line-height: 1.65;
+  color: var(--text);
+  margin: 0 0 0.6rem;
+}
+.manual-quote-attribution {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.manual-quote-attribution::before { content: '\2014\00A0'; }
+
+/* ── Static forum mockups (Gemini bot intro + Moderation & flags demo) ──
+   These are NOT wired to forum.js at all — no fetch, no listeners, no
+   posting. They intentionally reuse the real .forum-message/.forum-flag-btn/
+   etc. classes from forum.css (already loaded on this page) purely for
+   visual fidelity, then sit inside a bordered .manual-mock-forum wrapper
+   with a manual-fig-demo-style dashed caption underneath explaining what's
+   being shown, since a screenshot would go stale the moment the real forum's
+   styling changes and a live embed would risk actually hitting the network.
+   Buttons inside carry no onclick and tabindex="-1" so they read as inert
+   illustrations rather than dead controls. */
+.manual-mock-forum {
+  margin: 1.1rem 0 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult));
+  overflow: hidden;
+  background: var(--bg);
+}
+.manual-mock-forum .forum-message {
+  padding: 0.55rem 0.9rem;
+}
+.manual-mock-forum .forum-message:first-child { padding-top: 0.75rem; }
+.manual-mock-forum .forum-message:last-child { padding-bottom: 0.75rem; }
+.manual-mock-forum .forum-flag-btn,
+.manual-mock-forum .forum-reply-btn,
+.manual-mock-forum .forum-message-author {
+  cursor: default;
+}
+.manual-mock-forum-caption {
+  padding: 0.6rem 0.9rem 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+  background: var(--surface);
+}
+.manual-mock-forum-caption strong { color: var(--text); }
+
+/* ── Splash badge demo (About the project page) ──
+   Reuses the real .mc-splash class from style.css as-is for everything
+   that makes it *look* like the landing screen's badge — font, stroke,
+   shadow, rotation, bounce — and the real splash.js picker/no-repeat
+   logic via window.pickSplashText() for what it *shows* (see
+   manualSplashDemoRender in manual.js). The one thing it can't borrow
+   verbatim is .mc-splash's own positioning: that's `position:absolute`,
+   anchored to sit beside the real landing box's title at a fixed offset,
+   which only makes sense inside that exact layout. Here it's just
+   centered in its own card instead, so position/transform/animation are
+   overridden below — a new keyframe set without the real one's
+   translateX(-50%) (needed there to anchor on a point despite the badge's
+   own width changing; not needed here since flexbox already centers it). */
+.manual-splash-demo {
+  margin: 1.1rem 0 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult));
+  overflow: hidden;
+}
+.manual-splash-demo-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  padding: 1.6rem 1rem;
+  background: var(--surface);
+}
+.manual-splash-demo-preview .mc-splash {
+  position: static;
+  top: auto;
+  left: auto;
+  margin-left: 0;
+  transform: rotate(9deg);
+  transform-origin: 50% 50%;
+  animation: manualSplashBounce 0.85s ease-in-out infinite alternate;
+}
+@keyframes manualSplashBounce {
+  from { transform: rotate(9deg) scale(1);    }
+  to   { transform: rotate(9deg) scale(1.14); }
+}
+.manual-splash-demo-caption {
+  padding: 0.6rem 0.9rem 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+}
+
+/* ── Theme gallery (Appearance page) ──
+   Preview windows — one per built-in theme — each split into a night half
+   and a day half. Colors are set as local CSS custom properties on
+   .manual-theme-window-half (same technique as .manual-fig-demo-preview
+   above), so the little "card" mockup inside just reads
+   var(--surface)/var(--border)/var(--accent)/etc. and those resolve to
+   whichever half they're sitting in. Those preview colors are static and
+   NOT wired to themes.js — but the window itself is clickable (see
+   manualThemeGallerySelect in manual.js) and applies that color theme to
+   the real site, independent of day/night mode. The .active outline below
+   tracks whichever theme is actually applied site-wide. */
+.manual-theme-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.9rem;
+  margin: 1.1rem 0 1.5rem;
+}
+.manual-theme-window {
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+  overflow: hidden;
+  background: var(--surface);
+  cursor: pointer;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+.manual-theme-window:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+.manual-theme-window:focus-visible {
+  outline-color: var(--accent);
+}
+.manual-theme-window.active {
+  outline: 2px solid var(--accent);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.18);
+}
+.manual-theme-window.active .manual-theme-window-name {
+  color: var(--accent);
+}
+.manual-theme-window-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.manual-theme-window-bar span:not(.manual-theme-window-name) {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.5;
+}
+.manual-theme-window-name {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.manual-theme-window-split { display: flex; }
+.manual-theme-window-half {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  padding: 0.7rem 0.55rem;
+  transition: background 0.35s ease;
+}
+.manual-theme-window-half[data-mode="day"] { border-left: 1px solid var(--border); }
+.manual-theme-window-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.4rem 0.5rem;
+}
+.manual-theme-window-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+.manual-theme-window-line {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--text);
+  opacity: 0.75;
+  margin-top: 6px;
+  width: 80%;
+}
+.manual-theme-window-line.short { width: 45%; opacity: 0.4; }
+.manual-theme-window-caption {
+  padding: 0.5rem 0.7rem 0.65rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+}
+
+/* ── Responsive: stack sidebar above content on narrow screens ── */
+@media (max-width: 760px) {
+  .manual-body { flex-direction: column; }
+  .manual-sidebar { position: static; width: 100%; flex: 1 1 auto; }
+  .manual-content { padding: 1.4rem 1.3rem; width: 100%; }
+  .manual-theme-gallery { grid-template-columns: 1fr 1fr; }
+}

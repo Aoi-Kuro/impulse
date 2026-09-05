@@ -1,0 +1,47 @@
+{
+  "_readme": "This file is NOT loaded by the site — nothing fetches or <script>s it. It's a reference for the manual header swap: when releasing a course, take the block for that course and hand-copy each value into the matching spot in index.html / offline.html (the exact line is noted per field). The one live/functional piece of course identity is js/course-config.js (data-course attribute + Supabase keys + storage prefix) — that one you DO have to edit directly, this file just tells you what to paste where.",
+
+  "phys162": {
+    "code": "PHYS162",
+    "codeSpaced": "PHYS 162",
+    "index_html": {
+      "title": "PHYS162 Practice Quiz",
+      "og:title": "PHYS162 Practice Quiz",
+      "og:description": "Interactive physics practice quiz: electric fields, Gauss's law, circuits & more. Instant feedback with scoring.",
+      "og:url": "https://your-domain.com/PHYS162_Practice_Quiz.html",
+      "og:image": "course/preview.png",
+      "twitter:title": "PHYS162 Practice Quiz",
+      "twitter:description": "Interactive physics practice quiz for PHYS 162 course at Nazarbayev University.",
+      "twitter:image": "course/preview.png",
+      "landing_eyebrow_practice": "PHYS162 · Practice Mode",
+      "landing_eyebrow_solve_all": "PHYS162 · Solve them all",
+      "eyebrow_practice": "PHYS162 · Practice Mode",
+      "eyebrow_solve": "PHYS162 · Solve Mode"
+    },
+    "offline_html": {
+      "title": "You're offline — PHYS162 Practice Quiz"
+    }
+  },
+
+  "phys161": {
+    "code": "PHYS161",
+    "codeSpaced": "PHYS 161",
+    "index_html": {
+      "title": "PHYS161 Practice Quiz",
+      "og:title": "PHYS161 Practice Quiz",
+      "og:description": "Interactive physics practice quiz: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring.",
+      "og:url": "https://your-domain.com/PHYS161_Practice_Quiz.html",
+      "og:image": "course/preview.png",
+      "twitter:title": "PHYS161 Practice Quiz",
+      "twitter:description": "Interactive physics practice quiz for PHYS 161 course at Nazarbayev University.",
+      "twitter:image": "course/preview.png",
+      "landing_eyebrow_practice": "PHYS161 · Practice Mode",
+      "landing_eyebrow_solve_all": "PHYS161 · Solve them all",
+      "eyebrow_practice": "PHYS161 · Practice Mode",
+      "eyebrow_solve": "PHYS161 · Solve Mode"
+    },
+    "offline_html": {
+      "title": "You're offline — PHYS161 Practice Quiz"
+    }
+  }
+}

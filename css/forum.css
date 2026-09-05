@@ -1,0 +1,1460 @@
+/* ─── Forum Screen ──────────────────────────────────────────────────────────── */
+/* Structurally mirrors #statsScreen in stats.css (same open/close animation,
+   same header layout) — kept in its own file since the forum has enough of
+   its own pieces (message rows, filter chips, unread badge) to stay separate
+   from both the quiz UI (style.css) and the stats dashboard (stats.css). */
+
+/* NOTE on history: this used to be a `position: fixed` full-viewport shell
+   with only .forum-list independently scrolling inside it, to solve a
+   "double scroll" bug (page and message list both scrollable at once, so a
+   mobile swipe over the list would sometimes scroll the page instead). That
+   also meant the message list's height was always capped to whatever was
+   left over after the header/composer/filters in the current viewport —
+   fine on a tall phone screen, but cramped in a shorter/wider desktop
+   browser window.
+   Now the forum is a normal in-flow page, same as #statsScreen and
+   #landingScreen: nothing here is independently scrollable, so there's only
+   ever ONE scrollbar (the page itself) — which is what actually fixes the
+   double-scroll problem at the root, rather than working around it. The
+   message list just grows to fit its content and the page gets taller, the
+   same way any normal webpage does. The live-update/"new messages" logic in
+   forum.js was updated to track window.scrollY / document scroll height
+   instead of the old list.scrollTop / list.scrollHeight. */
+#forumScreen {
+  display: none;
+  min-height: 100vh;
+  background: var(--bg);
+  font-family: var(--sans);
+  z-index: 200;
+}
+#forumScreen.visible {
+  display: block;
+  animation: fadeInPage 0.38s ease forwards;
+}
+#forumScreen.fading-out {
+  animation: fadeOutPage 0.28s ease forwards;
+  pointer-events: none;
+}
+
+.forum-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  /* Unlike the quiz body (style.css' 760px reading column, meant for long-form
+     problem text), the forum is a chat-style feed: short lines, timestamps,
+     tags, avatars — content that wants more horizontal room on a big screen,
+     not a narrow article column. This scales fluidly with viewport width
+     instead of jumping at one breakpoint: the 720px floor keeps today's
+     behavior unchanged on phones/tablets/small desktop windows (60vw only
+     exceeds 720px once the viewport itself is >1200px wide), then it grows
+     gradually and caps at 1080px so it never gets so wide that a single
+     message's text becomes an uncomfortably long line to read. */
+  max-width: clamp(720px, 60vw, 1080px);
+  margin: 0 auto;
+  padding: 1.3rem 1.4rem calc(2rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── Header (matches .stats-header) ── */
+.forum-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.1rem;
+  flex: 0 0 auto;
+}
+.forum-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+.forum-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* All three buttons here have different text (emoji vs "✕ Close") with
+   different natural line-heights, so without this they'd render at
+   slightly different heights despite matching padding. Pin height+
+   box-sizing explicitly instead of trying to fudge padding until they
+   happen to match. */
+.forum-header-right button {
+  height: 2.05rem;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.forum-title {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.forum-subtitle {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.forum-close-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  padding: 0.38rem 0.75rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.forum-close-btn:hover { color: var(--text); border-color: var(--text); }
+
+.forum-reply-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.forum-reply-banner button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; }
+.forum-ban-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text);
+  background: color-mix(in srgb, #e5484d 12%, transparent);
+  border: 1px solid color-mix(in srgb, #e5484d 45%, var(--border));
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.45rem 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.forum-ban-banner .banner-text strong { color: #e5484d; }
+.forum-reply-quote {
+  font-size: 0.78rem;
+  color: var(--muted);
+  border-left: 2px solid var(--accent);
+  padding: 0.15rem 0 0.15rem 0.5rem;
+  margin-bottom: 0.3rem;
+  cursor: pointer;
+}
+.forum-reply-quote:hover { color: var(--text); }
+.forum-reply-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0 0.2rem;
+}
+.forum-reply-btn:hover { color: var(--accent); }
+.forum-message-highlight { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+
+.forum-search-toggle-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1;
+  padding: 0.36rem 0.5rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.forum-search-toggle-btn:hover,
+.forum-search-toggle-btn.active { color: var(--accent); border-color: var(--accent); }
+
+.forum-push-toggle-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1;
+  padding: 0.36rem 0.5rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+.forum-push-toggle-btn:hover { color: var(--accent); border-color: var(--accent); }
+.forum-push-toggle-btn.active { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+/* Blocked (browser-level denial) gets its own icon + color below, rather
+   than looking identical to the plain off state — see renderPushToggleBtn()
+   in js/push-notifications.js. Left tappable (not :disabled) so a tap can
+   still explain what happened instead of just silently eating the touch. */
+.forum-push-toggle-btn.blocked { color: var(--wrong); border-color: var(--wrong); opacity: 0.85; }
+.forum-push-toggle-btn.blocked:hover { color: var(--wrong); border-color: var(--wrong); }
+.forum-push-toggle-btn:disabled { opacity: 0.5; cursor: default; }
+
+.forum-search-bar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+  flex: 0 0 auto;
+}
+.forum-search-input {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  background: var(--bg);
+  color: var(--text);
+}
+.forum-search-input:focus { outline: none; border-color: var(--accent); }
+.forum-search-clear-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+}
+.forum-search-clear-btn:hover { color: var(--text); border-color: var(--text); }
+
+/* ── Per-problem context panel (only shown when opened via a problem's own
+   forum button) — collapsed by default, expands to the problem's text. ── */
+.forum-problem-context {
+  margin-bottom: 0.8rem;
+  flex: 0 0 auto;
+}
+.forum-problem-context-toggle {
+  width: 100%;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.forum-problem-context-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.forum-problem-context-body {
+  margin-top: 0.4rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  font-size: 0.9rem;
+  line-height: 1.5;
+  font-family: 'STIX Two Text', var(--sans);
+}
+
+/* ── Composer (new message) ── */
+.forum-composer {
+  margin-bottom: 0.8rem;
+  padding: 0.8rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(8px * var(--radius-mult));
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  flex: 0 0 auto;
+}
+.forum-name-input,
+.forum-scope-select,
+.forum-body-input {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.45rem 0.6rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.forum-name-input:focus,
+.forum-scope-select:focus,
+.forum-body-input:focus { border-color: var(--accent); }
+
+.forum-name-input { width: 100%; box-sizing: border-box; }
+
+/* ── Identity area (unclaimed name field vs. claimed nickname bar) ── */
+.forum-identity-unclaimed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.forum-identity-link-btn {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  padding: 0;
+}
+/* Only the claim modal's own instance of this link (index.html,
+   #forumClaimModalRestoreLink) needs extra top margin, to sit clear of
+   .stats-modal-actions below it — the composer's plain inline copy of this
+   same class (right above the scope dropdown, not a button row) never had
+   that crowding problem, so the margin used to live on the shared class
+   itself, which pushed the composer's copy down too. */
+#forumClaimModalRestoreLink {
+  margin-top: -10rem;
+}
+.forum-identity-link-btn:hover { color: var(--accent); }
+
+.forum-identity-claimed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.5rem 0.7rem;
+}
+.forum-identity-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.forum-identity-label strong { color: var(--text); }
+.forum-identity-avatar { display: block; flex: 0 0 auto; }
+.forum-identity-avatar .forum-message-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: calc(6px * var(--radius-mult));
+}
+.forum-identity-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+.forum-identity-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.32rem 0.6rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.forum-identity-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.forum-pin-input { font-family: var(--mono); letter-spacing: 0.15em; text-align: center; }
+/* Claim/restore modal's nickname field sits directly above the PIN field
+   (#forumClaimPinInput, .forum-pin-input above) — center it to match rather
+   than left-aligning while the field right below it is centered. */
+#forumClaimNicknameInput { text-align: center; }
+.forum-pin-display {
+  font-family: var(--mono);
+  font-size: 1.9rem;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  color: var(--accent);
+  text-align: center;
+  margin-bottom: 1.2rem;
+}
+
+.stats-modal-btn.danger { border-color: var(--wrong); color: var(--wrong); }
+.stats-modal-btn.danger:hover { background: var(--wrong); color: var(--chrome-light); }
+
+/* ── "Getting Started!" screen (index.html #gettingStartedModalBackdrop,
+   js/forum.js openGettingStartedModal/toggleGsFaq) ──
+   Reuses .stats-modal-box's card skin but widens/heightens it — the FAQ
+   list needs more room than a plain confirm dialog — and caps its own
+   height with internal scrolling so it never grows past the viewport on
+   short phones. */
+.gs-modal-box {
+  max-width: 440px;
+  max-height: 85vh;
+  overflow-y: auto;
+  text-align: left;
+}
+.gs-modal-box .stats-modal-title { text-align: center; }
+.gs-modal-desc {
+  text-align: center;
+  margin-bottom: 1.2rem;
+}
+.gs-modal-desc strong { color: var(--text); }
+.gs-start-row { margin-bottom: 1.5rem; }
+.gs-start-btn { flex: 1; padding: 0.7rem 1.1rem; font-size: 0.85rem; }
+
+.gs-faq-heading {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.gs-faq-item {
+  border-top: 1px solid var(--border);
+}
+.gs-faq-item:last-child { border-bottom: 1px solid var(--border); }
+.gs-faq-q {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  text-align: left;
+  padding: 0.65rem 0.1rem;
+  cursor: pointer;
+}
+.gs-faq-q:hover { color: var(--accent); }
+.gs-faq-caret {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.gs-faq-item.open .gs-faq-caret { transform: rotate(90deg); color: var(--accent); }
+.gs-faq-a {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.55;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease, padding 0.2s ease;
+  padding: 0 0.1rem;
+}
+.gs-faq-item.open .gs-faq-a {
+  max-height: 220px;
+  padding: 0 0.1rem 0.8rem;
+}
+
+.forum-composer-scope-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.forum-scope-select {
+  flex: 1 1 160px;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+
+.forum-composer-body-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+.forum-composer-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+.forum-body-input-wrap {
+  position: relative;
+  flex: 1;
+}
+.forum-body-input {
+  flex: 1;
+  resize: vertical;
+  min-height: 2.4rem;
+  line-height: 1.4;
+  width: 100%;
+  display: block;
+}
+/* Invisible twin of the textarea, used only to hit-test where $...$/$$...$$
+   regions land on screen so hovering them can show a preview. It mirrors the
+   textarea's box (font/padding/size) and scroll position exactly, but is
+   never shown or interactive — it's a measuring tool, not an overlay the
+   person actually sees or clicks. This is an approximation (a plain <div>
+   can't guarantee 100% identical text-wrapping to a <textarea> in every
+   browser), so hover accuracy near line-wrap edges may be slightly off. */
+.forum-body-mirror {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font: inherit;
+  line-height: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid transparent;
+}
+
+/* ── @mention suggestion panel (composer) ── */
+.forum-mention-suggest {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 0.3rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--shadow) 25%, transparent);
+  z-index: 30;
+  overflow: hidden;
+}
+.forum-mention-item {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text);
+  padding: 0.42rem 0.7rem;
+  cursor: pointer;
+}
+.forum-mention-item.active,
+.forum-mention-item:hover {
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.forum-eq-hover-preview {
+  position: fixed;
+  z-index: 4000;
+  max-width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: calc(8px * var(--radius-mult));
+  padding: 0.5rem 0.7rem;
+  font-size: 0.88rem;
+  color: var(--text);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--shadow) 25%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.12s, transform 0.12s;
+  overflow-x: auto;
+}
+.forum-eq-hover-preview.visible { opacity: 1; transform: translateY(0); }
+.forum-send-btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.55rem 1rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.forum-send-btn:hover:not(:disabled) { opacity: 0.88; }
+.forum-send-btn:disabled { opacity: 0.6; cursor: default; }
+/* Shown in place of the normal Send button only after a LaTeX-assist
+   conversion failure (submitForumMessage() in forum.js) — retry is the
+   round accent button so it visually reads as "try again", force-send is
+   the muted/outline one since posting the raw &...& text unconverted is
+   the fallback choice, not the encouraged one. Both get an explicit height
+   instead of relying on padding+font-size to line up with each other and
+   with the plain Send button — .forum-latex-retry-btn's bigger font-size
+   otherwise makes it taller than force despite identical padding, since
+   line-height scales with font-size. */
+.forum-send-btn,
+.forum-latex-retry-btn,
+.forum-latex-force-btn {
+  height: 2.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.forum-latex-retry-btn {
+  width: 2.3rem;
+  padding: 0;
+  text-align: center;
+  font-size: 1rem;
+}
+.forum-latex-force-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.forum-latex-force-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); opacity: 1; }
+
+.forum-eq-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.55rem 0.65rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.forum-eq-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Insert-equation modal ── */
+.forum-eq-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--shadow) calc(0.6 * 100%), transparent);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s;
+}
+.forum-eq-modal-backdrop.visible { opacity: 1; pointer-events: all; }
+.forum-eq-modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult));
+  padding: 1.4rem 1.5rem;
+  max-width: 420px;
+  width: 90%;
+  max-height: 88vh;
+  overflow-y: auto;
+  text-align: left;
+}
+.forum-eq-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.9rem;
+}
+.forum-eq-modal-header button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0;
+}
+.forum-eq-modal-header button:hover { color: var(--text); }
+.forum-eq-input {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.5rem 0.6rem;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+.forum-eq-input:focus { border-color: var(--accent); }
+
+.forum-eq-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+  margin: 0.7rem 0;
+}
+.forum-eq-quick-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  padding: 0.5rem 0.3rem;
+  min-height: 2.3rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.15s;
+  overflow: hidden;
+}
+.forum-eq-quick-btn mjx-container { color: inherit; }
+.forum-eq-quick-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(var(--accent-rgb),0.08);
+}
+.forum-eq-quick-btn:active { transform: scale(0.95); }
+
+.forum-eq-display-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: 0.6rem 0 1rem;
+  cursor: pointer;
+}
+.forum-eq-preview-label {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.35rem;
+}
+.forum-eq-preview {
+  min-height: 2.6rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.6rem 0.7rem;
+  color: var(--text);
+  font-size: 0.9rem;
+  overflow-x: auto;
+  margin-bottom: 1.1rem;
+}
+.forum-eq-modal-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+.forum-eq-modal-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  padding: 0.5rem 1rem;
+  border-radius: calc(6px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.forum-eq-modal-btn:hover { border-color: var(--accent); color: var(--accent); }
+.forum-eq-modal-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--chrome-light);
+}
+.forum-eq-modal-btn.primary:hover { opacity: 0.85; }
+
+.forum-composer-status {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  min-height: 1em;
+}
+.forum-composer-status-error { color: var(--wrong); }
+
+/* ── Filters (reuses .sf-chip / .sf-group / .sf-label from stats.css) ── */
+.forum-filters {
+  margin-bottom: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(8px * var(--radius-mult));
+  flex: 0 0 auto;
+}
+
+/* Sub-filter select shown only once a specific quiz chip (q1..q4) is active
+   — see updateForumFilterProblemSelect() in forum.js. Styled to match the
+   .sf-chip pills above it (pill radius, mono font, colored border/text tied
+   to that quiz's --chip-color) rather than looking like a plain form
+   field, since it's really just a second-level chip. It's a normal flex
+   item in .sf-group alongside the chips (that container already has
+   align-items:center and its own gap), so no manual margin/vertical
+   offset here — adding one would un-center it relative to whichever chip
+   ends up sharing its wrapped line. Sized to its content rather than
+   stretched full-width so it still reads as a chip and not a text input. */
+.forum-filter-subselect {
+  flex: 0 0 auto;
+  width: 150px;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: var(--bg);
+  border: 1px solid var(--chip-color, var(--border));
+  color: var(--chip-color, var(--muted));
+  background: color-mix(in srgb, var(--chip-color, var(--accent)) 15%, var(--bg));
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: calc(20px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.forum-filter-subselect:hover { border-color: var(--chip-color, var(--muted)); }
+.forum-filter-subselect:focus { outline: none; border-color: var(--chip-color, var(--accent)); }
+
+/* ── Message list ── */
+.forum-list {
+  padding: 0.7rem 1rem 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+}
+
+/* Sticks near the top of the viewport as the reader scrolls down into older
+   messages further down the page (same idea as Twitter/Slack's floating
+   "N new messages" banner) — see forumLiveTick()/scrollForumToTop() in
+   forum.js. `position: sticky` rather than `fixed`: #forumScreen's own
+   entrance animation applies a `transform` (see fadeInPage/fadeOutPage),
+   and a transformed ancestor turns any `position: fixed` descendant into
+   something anchored to *that ancestor's* box instead of the real browser
+   viewport — sticky isn't affected by that, so it's the correct tool here,
+   not just a stylistic choice. */
+.forum-new-msgs-pill {
+  position: sticky;
+  top: 0.6rem;
+  z-index: 10;
+  width: fit-content;
+  margin: 0 auto 0.6rem;
+  background: var(--accent);
+  color: var(--bg);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.32rem 0.85rem;
+  border-radius: calc(20px * var(--radius-mult));
+  cursor: pointer;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--shadow) 25%, transparent);
+  white-space: nowrap;
+}
+
+/* ── Pinned message banner ──────────────────────────────────────────────────
+   Frames the one hardcoded welcome message (FORUM_PINNED_MESSAGE_ID,
+   forum.js) shown at the top of the forum until it's dismissed or expires
+   (renderForumPinnedBanner). The message row inside it is the exact same
+   .forum-message markup as any other row (renderForumMessage is reused
+   as-is) — this just wraps it in an accented frame with a small "Pinned"
+   label + dismiss button above, so it visually reads as pinned rather than
+   as the first item in the ordinary list. */
+.forum-pinned-wrap {
+  border: 1.5px solid var(--accent);
+  border-radius: calc(10px * var(--radius-mult));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+  padding: 0.55rem 0.85rem 0.15rem;
+  margin: 0.7rem 0 0.9rem;
+}
+.forum-pinned-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.05rem;
+}
+.forum-pinned-label {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.forum-pinned-dismiss-btn {
+  border: none;
+  background: none;
+  color: var(--text);
+  opacity: 0.6;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  border-radius: calc(6px * var(--radius-mult));
+}
+.forum-pinned-dismiss-btn:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+/* The reused .forum-message row shouldn't draw its own ordinary-list
+   bottom border while it's sitting inside this frame instead. */
+.forum-pinned-wrap .forum-message {
+  border-bottom: none;
+  padding-top: 0.2rem;
+}
+
+.forum-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.forum-message:last-child { border-bottom: none; }
+
+/* Smooth fade/slide-in for freshly-rendered rows (initial load, "load
+   older", and live-poll arrivals) instead of just snapping into place. */
+@keyframes forumMessageEnter {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.forum-message-enter {
+  animation: forumMessageEnter 0.3s ease;
+}
+
+/* Official Gemini bot avatar — only ever attached to rows whose device_id
+   matches the reserved sentinel the Edge Function itself inserts under
+   (see FORUM_GEMINI_BOT_DEVICE_ID in forum.js), so it can't be spoofed by
+   someone just naming themselves "Gemini". Colored with var(--text), the
+   site's already-theme-aware near-black/near-white text color. */
+.forum-message-avatar {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  margin-top: 0.15rem;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.forum-message-avatar svg {
+  width: 14px;
+  height: 14px;
+  fill: var(--text);
+}
+/* Official Gemini logo (images/gemini-logo.svg, loaded via <img> — see
+   forumGeminiAvatarEl in forum.js) is already full-color on its own, so it's
+   naturally excluded from the theme-aware `fill: var(--text)` rule above
+   (that only applies to inline <svg>, and this is an <img>) — object-fit
+   keeps its own aspect ratio instead of stretching to the wrapper's square,
+   and it gets its own slightly larger sizing since it isn't sitting in a
+   padded circle background the way the old sparkle glyph was. */
+.forum-message-avatar img.gemini-mark {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+/* Stored DiceBear identicon (forumUserAvatarEl in forum.js) — unlike the
+   Gemini mark and the old sparkle glyph, this is a full-color image meant
+   to fill the whole square, not a small themed icon centered in padding,
+   so it overrides the generic 14px/fill:var(--text) rule above entirely.
+   No border-radius of its own — the wrapper's own small 6px rounding plus
+   its overflow:hidden above already clips this to match, so it isn't cut
+   into a circle. */
+.forum-message-avatar-user svg {
+  width: 100%;
+  height: 100%;
+  fill: initial;
+}
+
+/* Fallback for forumInitialsAvatarEl (js/forum.js) — a plain colored square
+   with the person's first letter, used in the profile popup when they have
+   no stored DiceBear identicon (never claimed a nickname, or claimed before
+   avatars shipped). Background color comes from forumColorForName() inline
+   via style, same hash every unclaimed author's name text already uses. */
+.forum-message-avatar-initials {
+  color: #fff;
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+/* Invisible same-size stand-in on every non-bot row, so message text always
+   starts at the same left edge as Gemini's rows regardless of whether that
+   row has an avatar. See forumAvatarSpacerEl() in forum.js. */
+.forum-message-avatar-spacer {
+  visibility: hidden;
+  border-color: transparent;
+  background: transparent;
+}
+.forum-message-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.forum-message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.2rem;
+}
+.forum-message-author {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.forum-message-author:hover,
+.forum-message-author:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+/* Gemini's own posts (identified server-side by device_id, see
+   FORUM_GEMINI_BOT_DEVICE_ID in forum.js) render in Google Sans Flex — the
+   actual free/open-source font Google's Gemini product itself uses — rather
+   than the site's usual --mono/--sans, so the official bot visually reads
+   as "Gemini" the same way it does in Google's own apps. Falls back to the
+   site's normal sans stack if the webfont hasn't loaded yet. */
+.forum-message-bot .forum-message-author,
+.forum-message-bot .forum-message-body {
+  font-family: 'Google Sans Flex', var(--sans);
+}
+.forum-message-bot .forum-message-author { font-weight: 600; }
+.forum-message-tag {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.5rem;
+  border-radius: calc(20px * var(--radius-mult));
+  background: color-mix(in srgb, var(--tag-color, var(--muted)) 15%, transparent);
+  color: var(--tag-color, var(--muted));
+  border: 1px solid color-mix(in srgb, var(--tag-color, var(--muted)) 40%, transparent);
+  white-space: nowrap;
+}
+/* Sits right before the timestamp and carries the right-flush margin that
+   used to live directly on .forum-message-time — moved here so an edited
+   tag gets pulled into the same flush-right group as the date instead of
+   landing to its left, still glued against the author/tag on the other
+   side. Always rendered (see the `edited` element in renderForumMessage
+   and forumEditBtnSpacerEl's sibling logic in forum.js), just
+   visibility:hidden when the message wasn't edited — that's what keeps
+   the date starting at the same x position on every row either way. */
+.forum-message-edited {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  font-style: italic;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.forum-message-edited-hidden {
+  visibility: hidden;
+}
+/* The date's own column-alignment problem (a single-digit hour is one
+   character narrower than a two-digit one, e.g. "9:56" vs "10:56") is
+   handled by padding the string itself in formatForumTimeAligned (see
+   forum.js) rather than here — that's what lets the icon sit flush
+   against the date below with no min-width/text-align juggling. */
+.forum-message-time {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* Wraps the flag/edit icon (if any — Gemini's rows have none, see
+   renderForumMessage) and the date together with no gap between them, so
+   the icon sits flush against the date ("⚑Jul 29, 10:56 AM") instead of
+   picking up .forum-message-meta's normal 0.5rem gap like the other meta
+   elements do. This group itself still sits in that normal gap after
+   .forum-message-edited, and — since it's the last element in the row —
+   its own right edge is what actually lands flush against the row's right
+   edge. */
+.forum-message-timestamp-group {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  flex-shrink: 0;
+}
+.forum-flag-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s, color 0.15s;
+}
+.forum-flag-btn:hover:not(:disabled) { opacity: 1; color: var(--wrong); }
+.forum-flag-btn:disabled { cursor: default; }
+.forum-flag-btn-kept { color: var(--correct); opacity: 0.8; }
+.forum-flag-btn-reviewing { color: var(--partial); opacity: 0.85; }
+.forum-flag-btn-deleted { color: var(--wrong); opacity: 0.85; }
+.forum-edit-body-input {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  resize: vertical;
+}
+
+.forum-edit-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s, color 0.15s;
+}
+.forum-edit-btn:hover { opacity: 1; color: var(--accent); }
+/* Invisible stand-in for your own message once it's 'deleted' — not
+   flaggable (no self-flagging) and not editable, so neither icon renders
+   (see forumEditBtnSpacerEl in forum.js), but this still reserves the
+   same width so the date lines up with every other human row's. */
+.forum-edit-btn-spacer {
+  visibility: hidden;
+  pointer-events: none;
+}
+.forum-message-deleted-notice {
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  font-style: italic;
+  color: var(--muted);
+  opacity: 0.55;
+  line-height: 1.45;
+}
+/* Stand-in for an &...&/&&...&& LaTeX-shorthand span while a just-sent
+   message is still waiting on the server's conversion pass — see
+   FORUM_LATEX_ASSIST_RE in forum.js and applyLatexAssist in
+   post-message.ts, which this mirrors client-side. Same muted/italic
+   treatment as .forum-message-deleted-notice above (the ban-reason-style
+   grey the person asked for), but inline rather than block-level since it
+   only replaces the matched span, not the whole message. */
+.forum-latex-pending {
+  font-style: italic;
+  color: var(--muted);
+  opacity: 0.6;
+  cursor: default;
+}
+.forum-message-body {
+  font-family: var(--sans);
+  font-size: 0.86rem;
+  color: var(--text);
+  line-height: 1.45;
+  text-align: left;
+  overflow-wrap: break-word;
+  /* Anchor point for .forum-message-mention-highlight overlays (absolute,
+     positioned by forum.js from measured row geometry). isolation:isolate
+     gives this its own stacking context so the overlays' z-index:-1 can't
+     accidentally slip behind anything outside this message. */
+  position: relative;
+  isolation: isolate;
+}
+
+/* Each real line of a message body is its own block (see
+   renderForumMessageBody in forum.js), so multi-line messages actually
+   display as separate lines instead of collapsing into one flowed
+   paragraph. An empty line (a deliberate blank line the person typed)
+   still needs to take up space even with no inline content in it. */
+.forum-message-line {
+  display: block;
+}
+.forum-message-line:empty {
+  min-height: 1.45em; /* matches .forum-message-body's line-height */
+}
+
+/* A $$...$$ display equation that's wider than the screen (long derivations,
+   physics unit chains, etc.) would otherwise force the whole message —
+   sometimes the whole page — wider than the viewport on narrow/mobile
+   screens, the way it does today. MathJax renders each one as its own
+   <mjx-container display="true">; scoping the scroll to just that element
+   (rather than e.g. the whole message body) means the rest of the message's
+   text still wraps normally, and only the equation itself gets a small
+   horizontal scrollbar when it doesn't fit. A few px of padding keep the
+   scrollbar from sitting flush against the glyphs, and negative margins
+   pull that padding back out so the equation still lines up with the
+   surrounding text instead of looking indented. */
+.forum-message-body mjx-container[display="true"] {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding: 0.15rem 0;
+  margin: 0.15rem -0.15rem;
+}
+
+/* Full-width highlight bar behind just the visual row(s) that contain one
+   of the viewer's own "@name" mention chips — not the whole logical line/
+   paragraph, but also not a tight box hugging only the mention's words.
+   These are absolutely-positioned by positionForumMentionHighlights() in
+   forum.js, which measures actual wrapped-row geometry with
+   Range.getClientRects() (the browser only knows where a paragraph
+   actually wraps after layout, so this can't be done in CSS alone).
+   z-index:-1 relative to .forum-message-body's isolated stacking context
+   puts it behind the text; pointer-events:none keeps it from swallowing
+   clicks meant for the mention chip or surrounding text. Uses var(--accent)
+   at low opacity so it stays correct across every theme preset/custom
+   theme. */
+.forum-message-mention-highlight {
+  position: absolute;
+  left: -0.3rem;
+  right: -0.3rem;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-radius: calc(6px * var(--radius-mult));
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Tappable "@name" chip inside a message body. role="button" + tabindex is
+   set in forum.js so it's keyboard-reachable, not just clickable. */
+.forum-mention-chip {
+  display: inline;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+  border-radius: calc(4px * var(--radius-mult));
+  padding: 0.02rem 0.25rem;
+  cursor: pointer;
+}
+
+/* Mention profile popup box (index.html's #forumMentionModalBackdrop) — own
+   layout, not the shared .stats-modal-box skin every other forum dialog
+   uses, so this reads as a person's profile card rather than a Stats-screen
+   dialog. Sits inside the same .stats-modal-backdrop overlay mechanics
+   (dimming, centering, .visible fade) as every other modal, just with a
+   different box. */
+.forum-profile-modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(14px * var(--radius-mult));
+  padding: 1.7rem 1.8rem 1.4rem;
+  max-width: 300px;
+  width: 90%;
+  text-align: center;
+}
+/* Reuses the same .forum-message-avatar element/markup a message row's
+   avatar uses (forumUserAvatarEl/forumGeminiAvatarEl/forumInitialsAvatarEl
+   in forum.js) just scaled way up, so it's visibly "the same avatar, bigger"
+   rather than a differently-shaped one-off. */
+.forum-profile-modal-avatar {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+.forum-profile-modal-avatar .forum-message-avatar {
+  width: 76px;
+  height: 76px;
+  margin-top: 0;
+  border-radius: calc(10px * var(--radius-mult));
+  overflow: hidden;
+}
+.forum-profile-modal-avatar .forum-message-avatar img.gemini-mark { width: 42px; height: 42px; }
+.forum-profile-modal-avatar .forum-message-avatar-initials {
+  font-size: 1.9rem;
+}
+.forum-profile-modal-name {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.9rem;
+}
+.forum-profile-modal-stats {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.75;
+  margin-bottom: 1.4rem;
+}
+.forum-mention-chip:hover,
+.forum-mention-chip:focus-visible {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  outline: none;
+}
+
+.forum-status {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 1.2rem 0;
+}
+.forum-status-error { color: var(--wrong); }
+
+.forum-load-more-btn {
+  display: block;
+  width: 100%;
+  flex: 0 0 auto;
+  margin-top: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  padding: 0.6rem;
+  border-radius: calc(8px * var(--radius-mult));
+  transition: color 0.15s, border-color 0.15s;
+}
+.forum-load-more-btn:hover    { color: var(--accent); border-color: var(--accent); }
+.forum-load-more-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Launch button + unread badge (landing screen) ── */
+.forum-launch-wrap {
+  position: relative;
+  width: 100%;
+}
+.forum-launch-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  background: rgba(var(--accent-rgb),0.07);
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.55rem 1.2rem;
+  border-radius: calc(8px * var(--radius-mult));
+  cursor: pointer;
+  transition: all 0.18s;
+  margin-top: 0.6rem;
+  box-shadow: 0 0 0 0 rgba(var(--accent-rgb),0.15);
+}
+.forum-launch-btn:hover {
+  background: rgba(var(--accent-rgb),0.14);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.12);
+}
+.forum-badge {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: -0.05rem;
+  right: -0.05rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  background: var(--wrong);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+  pointer-events: none;
+}
+
+/* "Someone tagged you" indicator — shown ALONGSIDE .forum-badge (not instead
+   of it), offset to the opposite corner so the two never overlap. Same pill
+   shape/sizing as .forum-badge, just a different color+glyph, and driven by
+   its own .visible class (toggled in setForumUnreadBadge, forum.js) rather
+   than an inline display style, since unlike the count it's a plain boolean. */
+.forum-at-badge {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: -0.05rem;
+  left: -0.05rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  background: var(--accent);
+  color: var(--chrome-light, #fff);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+  pointer-events: none;
+}
+.forum-at-badge.visible { display: flex; }
+
+/* ── Floating Forum button (bottom-left) ──
+   A second, always-around entry point to the Forum — visible on any screen
+   other than the landing screen (which already has the big "💬 Forum"
+   button) or a plain "Random 6" quiz (see syncForumFabVisibility(), forum.js).
+   `position: fixed` gives it its own containing block, so the two badges
+   inside can be positioned against just the round button the same way
+   .forum-badge/.forum-at-badge already are against the main-screen button. */
+.forum-fab-wrap {
+  position: fixed;
+  left: 1.1rem;
+  bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
+  z-index: 150; /* above in-flow screen content (appPage/statsScreen/choicePage
+                   have no stacking context of their own), below the Forum
+                   screen itself (200) and any modal (1000+) */
+  /* Always laid out (no display:none) so toggling .forum-fab-visible — from
+     syncForumFabVisibility()'s MutationObservers, which fire on every screen
+     switch (Random 6, solve-all, stats, choice, landing, forum) — animates
+     in/out instead of popping. pointer-events stays off while hidden so the
+     invisible button can't be tapped or block clicks underneath it. */
+  display: flex;
+  opacity: 0;
+  transform: scale(0.85);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.forum-fab-wrap.forum-fab-visible {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+.forum-fab {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  background: var(--bg);
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.forum-fab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.24);
+}
+@media (max-width: 600px) {
+  .forum-fab-wrap { left: 0.8rem; bottom: calc(0.8rem + env(safe-area-inset-bottom, 0px)); }
+  .forum-fab { width: 2.6rem; height: 2.6rem; font-size: 1.1rem; }
+}
+
+/* ── Responsive (mobile) ──
+   Beyond just not squeezing the layout, on a narrow screen the composer's
+   textarea was previously sharing its row with two fixed-width buttons
+   (∑ and Send), so it only got a sliver of the screen to actually type
+   into. This stacks the buttons under the textarea instead, so the textarea
+   gets the phone's full width, and tightens spacing throughout the header/
+   composer/filters so they take up less of the screen before you even
+   reach the messages. */
+@media (max-width: 600px) {
+  .forum-wrap {
+    padding: 0.9rem 0.8rem calc(0.7rem + env(safe-area-inset-bottom, 0px));
+  }
+  .forum-header { margin-bottom: 0.8rem; }
+  .forum-title { font-size: 1rem; }
+  .forum-close-btn { padding: 0.32rem 0.6rem; font-size: 0.76rem; }
+
+  .forum-composer { padding: 0.65rem 0.7rem; gap: 0.45rem; }
+
+  .forum-composer-body-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .forum-composer-actions { justify-content: flex-end; }
+  .forum-body-input { min-height: 3.2rem; } /* a bit taller now that it isn't sharing width with the buttons */
+
+  /* Filter chips scroll sideways instead of wrapping into a cramped
+     multi-row block — one thumb-swipe-able row reads much cleaner on a
+     phone than 6 chips wrapping awkwardly. */
+  .forum-filters {
+    padding: 0.55rem 0.7rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .forum-filters.sf-group {
+    flex-wrap: nowrap;
+  }
+  .forum-filters .sf-chip { flex: 0 0 auto; }
+
+  .forum-list { padding: 0.5rem 0.7rem 0.65rem; }
+  .forum-message { gap: 0.45rem; padding: 0.5rem 0; }
+  .forum-message-avatar,
+  .forum-message-avatar-spacer { width: 22px; height: 22px; }
+  .forum-message-avatar img.gemini-mark { width: 15px; height: 15px; }
+  .forum-message-body { font-size: 0.84rem; }
+}
