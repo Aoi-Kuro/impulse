@@ -2,8 +2,29 @@
 <html lang="en">
 <head data-course="phys161">
 <!-- Manual Edit -->
+<script>
+  // Browsers restore the exact pre-reload scrollY by default
+  // (history.scrollRestoration === 'auto'). That's fine for a page you
+  // navigate *within* (quiz progress, forum position — those are already
+  // handled explicitly via captureScreenScroll/restoreScreenScroll in
+  // js/quiz-engine.js), but this app is a single index.html: every
+  // "reload" — a manual refresh, or the update banner's Reload button —
+  // reloads the SAME document, and the browser then quietly puts the
+  // scrollbar right back where it was, i.e. this always lands on
+  // whatever screen/scroll position was showing before, not necessarily
+  // the top of the landing page. That only becomes visible when the page
+  // is actually tall enough to have been scrolled in the first place
+  // (narrower windows and phones — see the mc-splash layout notes in
+  // css/style.css), so on a full-width window where it never scrolled,
+  // nothing looked wrong. Setting this to 'manual' as the very first
+  // thing on the page (before the browser gets a chance to act on
+  // 'auto') stops that automatic restore, so a reload always starts at
+  // the true top unless something in this app explicitly scrolls it
+  // elsewhere.
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+</script>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>PHYS162 Practice Quiz</title>
 
 <!-- ── Open Graph / Telegram / Social preview ─────────────────────────────── -->
@@ -40,6 +61,7 @@
 <link rel="stylesheet" href="css/stats.css">
 <link rel="stylesheet" href="css/forum.css">
 <link rel="stylesheet" href="css/manual.css">
+<link rel="stylesheet" href="css/settings.css">
 
 <!-- ── MathJax (math rendering, STIX Two font) ── -->
 <script>
@@ -168,13 +190,32 @@
   </div>
 </div>
 
+<!-- Top bar backdrop: a plain full-width strip sitting behind the site logo
+     and the settings/manual/palette/theme-toggle row (both still separate
+     fixed elements positioned independently, unchanged below) so scrolled
+     page content disappears behind the whole top edge instead of just the
+     icons' own small boxes — same idea as YouTube's/Chrome's opaque top bar.
+     Purely decorative backing, so it's aria-hidden and never intercepts
+     clicks (pointer-events: none — the logo/icons above it, at a higher
+     z-index, still get every click). -->
+<div class="top-bar-backdrop" aria-hidden="true"></div>
+
 <!-- Site logo -->
 <a id="siteLogoLink" class="site-logo-link" href="#" onclick="goToMainMenu();return false;" title="Main menu">
   <img src="favicon/favicon.svg" alt="Logo" class="site-logo-img">
 </a>
 
+<!-- Top bar tips: rotating one-liners in the empty space between the logo
+     and the settings/theme icons. Text comes from js/data/tips.js, timing
+     and show/hide logic from js/top-bar-tips.js. Decorative + ephemeral,
+     so hidden from assistive tech like .top-bar-backdrop above. -->
+<div class="top-bar-tip" id="topBarTip" aria-hidden="true">
+  <span class="top-bar-tip-text" id="topBarTipText"></span>
+</div>
+
 <!-- Theme toggle -->
 <div class="theme-toggle-wrap">
+  <button class="palette-icon-btn" id="settingsBtn" onclick="toggleSettingsScreen()" title="Settings">⚙️</button>
   <button class="palette-icon-btn" id="manualBtn" onclick="toggleManualScreen()" title="User manual">📖</button>
   <button class="palette-icon-btn" id="paletteBtn" onclick="toggleThemePanel(event)" title="Color themes">🎨</button>
   <span class="theme-icon">🌙</span>
@@ -234,7 +275,7 @@
       </div>
     </div>
 
-    <button class="landing-start-btn" onclick="startSelected()">Start →</button>
+    <button class="landing-start-btn" onclick="startSelected()">Start</button>
     <button class="stats-launch-btn" onclick="openStatsScreen()">📊 Stats</button>
     <div class="forum-launch-wrap">
       <button class="forum-launch-btn" onclick="openForumScreen()">💬 Forum</button>
@@ -741,6 +782,31 @@
   </div>
 </div>
 
+<!-- ── Settings screen ──
+     Phase 0: infra only — storage/migration layer + panel shell + one
+     dummy "wiring test" toggle proving the full loop (click -> save ->
+     reload -> persists) works. Real toggles land in later phases; see
+     SETTINGS_DEFAULTS in js/settings.js for the registry they get added
+     to. Structurally mirrors #manualScreen (same open/close animation,
+     same header layout) — see openSettingsScreen/closeSettingsScreen in
+     js/settings.js. -->
+<div id="settingsScreen">
+  <div class="settings-wrap">
+    <div class="settings-header">
+      <div class="settings-header-left">
+        <div class="settings-title">⚙️ Settings</div>
+      </div>
+      <button class="stats-close-btn" onclick="closeSettingsScreen()">✕ Close</button>
+    </div>
+    <nav class="settings-tabs" id="settingsTabs">
+      <!-- Rendered by renderSettingsTabs() in js/settings.js -->
+    </nav>
+    <div class="settings-body" id="settingsBody">
+      <!-- Rendered by renderSettingsBody() in js/settings.js -->
+    </div>
+  </div>
+</div>
+
 <!-- ── User manual screen ──
      Structurally mirrors #forumScreen/#statsScreen (same open/close
      animation, same header layout — see openManualScreen/closeManualScreen
@@ -1057,6 +1123,9 @@
 <!-- ── Changelog data ── -->
 <script src="js/data/changelog.js"></script>
 
+<!-- ── Top bar tips data ── -->
+<script src="js/data/tips.js"></script>
+
 <!-- ── Quiz registry: maps quiz slots to problem arrays ── -->
 <script src="course/quizzes/quizzes.js"></script>
 
@@ -1073,6 +1142,8 @@
 <!-- ── Quiz engine: all app logic ── -->
 <script src="js/quiz-engine.js"></script>
 <script src="js/fig-attribution.js"></script>
+<script src="js/top-bar-scroll.js"></script>
+<script src="js/top-bar-tips.js"></script>
 
 <!-- ── Changelog + electromagnetic cursor ── -->
 <script src="js/changelog.js"></script>
@@ -1090,6 +1161,9 @@
 
 <!-- ── User manual (sidebar section/subsection tree + LaTeX content) ── -->
 <script src="js/manual.js"></script>
+
+<!-- ── Settings (versioned localStorage schema + panel shell — Phase 0) ── -->
+<script src="js/settings.js"></script>
 
 <!-- Registers sw.js (offline.html fallback only — see that file's header
      comment for exactly what it does and doesn't cache). Only takes effect

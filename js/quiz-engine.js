@@ -2124,6 +2124,12 @@ function goToMainMenu() {
     return;
   }
 
+  const settings = document.getElementById('settingsScreen');
+  if (settings && settings.classList.contains('visible')) {
+    closeSettingsScreen(true);
+    return;
+  }
+
   exitAppOrChoiceToLanding();
 }
 
@@ -2138,6 +2144,28 @@ function exitAppOrChoiceToLanding() {
   const appPage   = document.getElementById('appPage');
   const choice    = document.getElementById('choicePage');
   const landing   = document.getElementById('landingScreen');
+
+  // "All the way home" needs to also leave the Attempt Review screen behind,
+  // and it's not covered by anything above: openAttemptReview() (stats.js)
+  // removes Stats' own `visible` class when it opens, so by the time we get
+  // here goToMainMenu()'s stats-check is already false and this function is
+  // the only thing that runs — yet #reviewScreen itself was never touched.
+  // Its `visible` class is normally only ever removed by its own ✕ Close
+  // (closeAttemptReview()), so tapping the site logo while reviewing an
+  // attempt left it stuck on, ready to flash back into view the next time
+  // something else (e.g. the Forum FAB's host detection in forum.js, which
+  // just reads that same class) looks at it. Same story for opening the
+  // Forum from a per-problem button while reviewing an attempt, then
+  // closing the Forum with the logo: that route lands here too
+  // (closeForumScreen's forceLanding branch), without ever going through
+  // closeAttemptReview()'s own cleanup either. Clearing it here — the one
+  // shared "go home" path both routes funnel through — covers both cases at
+  // once instead of duplicating the fix at each call site.
+  const review = document.getElementById('reviewScreen');
+  if (review && review.classList.contains('visible')) {
+    review.classList.remove('visible', 'fading-out');
+    if (typeof stopForumProblemCountsPolling === 'function') stopForumProblemCountsPolling();
+  }
 
   // Determine which screen is currently visible and fade it out
   const fromApp    = appPage.classList.contains('visible');
@@ -2204,7 +2232,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '10.0.0';
+const CURRENT_VERSION = '10.1.0';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

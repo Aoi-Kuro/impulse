@@ -1,0 +1,157 @@
+/* ─── Settings screen ────────────────────────────────────────────────────────
+   Phase 0: infra + shell only. Structurally mirrors #manualScreen/#statsScreen
+   (same open/close fade animation, same header layout) — see
+   openSettingsScreen/closeSettingsScreen in js/settings.js. Single-column
+   layout (unlike the manual's two-pane docs view) since this is a flat list
+   of controls per tab, not browsable content. */
+
+#settingsScreen {
+  display: none;
+  min-height: 100vh;
+  background: var(--bg);
+  font-family: var(--sans);
+  z-index: 200;
+}
+#settingsScreen.visible {
+  display: block;
+  animation: fadeInPage 0.38s ease forwards;
+}
+#settingsScreen.fading-out {
+  animation: fadeOutPage 0.28s ease forwards;
+  pointer-events: none;
+}
+
+.settings-wrap {
+  width: 100%;
+  max-width: clamp(480px, 60vw, 720px);
+  margin: 0 auto;
+  padding: 2rem 1.4rem calc(3rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── Header (matches .stats-header/.manual-header) ── */
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.6rem;
+}
+.settings-header-left { display: flex; align-items: center; gap: 0.9rem; }
+.settings-title {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+/* ── Tabs (same segmented-control language as .filter-type-tabs) ── */
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1.4rem;
+}
+.settings-tab-btn {
+  flex: 1 1 auto;
+  min-width: 6.5rem;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.5rem 0.6rem;
+  border-radius: calc(4px * var(--radius-mult));
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.settings-tab-btn:hover { border-color: var(--muted); }
+.settings-tab-btn.active {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+@media (max-width: 480px) {
+  .settings-tab-btn { font-size: 0.66rem; padding: 0.45rem 0.3rem; min-width: 5rem; }
+}
+
+/* ── Body ── */
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.settings-empty-note {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding: 0.6rem 0.1rem 1.1rem;
+  line-height: 1.5;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 0.1rem;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row-label { min-width: 0; }
+.settings-row-title {
+  font-family: var(--sans);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.settings-row-desc {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+  line-height: 1.4;
+}
+
+/* ── Switch control — same track/knob visual language as .toggle-track/
+   .toggle-knob (theme toggle), rebuilt on a real checkbox so every future
+   setting can wire up with a single onchange handler. ── */
+.settings-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.settings-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+.settings-switch-track {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+  transition: background 0.25s;
+}
+.settings-switch-track::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: var(--chrome-light);
+  border-radius: 50%;
+  transition: transform 0.22s cubic-bezier(.4,0,.2,1);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--shadow) 30%, transparent);
+}
+.settings-switch input:checked + .settings-switch-track { background: var(--accent); }
+.settings-switch input:checked + .settings-switch-track::before { transform: translateX(16px); }

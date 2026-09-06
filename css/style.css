@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&family=Bangers&family=STIX+Two+Text:ital,wght@0,400;1,400&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&family=Quicksand:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600&family=Bangers&family=STIX+Two+Text:ital,wght@0,400;1,400&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&family=Quicksand:wght@400;500;700&display=swap');
 
   :root {
     --bg: #0d1117;
@@ -38,6 +38,17 @@
     --chrome-dark:  #0d1117;
     --shadow:       #000000;
     --radius-mult: 1;
+
+    /* ── Top bar backdrop height ──
+       Single source of truth for how tall the fixed top strip (logo +
+       settings/manual/palette/theme-toggle row) is reserved as. Used by
+       both .top-bar-backdrop's own height and body's top padding below,
+       so page content always starts exactly at the backdrop's bottom edge
+       — never underneath it (even unscrolled, at the very top of a page)
+       and never with an oversized gap either. Change this one value if the
+       icon row ever grows/shrinks; the two spots that use it stay in sync
+       automatically instead of drifting apart. */
+    --top-bar-h: 3rem;
     --accent2: var(--svg-red);
     --accent2-rgb: 255,138,152;
     --splash-stroke: var(--shadow);
@@ -46,7 +57,7 @@
   /* ── Light theme overrides ── */
   body.light {
     --bg: #ffffff;
-    --surface: #f6f8fa;
+    --surface: #f2f2f2;
     --border: #d0d7de;
     --accent: #0969da;
     --accent-dim: #dbeafe;
@@ -279,13 +290,65 @@
     pointer-events: auto;
   }
 
+  /* ── Top bar backdrop ──────────────────────────────────────────────────
+     Full-width strip fixed behind the logo + icon row (like YouTube's or
+     Chrome's own top bar) so scrolled content disappears behind the whole
+     top edge, not just the small boxes the logo/icons themselves occupy.
+     z-index sits below both (1001) so they still render on top of it, and
+     above ordinary page content (which never sets z-index, so anything
+     positive already wins). Height covers the taller of the two rows
+     (.theme-toggle-wrap, top 1rem + ~20px toggle-track) plus a little
+     headroom, without needing to track either one's exact box — a fixed
+     generous height is simpler and never under-covers if either row's
+     content changes.
+
+     Background starts as plain --bg — flush with the page, invisible — since
+     with nothing scrolled under it yet, a visibly distinct bar just reads as
+     a stray line across empty background for no reason. body.is-scrolled
+     (js/top-bar-scroll.js, toggled once window.scrollY passes a small
+     threshold — content actually starting to pass behind the bar) is what
+     flips it to --surface + a small shadow, and the transition below is what
+     turns that class flip into a smooth fade instead of a hard cut. */
+  .top-bar-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: calc(var(--top-bar-h) + env(safe-area-inset-top, 0px));
+    background: var(--bg);
+    box-shadow: 0 2px 8px transparent;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    z-index: 1000;
+    pointer-events: none;
+  }
+  body.is-scrolled .top-bar-backdrop {
+    background: var(--surface);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--shadow) 25%, transparent);
+  }
+
   /* ── Site logo ── */
+  /* top/left both reserve the device safe area (notch, status bar, Dynamic
+     Island, side bezel in landscape) on top of their normal offset, via
+     env(safe-area-inset-*) — see the viewport-fit=cover meta tag in
+     index.html, which is what makes these resolve to anything but 0 in the
+     first place. Without it, this and .theme-toggle-wrap/.theme-panel below
+     sat right at the raw viewport edge and could overlap page content or
+     get obscured by device chrome on notched phones. */
   .site-logo-link {
     position: fixed;
-    top: 0.85rem;
-    left: 1.2rem;
+    top: env(safe-area-inset-top, 0px);
+    left: calc(1.2rem + env(safe-area-inset-left, 0px));
+    /* Spans the bar's full height and centers its content within it —
+       previously this used a hand-picked `top` offset instead, which put
+       the logo close to centered but not exactly (and would need
+       re-tuning by hand any time --top-bar-h changed). Tying it to the
+       same var the backdrop's height uses keeps it centered automatically
+       no matter what that value is. */
+    height: var(--top-bar-h);
     z-index: 1001;
     display: flex;
+    align-items: center;
     cursor: pointer;
     opacity: 0.92;
     transition: opacity 0.15s;
@@ -295,11 +358,69 @@
 
   /* (header-top-row removed — main menu moved to quiz-top-row beside the hint button) */
 
+  /* ── Top bar tips ──────────────────────────────────────────────────────
+     Centered in the bar, width matched to the app's standard content
+     column (same 760px used by main/.guide/cards/stats/problem body
+     below) so its left/right edges line up with everything under it,
+     capped so it never creeps under the logo or the icon row on narrow
+     desktop windows. Only ever shown by js/top-bar-tips.js while
+     body.is-scrolled is set — i.e. the same moment .top-bar-backdrop
+     itself is opaque (--surface) rather than flush with the page — so a
+     tip never appears floating over bare background. Hidden outright on
+     narrow/mobile viewports (no safe gap to put it in there); see the
+     media query below. */
+  .top-bar-tip {
+    position: fixed;
+    top: env(safe-area-inset-top, 0px);
+    /* left/width below are both placeholders before JS gets a chance to
+       run. js/top-bar-tips.js sets both inline per active screen: `width`
+       to that screen's own content column (stats/review/forum/quiz/landing
+       each use their own), and `left` to the midpoint of the actual open
+       gap between the logo and the icon row — NOT the viewport's exact
+       midpoint, since the logo and icon row are different widths, so the
+       gap's true center sits slightly off viewport-center. Centering on
+       the gap instead lets the tip use the gap's full width rather than
+       twice its shorter half. */
+    left: 50%;
+    transform: translateX(-50%);
+    height: var(--top-bar-h);
+    width: 480px;
+    max-width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    overflow: hidden;
+    z-index: 1001;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s ease, width 0.2s ease, left 0.2s ease;
+  }
+  .top-bar-tip.visible { opacity: 1; }
+  .top-bar-tip-text {
+    display: inline-block;
+    white-space: nowrap;
+    font-family: 'STIX Two Text', var(--sans);
+    font-weight: 400;
+    font-size: 0.85rem;
+    color: var(--muted);
+    letter-spacing: 0.01em;
+    will-change: transform;
+  }
+  @media (max-width: 480px) {
+    .top-bar-tip { display: none; }
+  }
+
   /* ── Theme toggle switch ── */
+  /* Same safe-area reasoning as .site-logo-link just above, mirrored onto
+     the right/top edge instead of left/top. */
   .theme-toggle-wrap {
     position: fixed;
-    top: 1rem;
-    right: 1.2rem;
+    top: env(safe-area-inset-top, 0px);
+    right: calc(1.2rem + env(safe-area-inset-right, 0px));
+    /* Same full-bar-height + centered-content approach as .site-logo-link
+       above, replacing what used to be its own separately hand-picked
+       `top` offset. */
+    height: var(--top-bar-h);
     z-index: 1001;
     display: flex;
     align-items: center;
@@ -344,7 +465,7 @@
   #update-banner {
     display: none;
     position: fixed;
-    bottom: 1.2rem;
+    bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
     left: 50%;
     transform: translateX(-50%);
     z-index: 9999;
@@ -400,7 +521,7 @@
   #bug-report-banner {
     display: none;
     position: fixed;
-    bottom: 1.2rem;
+    bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
     left: 50%;
     transform: translateX(-50%);
     z-index: 9998;
@@ -448,7 +569,7 @@
   #theme-nudge-banner {
     display: none;
     position: fixed;
-    bottom: 1.2rem;
+    bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
     left: 50%;
     transform: translateX(-50%);
     z-index: 9997;
@@ -536,8 +657,14 @@
   .theme-panel {
     display: none;
     position: fixed;
-    top: 2.4rem;
-    right: 1.2rem;
+    /* .theme-toggle-wrap now spans the bar's full height (--top-bar-h) and
+       centers its icons within it, rather than sitting at its own
+       hand-picked top offset — so anchoring this at the bar's bottom edge
+       (same variable, no safe-area double-counting since that's already
+       baked into --top-bar-h's consumers) keeps it flush under the toggle
+       row regardless of exactly where the icons land inside that band. */
+    top: calc(var(--top-bar-h) + env(safe-area-inset-top, 0px));
+    right: calc(1.2rem + env(safe-area-inset-right, 0px));
     z-index: 1002;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -652,12 +779,60 @@
      jump (font-family itself can't be transitioned). */
   body.theme-swap { opacity: 0.55; transition: opacity .15s ease; }
 
+  /* Reserves the vertical scrollbar's gutter permanently, so swapping
+     between screens of different heights (landing vs. a long quiz page,
+     etc.) never toggles the scrollbar on/off and shifts all fixed-width
+     content sideways when it does. Falls back to nothing special in
+     browsers that don't support it (Safari < 18.2) — harmless no-op, just
+     back to the old jump there. */
+  html {
+    scrollbar-gutter: stable;
+    /* Kills the browser's default "scroll anchoring": when content above
+       the current scroll position resizes after the initial layout, the
+       browser otherwise auto-adjusts scrollTop to keep whatever's
+       currently in view visually stationary. On the landing screen this
+       fires because of #splashText (js/splash.js) — it starts empty and
+       gets its real text injected async (after fetching
+       course/splashes.json), which is a no-op height-wise on wide
+       viewports where .mc-splash is position:absolute/out of flow (see
+       .mc-splash-wrap), but on <=900px viewports (media query above)
+       .mc-splash becomes a normal in-flow block stacked above the title,
+       so that late text injection actually grows the page above the
+       fold. If the landing page is tall enough to scroll at all at that
+       width, the browser "helpfully" scrolls down to compensate right
+       after, landing every fresh visit (a manual refresh, the update
+       banner's Reload button, anything that reloads/re-renders this
+       page) partway down instead of at the top. Full-width windows never
+       show it (nothing reflows above the fold there); anything <=900px
+       — a shrunk desktop window or an actual phone — does. Disabling
+       anchoring site-wide is the reliable fix, rather than chasing every
+       element that might resize post-load. */
+    overflow-anchor: none;
+  }
+
   body {
     background: var(--bg);
     color: var(--text);
     font-family: var(--sans);
     min-height: 100vh;
-    padding: 1.5rem 1rem 4rem;
+    /* env(safe-area-inset-*) resolves to 0px on ordinary screens (and
+       everywhere before the viewport-fit=cover meta tag was added), so this
+       is a no-op there — it only adds real space on notched/rounded-corner
+       phones, keeping page content clear of the same edges the fixed
+       top/bottom elements below now reserve too. Top padding is pinned to
+       --top-bar-h (see :root above) rather than a plain rem value: it used
+       to be a plain 1.5rem, smaller than the fixed logo/icon row's own
+       height, so content quietly started *underneath* that row rather than
+       below it — barely visible as an overlap while the row was just small
+       transparent icons, but fully hidden once .top-bar-backdrop gave that
+       row a solid background. Matching this to the same variable the
+       backdrop's height uses means content now always starts right at the
+       backdrop's bottom edge, with no gap and no overlap, in every state —
+       scrolled or not. */
+    padding: calc(var(--top-bar-h) + env(safe-area-inset-top, 0px))
+             calc(1rem + env(safe-area-inset-right, 0px))
+             calc(4rem + env(safe-area-inset-bottom, 0px))
+             calc(1rem + env(safe-area-inset-left, 0px));
   }
 
   /* ── Guide panel ── */
@@ -1920,8 +2095,8 @@
   #stickyScore {
     display: none;
     position: fixed;
-    bottom: 1.5rem;
-    right: 1.5rem;
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    right: calc(1.5rem + env(safe-area-inset-right, 0px));
     z-index: 800;
     background: var(--surface);
     border: 1px solid var(--accent);
@@ -2480,9 +2655,10 @@
   .landing-start-btn {
     width: 100%;
     font-family: var(--mono);
-    font-size: 0.92rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
+    font-size: 0.98rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
     border: none;
     border-radius: calc(6px * var(--radius-mult));
     padding: 0.85rem 1.5rem;

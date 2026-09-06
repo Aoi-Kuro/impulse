@@ -99,6 +99,21 @@ const MANUAL_HOSTS = [
     show:      el => el.classList.add('visible'),
   },
   {
+    // Missing until now — SETTINGS_HOSTS (js/settings.js) already lists
+    // 'manualScreen' as a valid host, so Manual -> Settings worked, but the
+    // reverse (Settings -> Manual) didn't: openManualScreen() found no
+    // matching host, fell back to treating the (already-hidden) landing
+    // screen as the host, and never actually hid Settings. Manual became
+    // .visible but sat behind Settings (looked like it "didn't open"), and
+    // closing Settings then revealed the landing screen underneath while
+    // Manual's now-unhidden content sat stacked below it in normal page
+    // flow (looked "appended to the bottom of the main page").
+    id: 'settingsScreen',
+    isVisible: el => el.classList.contains('visible'),
+    hide:      el => el.classList.remove('visible', 'fading-out'),
+    show:      el => el.classList.add('visible'),
+  },
+  {
     id: 'choicePage',
     isVisible: el => !el.classList.contains('hidden'),
     hide:      el => el.classList.add('hidden'),
