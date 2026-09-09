@@ -16,6 +16,11 @@
 //     reset since you last synced" — see js/solve-all-sync.js's pull
 //     handling for why that distinction matters.
 //
+// All three responses include identity_id so the client can subscribe to a
+// Realtime Broadcast channel scoped to identity+quiz_num+cumulative (see
+// migration 004_solve_all_realtime_broadcast.sql) — that's what tells it
+// WHEN to run another round trip, instead of a blind interval.
+//
 // solve_all_progress has RLS enabled with zero policies, same reasoning as
 // quiz_attempts (see superbase/migrations/006_quiz_attempts.sql) — it's
 // only ever reachable through this SECURITY DEFINER-equivalent (service
@@ -116,7 +121,7 @@ export default {
         console.error("Solve-all pull error:", error);
         return Response.json({ ok: false, error: "Couldn't fetch, try again." }, { status: 500 });
       }
-      return Response.json({ ok: true, found: !!row, data: row ? row.data : null });
+      return Response.json({ ok: true, found: !!row, data: row ? row.data : null, identity_id: link.identity_id });
     }
 
     if (action === "push") {
@@ -131,6 +136,11 @@ export default {
             quiz_num,
             cumulative: cum,
             data,
+            device_id, // which device made this write — lets the Realtime
+                       // broadcast trigger tag its ping, so the pushing
+                       // device itself can ignore its own echo instead of
+                       // round-tripping in response to its own write (see
+                       // migration 005_solve_all_device_id.sql)
             updated_at: new Date().toISOString(),
           },
           { onConflict: "identity_id,quiz_num,cumulative" },
@@ -139,7 +149,7 @@ export default {
         console.error("Solve-all push error:", error);
         return Response.json({ ok: false, error: "Couldn't save, try again." }, { status: 500 });
       }
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, identity_id: link.identity_id });
     }
 
     // action === "reset"
@@ -151,6 +161,7 @@ export default {
           quiz_num,
           cumulative: cum,
           data: null,
+          device_id, // see the push branch above for why
           updated_at: new Date().toISOString(),
         },
         { onConflict: "identity_id,quiz_num,cumulative" },
@@ -159,6 +170,6 @@ export default {
       console.error("Solve-all reset error:", error);
       return Response.json({ ok: false, error: "Couldn't reset, try again." }, { status: 500 });
     }
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, identity_id: link.identity_id });
   }),
 };

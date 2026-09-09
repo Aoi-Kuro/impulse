@@ -2,9 +2,12 @@
 // Pushes any locally-queued (synced:false) attempts and pulls the full
 // current server list back down in one round trip, via the
 // sync-quiz-attempts Edge Function. Called: on every stats panel open, right
-// after recording a new attempt, right after a delete, and on a 10s
-// background timer for the whole session (not just while stats is open —
-// see startAttemptsSyncPolling below). No visible button for any of this —
+// after recording a new attempt, right after a delete, whenever a Realtime
+// Broadcast ping says something changed (see _ensureAttemptsRealtime below —
+// this is what replaced the old blind 10s-forever poll), and on a slow
+// fallback timer for the whole session (not just while stats is open — see
+// startAttemptsSyncPolling below) as a safety net in case a ping is ever
+// missed. No visible button for any of this —
 // status is conveyed only by the dot next to "Attempt log" (green pulse =
 // confirmed up to date, gray pulse = syncing/queued, static red = last
 // attempt failed and stays that way until a retry succeeds, hidden = no
@@ -107,10 +110,74 @@ function _updateAttemptsSyncDot(syncing) {
   }
 }
 
+// ── Realtime wake-up ─────────────────────────────────────────────────────
+// quiz_attempts holds another identity's answers, so unlike js/forum.js's
+// shared channel (which subscribes directly to the already-public
+// forum_messages table), we can't just open this table to Postgres Changes
+// without exposing everyone's history to everyone. Instead a DB trigger
+// (superbase/migrations/003_attempts_realtime_broadcast.sql) sends a tiny,
+// content-free "something changed" ping to a channel named after this
+// identity's identity_id, the moment ANY device syncs a change for it. This
+// listens for that ping and, on one, runs the exact same secure
+// sync-quiz-attempts round trip as before — just on demand instead of every
+// 10 seconds regardless. identity_id itself is learned from the sync
+// response below (already resolved server-side, so this costs nothing
+// extra) rather than stored — cheap to relearn on each page load, and it
+// means a nickname change/drop can't leave this pointed at a stale channel.
+let _attemptsIdentityId = null;
+let _attemptsRealtimeChannel = null;
+let _attemptsRealtimeEverConnected = false;
+let _attemptsBroadcastDebounce = null;
+
+function _onAttemptsBroadcast() {
+  // A multi-attempt push fires this once per row, and our own push echoes
+  // back to us too (we're subscribed to our own identity's channel) — a
+  // short debounce coalesces all of that into one syncAttempts() call
+  // instead of several back-to-back ones.
+  if (_attemptsBroadcastDebounce) clearTimeout(_attemptsBroadcastDebounce);
+  _attemptsBroadcastDebounce = setTimeout(() => {
+    _attemptsBroadcastDebounce = null;
+    syncAttempts();
+  }, 3000);
+}
+
+function _ensureAttemptsRealtime(identityId) {
+  if (!identityId || identityId === _attemptsIdentityId) return; // already on the right channel (or nothing to subscribe to yet)
+  _teardownAttemptsRealtime();
+  _attemptsIdentityId = identityId;
+  const client = (typeof getForumClient === 'function') ? getForumClient() : null;
+  if (!client) return;
+  _attemptsRealtimeChannel = client
+    .channel('attempts:' + identityId)
+    .on('broadcast', { event: 'changed' }, _onAttemptsBroadcast)
+    .subscribe((status) => {
+      if (status !== 'SUBSCRIBED') return;
+      // Reconnected after actually dropping (not the first connect,
+      // already covered by this sync's own immediate call) — something
+      // could have changed while we were gone, so catch up now rather than
+      // wait for the next ping or the slow fallback timer.
+      if (_attemptsRealtimeEverConnected) syncAttempts();
+      _attemptsRealtimeEverConnected = true;
+    });
+}
+
+function _teardownAttemptsRealtime() {
+  if (_attemptsRealtimeChannel) {
+    const client = (typeof getForumClient === 'function') ? getForumClient() : null;
+    if (client) client.removeChannel(_attemptsRealtimeChannel);
+  }
+  _attemptsRealtimeChannel = null;
+  _attemptsRealtimeEverConnected = false;
+  _attemptsIdentityId = null;
+}
+
 async function syncAttempts() {
   if (_attemptsSyncing) return; // already in flight — the caller's own next open/click will pick up the result
   const identityName = (typeof getForumNickname === 'function') ? getForumNickname() : '';
-  if (!identityName) return; // nothing to sync to yet — quiz start already gates on this, but stats can still be opened without ever starting one
+  if (!identityName) {
+    _teardownAttemptsRealtime(); // no identity to sync to (or listen for) anymore
+    return; // nothing to sync to yet — quiz start already gates on this, but stats can still be opened without ever starting one
+  }
 
   const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
   const deviceSecret = (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null;
@@ -201,6 +268,7 @@ async function syncAttempts() {
     saveStats(merged);
     _lastSyncFailed = false;
     renderStats();
+    if (data.identity_id) _ensureAttemptsRealtime(data.identity_id);
   } catch (err) {
     console.error('Attempt sync error:', err);
     _lastSyncFailed = true;
@@ -210,18 +278,16 @@ async function syncAttempts() {
   }
 }
 
-// ── Background re-sync, for the whole session ──────────────────────────────
-// Runs continuously once the page loads — same "always ticking, not tied to
-// one screen" pattern as forum.js's own unread poll (startForumPolling) —
-// rather than only while the stats screen happens to be open. This is what
-// makes a delete on *another* device actually disappear here on its own:
-// previously the fix only covered the deleting device racing its own
-// button; a second, already-synced device had no route back to the server
-// at all until it happened to open the stats screen (or someone hit a hard
-// refresh). Each tick is a cheap no-op if there's no claimed identity yet
-// (syncAttempts() itself gates on that first), so there's no cost to
-// leaving this running everywhere.
-const ATTEMPTS_SYNC_POLL_MS = 10000;
+// ── Background safety net, for the whole session ────────────────────────────
+// Realtime (_ensureAttemptsRealtime above) handles the normal case now —
+// this interval only exists to catch a ping that genuinely got missed
+// (e.g. the socket was down and even the reconnect catch-up didn't fire for
+// some reason), so it can run far less often than the old blind 10s poll
+// did. Still runs continuously once the page loads — same "not tied to one
+// screen" reasoning as before — since it's a once-every-few-minutes no-op
+// rather than a real cost. Each tick is also a cheap no-op if there's no
+// claimed identity yet (syncAttempts() itself gates on that first).
+const ATTEMPTS_SYNC_FALLBACK_MS = 180000; // 3 min — was a 10s poll before Realtime
 let _attemptsSyncPollTimer = null;
 
 function startAttemptsSyncPolling() {
@@ -234,7 +300,7 @@ function startAttemptsSyncPolling() {
     // regardless" background behavior away from the stats screen.
     if (typeof isStatsIdle === 'function' && isStatsIdle()) return;
     syncAttempts();
-  }, ATTEMPTS_SYNC_POLL_MS);
+  }, ATTEMPTS_SYNC_FALLBACK_MS);
 }
 
 function stopAttemptsSyncPolling() {

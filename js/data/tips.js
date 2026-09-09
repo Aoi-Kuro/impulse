@@ -3,5 +3,7 @@
 // js/top-bar-tips.js. Add more any time — no other file needs to change.
 window.TOP_BAR_TIPS = [
   "You can filter problems by whether you've already solved them.",
-  "You'll be able to turn off this scrolling line in Settings soon."
+  "You'll be able to turn off this scrolling line in Settings soon.",
+  "You can turn off the display of various elements (avatars, themes, manual buttons, splashes, etc.) in the settings.",
+  "Equation formatting broken? Tap Rerender Equations at the top of the page (the fix will be introduced one day)."
 ];

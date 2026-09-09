@@ -25,8 +25,9 @@
 
 // WARNING! The version has to be bumped in three places: here, in version.json and in quiz-engine.js
 const CHANGELOG = [
+  { version: "10.3.0", note: "Major reorganization of HTTP requests to the database (realtime mode is added).", scope: 0 }, 
   { version: "10.2.1", note: "Fixed P81 (Q1) error in answer key.", scope: 1 }, 
-   { version: "10.2.0", note: "Added display settings.", scope: 0 }, 
+  { version: "10.2.0", note: "Added display settings.", scope: 0 }, 
   { version: "10.1.2", note: "Loading performance improved (tiered loading + WebP usage).", scope: 0 }, 
   { version: "10.1.1", note: "UI bug fix for mobile devices in results of quiz.", scope: 0 }, 
   { version: "10.1.0", note: "Added top bar with hints, fixed UI & UX bugs.", scope: 0 }, 

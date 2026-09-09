@@ -15,6 +15,11 @@
 //      client just calls this with an empty `attempts` array to pull
 //      without pushing anything.
 //
+// The response also includes identity_id (see migration
+// 003_attempts_realtime_broadcast.sql) so the client can subscribe to a
+// Realtime Broadcast channel scoped to it — that's what tells the client
+// WHEN to call this again, instead of a blind interval.
+//
 // Requires superbase/migrations/006_quiz_attempts.sql to have been run
 // first. Requires the device to already be linked to a claimed identity
 // (js/forum.js's claim flow, same identity_devices table post-message.ts
@@ -216,6 +221,11 @@ export default {
       return Response.json({ ok: false, error: "Saved, but couldn't refresh your list." }, { status: 500 });
     }
 
-    return Response.json({ ok: true, attempts: rows ?? [] });
+    // identity_id is returned so the client can subscribe to that
+    // identity's Realtime Broadcast channel (see migration
+    // 003_attempts_realtime_broadcast.sql) and get woken up on future
+    // changes instead of polling — already resolved above, so this costs
+    // nothing extra to include.
+    return Response.json({ ok: true, attempts: rows ?? [], identity_id: identityId });
   }),
 };

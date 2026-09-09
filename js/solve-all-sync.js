@@ -10,12 +10,17 @@
 //
 // Sync points, matching what was asked:
 //   - Pull + union-merge + push once when solve-all opens.
+//   - Whenever a Realtime Broadcast ping says this exact session changed on
+//     another device (see _ensureSaRealtime below) — this is what replaced
+//     the old blind 15s-while-open poll.
+//   - A slow fallback tick (SA_SYNC_FALLBACK_MS) as a safety net in case a
+//     ping is ever missed.
 //   - Immediately again the moment the tab regains focus (visibilitychange,
 //     bottom of this file) — background tabs get their timers throttled
 //     hard by the browser, so without this a session left open but
-//     unfocused could sit stale far longer than 15s; the moment you switch
-//     back is exactly when you want it caught up, same pattern already
-//     used by js/attempts-sync.js and js/stats.js.
+//     unfocused could sit stale far longer than expected; the moment you
+//     switch back is exactly when you want it caught up, same pattern
+//     already used by js/attempts-sync.js and js/stats.js.
 //   - One more push on exit (best-effort, catches whatever the last
 //     periodic tick missed).
 //   - Reset upserts a *tombstone* (data: null), not a delete. A missing row
@@ -37,10 +42,21 @@
 // file — since they don't need to wait on a network round trip to talk to
 // each other at all.
 
-const SA_SYNC_POLL_MS = 15000;
+const SA_SYNC_POLL_MS = 15000; // kept as the reset-guard duration below (resetSolveAllProgressOnServer) — see SA_SYNC_FALLBACK_MS for the (much slower, now Realtime-backed) periodic tick
+const SA_SYNC_FALLBACK_MS = 60000; // safety net only now — Realtime (see _ensureSaRealtime) handles the normal case
 let _saSyncPollTimer = null;
 let _saSyncActive = null;        // { quizNum, cumulative } while a session is open
 const _saPendingReset = new Set(); // "quizNum_cum" keys mid-reset — pushes for that key are skipped
+// Signature (see _saSnapshotSignature below) of the last snapshot
+// successfully pushed for the currently-open session — lets
+// _saSyncRoundTrip skip pushing again when nothing local has actually
+// changed. This is the second of two layers that stop a self-sustaining
+// push→broadcast→round-trip→push loop: _onSaBroadcast already filters out
+// a device's own echo by device_id, but two *different* devices with the
+// same session open at once would still ping-pong real (if redundant)
+// re-pushes at each other forever without this. Reset to null whenever a
+// (new) session starts, so a fresh session's first push is never skipped.
+let _saLastPushedJson = null;
 
 function _saSyncKey(quizNum, cumulative) { return `${quizNum}_${cumulative ? 'c' : 's'}`; }
 
@@ -90,6 +106,95 @@ function _saHeaders() {
   };
 }
 
+// A stable, order-independent signature of "what actually matters" in a
+// snapshot — used only to decide whether a push is worth doing, never sent
+// anywhere. Two reasons a plain JSON.stringify(snapshot) can't be trusted
+// for that: (1) object key order and Set-derived array order aren't
+// guaranteed to come out the same way twice even when the content is
+// identical, and (2) buildSolveAllSnapshot() (js/quiz-engine.js) only reads
+// answersById off currently-rendered DOM inputs, so which problems are
+// scrolled into view — not just what's actually been solved — can shrink
+// or grow that field between calls. checkedById/lockedIds don't have that
+// problem (they come straight from the live Map/Set, not the DOM), so
+// that's what "did anything change" is judged on; answersById still gets
+// pushed as part of the real payload, just not used to trigger a push.
+function _saSnapshotSignature(snap) {
+  if (!snap) return '';
+  const checked = Object.keys(snap.checkedById || {}).sort().map(id => id + '=' + snap.checkedById[id]).join(',');
+  const locked = [...(snap.lockedIds || [])].sort().join(',');
+  return checked + '||' + locked;
+}
+
+// ── Realtime wake-up ─────────────────────────────────────────────────────
+// Same pattern as js/attempts-sync.js's _ensureAttemptsRealtime:
+// solve_all_progress isn't public-readable, so a DB trigger
+// (superbase/migrations/004_solve_all_realtime_broadcast.sql, tagged with
+// the pushing device_id by migration 005) sends a tiny "something changed"
+// ping to a channel scoped to this exact identity + quiz_num + cumulative
+// combo, instead of opening the table to direct Realtime reads. Only ever
+// subscribed while that exact session is open — see _ensureSaRealtime's
+// call site in _saSyncRoundTrip below and the teardown in stopSolveAllSync.
+let _saRealtimeChannel = null;
+let _saRealtimeKey = null; // 'identityId:quizNum_c|s' — which session the current channel is for
+let _saRealtimeEverConnected = false;
+let _saBroadcastDebounce = null;
+
+function _saRealtimeTopicKey(identityId, quizNum, cumulative) {
+  return `${identityId}:${_saSyncKey(quizNum, cumulative)}`;
+}
+
+function _onSaBroadcast(msg) {
+  // Migration 005 tags every ping with the device_id that made the write.
+  // If that's us, this is our own push echoing back — not a real signal
+  // that anything new happened — so ignore it outright rather than
+  // debounce-and-round-trip over it. (Older/un-migrated projects won't
+  // have device_id in the payload yet; treat that as "not us" rather than
+  // silently never syncing, since the content-based dedup in
+  // _saSyncRoundTrip is still there as a backstop either way.)
+  const pingDeviceId = msg?.payload?.device_id;
+  const ownDeviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
+  if (pingDeviceId && ownDeviceId && pingDeviceId === ownDeviceId) return;
+
+  // A genuinely different device's ping — debounce in case several land in
+  // a row (e.g. a batch push), so that becomes one round trip, not several.
+  if (_saBroadcastDebounce) clearTimeout(_saBroadcastDebounce);
+  _saBroadcastDebounce = setTimeout(() => {
+    _saBroadcastDebounce = null;
+    if (_saSyncActive) _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
+  }, 2000);
+}
+
+function _ensureSaRealtime(identityId, quizNum, cumulative) {
+  if (!identityId) return;
+  const key = _saRealtimeTopicKey(identityId, quizNum, cumulative);
+  if (_saRealtimeChannel && _saRealtimeKey === key) return; // already on the right channel
+  _teardownSaRealtime();
+  _saRealtimeKey = key;
+  const client = (typeof getForumClient === 'function') ? getForumClient() : null;
+  if (!client) return;
+  _saRealtimeChannel = client
+    .channel('solveall:' + key)
+    .on('broadcast', { event: 'changed' }, _onSaBroadcast)
+    .subscribe((status) => {
+      if (status !== 'SUBSCRIBED') return;
+      // Reconnected after actually dropping — something could have changed
+      // while we were gone, so catch up now rather than wait on the next
+      // ping or the slow fallback timer.
+      if (_saRealtimeEverConnected && _saSyncActive) _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
+      _saRealtimeEverConnected = true;
+    });
+}
+
+function _teardownSaRealtime() {
+  if (_saRealtimeChannel) {
+    const client = (typeof getForumClient === 'function') ? getForumClient() : null;
+    if (client) client.removeChannel(_saRealtimeChannel);
+  }
+  _saRealtimeChannel = null;
+  _saRealtimeKey = null;
+  _saRealtimeEverConnected = false;
+}
+
 // Returns null on network/server failure, or { found, data } — data is null
 // for both "never synced" (found:false) and "explicitly reset" (found:true).
 async function pullSolveAllProgress(quizNum, cumulative) {
@@ -104,7 +209,7 @@ async function pullSolveAllProgress(quizNum, cumulative) {
     });
     const json = await res.json().catch(() => null);
     if (!res.ok || !json || !json.ok) return null;
-    return { found: !!json.found, data: json.data ?? null };
+    return { found: !!json.found, data: json.data ?? null, identityId: json.identity_id ?? null };
   } catch (e) {
     console.error('Solve-all pull error:', e);
     return null;
@@ -209,10 +314,9 @@ async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
     // immediately pick the same quiz again"), that first push — the one
     // that would finally overwrite the server's tombstone with a real,
     // if empty, row — gets silently dropped by pushSolveAllProgress's own
-    // guard check. The tombstone then just sits there until this same
-    // session's first periodic poll (~SA_SYNC_POLL_MS later, i.e. almost
-    // exactly when the dropped push would have landed) — which, being a
-    // periodic tick rather than an open, treats a tombstone as "someone
+    // guard check. The tombstone would then just sit there until either a
+    // Realtime ping or the next fallback tick (SA_SYNC_FALLBACK_MS later)
+    // re-pulled it — which, being a periodic/pinged re-check rather than an
     // else reset this" and discards whatever the user solved in the
     // meantime, bouncing them back to the choice/order picker. The
     // original guard exists only to stop an old in-flight push from an
@@ -250,24 +354,44 @@ async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
   // pulled.found && pulled.data === null && isInitial falls through here on
   // purpose — nothing to merge, straight to the push below.
 
+  // Now that we've heard back from the server, we know identity_id — get
+  // (or confirm) this session's Realtime subscription so future changes,
+  // from any device, arrive as a ping instead of waiting for the next poll.
+  if (pulled && pulled.identityId) _ensureSaRealtime(pulled.identityId, quizNum, cumulative);
+
   const snap = (typeof buildSolveAllSnapshot === 'function') ? buildSolveAllSnapshot() : null;
-  if (snap) await pushSolveAllProgress(quizNum, cumulative, snap);
+  if (snap) {
+    const sig = _saSnapshotSignature(snap);
+    if (sig !== _saLastPushedJson) {
+      const ok = await pushSolveAllProgress(quizNum, cumulative, snap);
+      if (ok) _saLastPushedJson = sig; // only remember it once the server actually has it
+    }
+    // else: no actual solve/lock progress beyond what the server already
+    // has (most likely this round trip was itself triggered by a ping —
+    // our own echo is already filtered in _onSaBroadcast, but this also
+    // catches a genuinely different device's ping once both sides have
+    // fully converged) — skip the write entirely, which is what stops that
+    // echo from causing another one.
+  }
 }
 
 async function syncSolveAllOnOpen(quizNum, cumulative) {
   _saSyncActive = { quizNum, cumulative };
+  _saLastPushedJson = null; // new session — never skip its first push
   await _saSyncRoundTrip(quizNum, cumulative, /* isInitial */ true);
 
   if (_saSyncPollTimer) clearInterval(_saSyncPollTimer);
   _saSyncPollTimer = setInterval(() => {
     if (document.hidden || !_saSyncActive) return;
     _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
-  }, SA_SYNC_POLL_MS);
+  }, SA_SYNC_FALLBACK_MS);
 }
 
 function stopSolveAllSync() {
   if (_saSyncPollTimer) { clearInterval(_saSyncPollTimer); _saSyncPollTimer = null; }
   _saSyncActive = null;
+  _saLastPushedJson = null;
+  _teardownSaRealtime();
 }
 
 // The periodic tick above already skips ticks while the tab is hidden — but

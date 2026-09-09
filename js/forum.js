@@ -5,21 +5,14 @@
 // file never calls .insert() directly.
 
 const FORUM_PAGE_SIZE       = 25;
-// Kept equal to FORUM_PROBLEM_COUNTS_POLL_MS (defined further down, next to
-// the per-problem buttons it refreshes) on purpose: the corner FAB shows the
-// same badge as the main-screen launch button, and both are visible at the
-// same time as the per-problem "sa-forum-badge-i"/"rq-forum-badge-i" buttons
-// during solve-all/Random 6, so they need to visibly tick over together
-// rather than one looking stuck.
-const FORUM_POLL_INTERVAL_MS = 5000;
 const FORUM_LAST_SEEN_KEY   = STORAGE_PREFIX + '_forum_last_seen_id';
 
-// How often to check for brand-new messages while the forum screen itself is
-// open and being read. Separate from FORUM_POLL_INTERVAL_MS above, which is
-// the much slower "unread badge on the main screen" poll and is paused the
-// whole time this one is running (see startForumLivePolling/stopForumPolling
-// call sites in openForumScreen/closeForumScreen).
-const FORUM_LIVE_POLL_MS = 3000;
+// The unread badge, the forum-screen live tick, and the per-problem counts
+// (solve-all/Random 6) used to be three independent setInterval polls
+// (5s/5s/3s). They now all share ONE Realtime subscription instead — see
+// _ensureForumRealtime/_forumRealtimeWake below getForumClient() — so they
+// naturally tick over together (and instantly, on an actual change, rather
+// than up to an interval late) with no separate constants needed here.
 
 // Sentinel device_id the Gemini bot's own inserts use (post-message.ts,
 // GEMINI_BOT_DEVICE_ID) — kept in sync manually with that file. This is what
@@ -153,8 +146,6 @@ let forumFilterProblemId = '';
 let forumOldestLoadedId = null; // cursor: fetch rows with id < this to go older
 let forumNoMoreOlder    = false;
 let forumLoadingMore    = false;
-let forumPollTimer      = null;
-let forumLiveTimer      = null; // separate interval that runs only while the forum screen is open (see FORUM_LIVE_POLL_MS)
 // ── Search (forumSearchActive true means the message list below the search
 // bar shows fetchForumSearchResults() output instead of the current
 // forumFilter's normal feed — see toggleForumSearch()/runForumSearch() ──
@@ -215,6 +206,75 @@ function getForumClient() {
   }
   forumClient = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
   return forumClient;
+}
+
+// ── Shared Realtime channel driving unread badge / live tick / problem counts ──
+// Previously these were three independent setInterval loops (5s/3s/5s), each
+// polling forum_messages_public on its own clock even when nothing had
+// changed — most of that traffic was wasted. forum_messages is already
+// public-readable via the anon key (that's how the polling above works), so
+// instead we open ONE Realtime subscription on the underlying table and let
+// its change events wake up whichever of the three is currently "active"
+// (same start/stop functions and gating as before — see startForumPolling,
+// startForumLivePolling, startForumProblemCountsPolling below). A slow
+// fallback timer covers the rare case of a dropped/missed socket event, so
+// nothing ever goes silently stale.
+const FORUM_REALTIME_FALLBACK_MS = 90000;
+let _forumRealtimeChannel      = null;
+let _forumRealtimeFallbackTimer = null;
+let _forumUnreadActive         = false;
+let _forumLiveActive           = false;
+let _forumProblemCountsActive  = false;
+
+function _forumRealtimeWake() {
+  // Each callee has its own internal guard (forumScreenOpen, etc.) so it's
+  // always safe to just ask all three "are you active?" — no double logic.
+  if (_forumUnreadActive) pollForumUnread();
+  if (_forumLiveActive) forumLiveTick();
+  if (_forumProblemCountsActive) forumCountsByProblemKey().then(applyForumProblemCounts);
+}
+
+// Tracks whether this channel has ever reached SUBSCRIBED before, so we can
+// tell "first connect" (already covered by each start*Polling's own
+// immediate check) apart from "RECONNECTED after actually dropping" (laptop
+// slept, wifi hiccup, tab backgrounded and throttled...) — in the second
+// case something could genuinely have happened while we were gone, so we
+// don't want to just sit there waiting for the next push or the 90s
+// fallback; catch up immediately instead.
+let _forumRealtimeEverConnected = false;
+
+function _ensureForumRealtime() {
+  if (!_forumRealtimeFallbackTimer) {
+    _forumRealtimeFallbackTimer = setInterval(() => {
+      if (document.hidden) return;
+      _forumRealtimeWake();
+    }, FORUM_REALTIME_FALLBACK_MS);
+  }
+  if (_forumRealtimeChannel) return;
+  const client = getForumClient();
+  if (!client) return;
+  _forumRealtimeChannel = client
+    .channel('forum-messages-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_messages' }, _forumRealtimeWake)
+    .subscribe((status) => {
+      if (status !== 'SUBSCRIBED') return;
+      if (_forumRealtimeEverConnected) _forumRealtimeWake(); // reconnect, not first connect — catch up now
+      _forumRealtimeEverConnected = true;
+    });
+}
+
+// Tears the socket down once nothing needs it — no point holding a
+// connection open (or paying any of its keep-alive traffic) when the badge
+// isn't showing, the forum isn't open, and solve-all isn't open.
+function _maybeTeardownForumRealtime() {
+  if (_forumUnreadActive || _forumLiveActive || _forumProblemCountsActive) return;
+  if (_forumRealtimeFallbackTimer) { clearInterval(_forumRealtimeFallbackTimer); _forumRealtimeFallbackTimer = null; }
+  if (_forumRealtimeChannel) {
+    const client = getForumClient();
+    if (client) client.removeChannel(_forumRealtimeChannel);
+    _forumRealtimeChannel = null;
+    _forumRealtimeEverConnected = false; // next _ensureForumRealtime() starts a fresh channel/first-connect
+  }
 }
 
 // ── Local "last seen" tracking (drives the unread badge) ────────────────────
@@ -1280,11 +1340,11 @@ async function submitForumChangeNickname() {
       refreshForumIdentityUI();
       closeForumChangeNicknameModal();
       // Every message this identity ever posted just changed author_name
-      // (and got a re-seeded avatar_svg) server-side — forumLiveTick's next
-      // tick would eventually pick that up (see the check added there), but
-      // that's up to FORUM_LIVE_POLL_MS away and only runs at all while the
+      // (and got a re-seeded avatar_svg) server-side — forumLiveTick would
+      // eventually pick that up on its own (see the check added there), but
+      // only once the shared Realtime channel notices and only while the
       // forum screen is open. Force it now instead of leaving your own just-
-      // renamed messages showing the old name/avatar until that tick fires.
+      // renamed messages showing the old name/avatar until that happens.
       if (forumScreenOpen) loadForumInitial();
     } else if (data && data.error === 'taken') {
       statusEl.textContent = 'That nickname is already taken.';
@@ -3440,23 +3500,20 @@ async function forumCountsByProblemKey() {
 // Paints each solve-all card's forum button from the map above. Unread wins:
 // shows just the unread count, badge colored like the rest of the app's
 // unread indicators; otherwise shows the thread's total (0 if empty), muted.
-// Refreshes solve-all's per-problem buttons every 5s while that mode is
-// open (started/stopped from quiz-engine.js's _startSolveAllCore/
-// exitSolveAll) — a separate timer from FORUM_POLL_INTERVAL_MS (which drives
-// the main/FAB unread badge), but kept at the same cadence so the two badge
-// styles visibly refresh together instead of the FAB looking stuck.
-const FORUM_PROBLEM_COUNTS_POLL_MS = 5000;
-let forumProblemCountsPollTimer = null;
+// Refreshes solve-all's per-problem buttons while that mode is open
+// (started/stopped from quiz-engine.js's _startSolveAllCore/exitSolveAll),
+// off the same shared Realtime channel as the main/FAB unread badge — see
+// _ensureForumRealtime near getForumClient() above.
 
 function startForumProblemCountsPolling() {
-  if (forumProblemCountsPollTimer) return;
-  forumCountsByProblemKey().then(applyForumProblemCounts);
-  forumProblemCountsPollTimer = setInterval(() => {
-    forumCountsByProblemKey().then(applyForumProblemCounts);
-  }, FORUM_PROBLEM_COUNTS_POLL_MS);
+  if (_forumProblemCountsActive) return;
+  _forumProblemCountsActive = true;
+  _ensureForumRealtime();
+  forumCountsByProblemKey().then(applyForumProblemCounts); // check immediately
 }
 function stopForumProblemCountsPolling() {
-  if (forumProblemCountsPollTimer) { clearInterval(forumProblemCountsPollTimer); forumProblemCountsPollTimer = null; }
+  _forumProblemCountsActive = false;
+  _maybeTeardownForumRealtime();
 }
 
 // Shared painter for both solve-all's "sa-forum-" cards and plain Random 6's
@@ -3627,12 +3684,14 @@ async function pollForumUnread() {
 }
 
 function startForumPolling() {
-  if (forumPollTimer) return;
-  pollForumUnread(); // check immediately, don't wait a full interval
-  forumPollTimer = setInterval(pollForumUnread, FORUM_POLL_INTERVAL_MS);
+  if (_forumUnreadActive) return;
+  _forumUnreadActive = true;
+  _ensureForumRealtime();
+  pollForumUnread(); // check immediately, don't wait for a change event
 }
 function stopForumPolling() {
-  if (forumPollTimer) { clearInterval(forumPollTimer); forumPollTimer = null; }
+  _forumUnreadActive = false;
+  _maybeTeardownForumRealtime();
 }
 
 // ── Live updates while the forum screen is open ──────────────────────────────
@@ -3650,11 +3709,13 @@ function stopForumPolling() {
 // scrolling them there. (The page itself scrolls now, not an inner
 // .forum-list scroll container — see the history note atop forum.css.)
 function startForumLivePolling() {
-  if (forumLiveTimer) return;
-  forumLiveTimer = setInterval(forumLiveTick, FORUM_LIVE_POLL_MS);
+  if (_forumLiveActive) return;
+  _forumLiveActive = true;
+  _ensureForumRealtime();
 }
 function stopForumLivePolling() {
-  if (forumLiveTimer) { clearInterval(forumLiveTimer); forumLiveTimer = null; }
+  _forumLiveActive = false;
+  _maybeTeardownForumRealtime();
   forumPendingNewCount = 0;
   hideForumNewMsgsPill();
 }
