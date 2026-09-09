@@ -2124,8 +2124,12 @@ function goToMainMenu() {
     return;
   }
 
-  const settings = document.getElementById('settingsScreen');
-  if (settings && settings.classList.contains('visible')) {
+  // Checked via isSettingsScreenOpen() rather than the DOM class directly:
+  // settings.js only adds/removes 'visible' once its own open/close fade
+  // finishes (280ms later), so reading the class here could still see the
+  // stale pre-animation state for a beat. isSettingsScreenOpen() reflects
+  // the moment open/close was actually decided instead.
+  if (typeof isSettingsScreenOpen === 'function' && isSettingsScreenOpen()) {
     closeSettingsScreen(true);
     return;
   }
@@ -2232,7 +2236,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '10.1.0';
+const CURRENT_VERSION = '10.2.1';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

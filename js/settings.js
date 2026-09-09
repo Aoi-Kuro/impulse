@@ -1,14 +1,27 @@
 // ─── Settings ────────────────────────────────────────────────────────────
-// Phase 0: infrastructure only. This module owns:
-//   1. A versioned, device-local (localStorage only — no cross-device sync,
-//      by design) settings schema + migration so future settings can be
-//      added without ever wiping or crashing on an older saved copy.
-//   2. The settings panel shell: gear button -> full-screen panel, same
-//      open/close fade pattern as #manualScreen (see js/manual.js).
-//   3. Grouped tabs (Display / Notifications / Study / Offline & Sync) with
-//      one dummy "wiring test" toggle in Display, proving the whole loop
-//      (click -> save -> reload -> persists) before any real setting is
-//      built on top of it.
+// Phase 0 built: a versioned, device-local (localStorage only — no
+// cross-device sync, by design) settings schema + migration; the settings
+// panel shell (gear button -> full-screen panel, same open/close fade
+// pattern as #manualScreen — see js/manual.js); and grouped tabs (Display /
+// Notifications / Study / Offline & Sync).
+//
+// Phase 1: six Display-tab visual-decluttering toggles — floating avatar,
+// floating splashes, Manual button, theme-selector button, daylight
+// switch, floating Forum button. Framed as "Show X" and on by default
+// (matching each element's actual default-visible behavior), rather than
+// "Hide X" off by default — same end state, but a switch that's ON when
+// something is showing reads more naturally than one that's OFF for the
+// same thing. Each just flips a class on <html> (applyDisplaySettings
+// below); the actual hide/show is plain CSS in css/settings.css, so
+// nothing here has to know where those elements live in the DOM. See the
+// anti-flicker inline script in index.html's <head> for why <html> and not
+// <body> — it has to apply these before <body> exists at all, so a user
+// who's turned something off never sees it flash on for a frame first.
+//
+// Also fixed: a race condition where tapping the gear then the site logo
+// (or vice versa) within the ~280ms open/close fade window could leave the
+// panel stuck open with the landing page hidden underneath, or briefly
+// render both at once — see settingsIsOpen/settingsAnimTimer below.
 //
 // Later phases just add entries to SETTINGS_DEFAULTS and a row to the
 // relevant renderSettings*Tab() function below — no changes to the
@@ -18,14 +31,18 @@ const SETTINGS_STORAGE_KEY = 'flux_settings';
 const SETTINGS_SCHEMA_VERSION = 1;
 
 // Every real setting gets registered here as {tab: {key: defaultValue}}.
-// All new toggles default to their current (off/unchanged) behavior per
-// the Phase 0 planning decision — nothing changes for anyone until they
-// opt in.
+// Display's six default to true ("shown") since that's every element's
+// actual out-of-the-box behavior; new settings elsewhere still default to
+// today's unchanged behavior per the Phase 0 planning decision.
 const SETTINGS_DEFAULTS = {
   display: {
-    // Phase 0 wiring-test only — delete this key once Phase 1 adds the
-    // first real Display setting (hideAvatar, hideSplashes, ...).
-    _wiringTest: false,
+    showAvatar:      true,
+    showSplashes:    true,
+    showManualBtn:   true,
+    showThemeBtn:    true,
+    showDaylightBtn: true,
+    followDeviceTheme: false,
+    showForumFab:    true,
   },
   notifications: {},
   study: {},
@@ -137,9 +154,30 @@ const SETTINGS_HOSTS = [
 
 let settingsHostId = null;
 
+// ── Logical open/closed state + in-flight-animation guard ─────────────────
+// The panel's own `visible` CSS class only gets added/removed inside the
+// 280ms setTimeout below (to match the fade animation), so checking that
+// class to decide "is it open" is unreliable for the first ~280ms after
+// either action — a fast second tap (gear then logo, or vice versa) landed
+// in that window read the *stale* class, and worse, the first action's
+// delayed callback had no idea a second action had countermanded it, so it
+// ran anyway once its timer fired — sometimes leaving the panel stuck
+// visible with the landing page hidden, sometimes both rendered at once
+// (#settingsScreen sits later in the DOM than #landingScreen, so "both
+// visible" shows the panel appended below the main page).
+// `settingsIsOpen` is the authoritative state, set the instant open/close
+// is *decided* rather than when its animation finishes, and
+// `settingsAnimTimer` lets each call cancel whatever the other one still
+// had pending before scheduling its own.
+let settingsIsOpen = false;
+let settingsAnimTimer = null;
+
+function isSettingsScreenOpen() {
+  return settingsIsOpen;
+}
+
 function toggleSettingsScreen() {
-  const settings = document.getElementById('settingsScreen');
-  if (settings && settings.classList.contains('visible')) {
+  if (settingsIsOpen) {
     closeSettingsScreen();
   } else {
     openSettingsScreen();
@@ -149,7 +187,9 @@ function toggleSettingsScreen() {
 function openSettingsScreen() {
   const landing  = document.getElementById('landingScreen');
   const settings = document.getElementById('settingsScreen');
-  if (!landing || !settings) return;
+  if (!landing || !settings || settingsIsOpen) return;
+  settingsIsOpen = true;
+  if (settingsAnimTimer) { clearTimeout(settingsAnimTimer); settingsAnimTimer = null; }
 
   if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(false);
 
@@ -161,8 +201,12 @@ function openSettingsScreen() {
   const hostEl = hostEntry ? document.getElementById(hostEntry.id) : landing;
   settingsHostId = hostEntry ? hostEntry.id : null;
 
+  // Defensive: strip any 'fading-out' a just-cancelled close attempt might
+  // have left on the panel itself before this open's own animation starts.
+  settings.classList.remove('fading-out');
   hostEl.classList.add('fading-out');
-  setTimeout(() => {
+  settingsAnimTimer = setTimeout(() => {
+    settingsAnimTimer = null;
     if (hostEntry) {
       hostEntry.hide(hostEl);
     } else {
@@ -184,14 +228,26 @@ function openSettingsScreen() {
 function closeSettingsScreen(forceLanding) {
   const landing  = document.getElementById('landingScreen');
   const settings = document.getElementById('settingsScreen');
-  if (!landing || !settings) return;
+  if (!landing || !settings || !settingsIsOpen) return;
+  settingsIsOpen = false;
+  if (settingsAnimTimer) { clearTimeout(settingsAnimTimer); settingsAnimTimer = null; }
 
   settings.classList.add('fading-out');
-  setTimeout(() => {
+  settingsAnimTimer = setTimeout(() => {
+    settingsAnimTimer = null;
     settings.classList.remove('visible', 'fading-out');
 
     const hostId = settingsHostId;
     settingsHostId = null;
+
+    // Defensive: if open() had already started fading its host out before
+    // this close cancelled it, that host never got to finish (or undo)
+    // that fade — clear it here so it can never get stuck mid-transition.
+    landing.classList.remove('fading-out');
+    if (hostId) {
+      const strandedHostEl = document.getElementById(hostId);
+      if (strandedHostEl) strandedHostEl.classList.remove('fading-out');
+    }
 
     if (forceLanding && typeof exitAppOrChoiceToLanding === 'function') {
       exitAppOrChoiceToLanding();
@@ -238,10 +294,10 @@ function renderSettingsTabs() {
   `).join('');
 }
 
-// One row-renderer per tab. Phase 0 only Display has anything in it (the
-// wiring-test toggle); the rest render their empty-state note. Later
-// phases replace a tab's body here with its real rows — the surrounding
-// panel/tabs/storage layer doesn't change.
+// One row-renderer per tab. Display has the five Phase 1 toggles; the rest
+// still render their empty-state note. Later phases replace a tab's body
+// here with its real rows — the surrounding panel/tabs/storage layer
+// doesn't change.
 function renderSettingsBody() {
   const body = document.getElementById('settingsBody');
   if (!body) return;
@@ -257,27 +313,204 @@ function renderSettingsBody() {
   }
 }
 
+// One row per Display toggle: {key in SETTINGS_DEFAULTS.display, title, desc}.
+// Checked = shown (default); unchecked = hidden. The one exception is
+// followDeviceTheme (`sub`, grouped under showDaylightBtn — see
+// renderSettingsDisplayTab): checked means "on" rather than "shown". While
+// it's on, showDaylightBtn's own row renders forced-off and disabled (its
+// stored value is untouched, just not in effect) and applyDisplaySettings()
+// keeps the actual button hidden in the top icon strip regardless of that
+// stored value.
+const DISPLAY_TOGGLES = [
+  {
+    key: 'showAvatar',
+    title: 'Show floating avatar',
+    desc: 'Shows the signed-in identity avatar on the main page.',
+  },
+  {
+    key: 'showSplashes',
+    title: 'Show floating splashes',
+    desc: 'Shows the Minecraft-style splash text badge on the main page.',
+  },
+  {
+    key: 'showManualBtn',
+    title: 'Show manual button',
+    desc: 'Shows the 📖 manual button in the top icon strip.',
+  },
+  {
+    key: 'showThemeBtn',
+    title: 'Show theme selector button',
+    desc: 'Shows the 🎨 color-theme button in the top icon strip.',
+  },
+  {
+    key: 'showDaylightBtn',
+    title: 'Show daylight switch button',
+    desc: 'Shows the light/dark mode toggle in the top icon strip.',
+  },
+  {
+    key: 'followDeviceTheme',
+    title: 'Follow device theme',
+    desc: 'Match light/dark mode to your device automatically. While this is on, the daylight switch above stays hidden — there\u2019s nothing to flip by hand.',
+    sub: 'showDaylightBtn', // rendered indented, directly under the row for the key above
+  },
+  {
+    key: 'showForumFab',
+    title: 'Show floating forum button',
+    desc: 'Shows the floating 💬 forum button that follows you mid-quiz, in Stats, and elsewhere off the main page.',
+  },
+];
+
+// Toggles that have a `sub` entry pointing at them get rendered as one
+// visually-grouped unit with that sub-row (see renderSettingsDisplayTab) —
+// currently just showDaylightBtn/followDeviceTheme.
 function renderSettingsDisplayTab() {
-  const wiringTestOn = !!getSetting('display', '_wiringTest');
-  return `
-    <div class="settings-row">
-      <div class="settings-row-label">
-        <div class="settings-row-title">Wiring test toggle</div>
-        <div class="settings-row-desc">Temporary; proves save/reload persistence works end-to-end. Removed once the first real Display setting lands.</div>
+  const followDevice = getSetting('display', 'followDeviceTheme') === true;
+
+  function renderRow(t, opts) {
+    opts = opts || {};
+    const blocked = !!opts.blocked;
+    const storedOn = getSetting('display', t.key) !== false;
+    // Blocked rows render forced-off, not whatever the user last stored —
+    // that stored value is exactly what comes back once unblocked, so it's
+    // never overwritten just because it's temporarily moot.
+    const on = blocked ? false : storedOn;
+    // followDeviceTheme also has to (re)sync the actual light/dark mode
+    // and its matchMedia listener the moment it's flipped, not just the
+    // hide/show class applyDisplaySettings() handles for every other row.
+    const onchange = t.key === 'followDeviceTheme'
+      ? `setSetting('display', '${t.key}', this.checked); applyFollowDeviceTheme(); applyDisplaySettings(); renderSettingsBody();`
+      : `setSetting('display', '${t.key}', this.checked); applyDisplaySettings();`;
+    return `
+      <div class="settings-row${opts.sub ? ' settings-row-sub' : ''}${blocked ? ' settings-row-blocked' : ''}">
+        <div class="settings-row-label">
+          <div class="settings-row-title">${t.title}</div>
+          <div class="settings-row-desc">${t.desc}</div>
+        </div>
+        <label class="settings-switch">
+          <input type="checkbox" ${on ? 'checked' : ''} ${blocked ? 'disabled' : ''}
+                 onchange="${onchange}">
+          <span class="settings-switch-track"></span>
+        </label>
       </div>
-      <label class="settings-switch">
-        <input type="checkbox" ${wiringTestOn ? 'checked' : ''}
-               onchange="setSetting('display', '_wiringTest', this.checked); renderSettingsDisplayTabInPlace();">
-        <span class="settings-switch-track"></span>
-      </label>
-    </div>
-  `;
+    `;
+  }
+
+  const html = [];
+  for (const t of DISPLAY_TOGGLES) {
+    if (t.sub) continue; // rendered inline below, as part of its parent's group
+    const subToggle = DISPLAY_TOGGLES.find(s => s.sub === t.key);
+    if (!subToggle) { html.push(renderRow(t)); continue; }
+    html.push(`
+      <div class="settings-group">
+        ${renderRow(t, { blocked: t.key === 'showDaylightBtn' && followDevice })}
+        ${renderRow(subToggle, { sub: true })}
+      </div>
+    `);
+  }
+  return html.join('');
 }
 
-// Re-renders just the Display tab's body after the wiring-test toggle
-// fires, so the row's own onchange handler (which just ran) doesn't get
-// torn out from under itself by a full renderSettingsBody() call.
-function renderSettingsDisplayTabInPlace() {
-  const body = document.getElementById('settingsBody');
-  if (body && settingsActiveTab === 'display') body.innerHTML = renderSettingsDisplayTab();
+// Maps each Display toggle's key to the <html> class that hides its
+// target element(s) when the toggle is OFF — the actual hide/show rules
+// live in css/settings.css as `html.<class> <selector> { display: none; }`,
+// so this function never needs to know where those elements actually live
+// in the DOM. Named for what the class *does* (hide), even though the
+// toggle it's driven by is framed the opposite way ("show", on by
+// default) — keeps this in sync with the class names css/settings.css
+// actually matches on.
+const DISPLAY_TOGGLE_HIDE_CLASSES = {
+  showAvatar:      'settings-hide-avatar',
+  showSplashes:    'settings-hide-splashes',
+  showManualBtn:   'settings-hide-manual-btn',
+  showThemeBtn:    'settings-hide-theme-btn',
+  showDaylightBtn: 'settings-hide-daylight-btn',
+  showForumFab:    'settings-hide-forum-fab',
+};
+
+// Applies every current Display setting to <html>'s classList (not
+// <body> — see the header comment on why). Called once at load (bottom of
+// this file) so a live-toggled change since the anti-flicker script last
+// ran is reconciled, and again from each toggle's onchange above.
+function applyDisplaySettings() {
+  for (const key of Object.keys(DISPLAY_TOGGLE_HIDE_CLASSES)) {
+    const cls = DISPLAY_TOGGLE_HIDE_CLASSES[key];
+    let shown = getSetting('display', key) !== false;
+    // followDeviceTheme overrides showDaylightBtn's own value: once mode is
+    // following the device automatically, the manual switch has nothing
+    // left to do, so it stays blocked from showing regardless of whether
+    // showDaylightBtn itself is still checked.
+    if (key === 'showDaylightBtn' && getSetting('display', 'followDeviceTheme') === true) {
+      shown = false;
+    }
+    document.documentElement.classList.toggle(cls, !shown);
+  }
 }
+
+// ── Follow device theme ─────────────────────────────────────────────────
+// Day/night mode (body.light + localStorage[STORAGE_PREFIX + '-theme'] —
+// see toggleTheme()/the restore IIFE in js/quiz-engine.js, which has
+// already run by the time this tier-2 file loads) normally only changes
+// via the manual daylight switch. When followDeviceTheme is on, this
+// takes over instead: mode tracks matchMedia('(prefers-color-scheme:
+// dark)') live, and the manual switch is hidden by applyDisplaySettings()
+// above since there's nothing left for it to do. Turning this back off
+// just stops syncing — whatever mode the system last set stays as the new
+// manual preference, so flipping it off never causes its own extra flip.
+//
+// Only settings.js (not quiz-engine.js) owns this: it's tier-2, so a
+// device-following user can see one brief flash of their *last manually
+// saved* mode before this runs and corrects it to the system's current
+// mode — same latency every other Display toggle already accepts (see
+// index.html's anti-flicker script) for not being in the tier-1 path.
+const DEVICE_THEME_QUERY = (typeof window.matchMedia === 'function')
+  ? window.matchMedia('(prefers-color-scheme: dark)')
+  : null;
+let _deviceThemeListening = false;
+
+function setModeFromSystem() {
+  const isLight = !!(DEVICE_THEME_QUERY && !DEVICE_THEME_QUERY.matches);
+  if (window.themeFadeTick) themeFadeTick();
+  document.body.classList.toggle('light', isLight);
+  const track = document.getElementById('themeTrack');
+  if (track) track.classList.toggle('on', isLight);
+  localStorage.setItem(STORAGE_PREFIX + '-theme', isLight ? 'light' : 'dark');
+  // Same post-flip hooks toggleTheme() itself calls, so custom-theme mode
+  // colors and on-color contrast stay in sync either way.
+  if (window.__applyCustomOnModeChange) window.__applyCustomOnModeChange();
+  if (window.__updateOnColorVars) window.__updateOnColorVars();
+  if (window.__onModeChanged) window.__onModeChanged();
+}
+
+function onDeviceThemeChange() {
+  if (getSetting('display', 'followDeviceTheme') === true) setModeFromSystem();
+}
+
+function applyFollowDeviceTheme() {
+  if (!DEVICE_THEME_QUERY) return; // no matchMedia support — setting is inert, button just stays hidden per its own value
+  const on = getSetting('display', 'followDeviceTheme') === true;
+  if (on && !_deviceThemeListening) {
+    if (DEVICE_THEME_QUERY.addEventListener) DEVICE_THEME_QUERY.addEventListener('change', onDeviceThemeChange);
+    else DEVICE_THEME_QUERY.addListener(onDeviceThemeChange); // Safari < 14
+    _deviceThemeListening = true;
+  } else if (!on && _deviceThemeListening) {
+    if (DEVICE_THEME_QUERY.removeEventListener) DEVICE_THEME_QUERY.removeEventListener('change', onDeviceThemeChange);
+    else DEVICE_THEME_QUERY.removeListener(onDeviceThemeChange);
+    _deviceThemeListening = false;
+  }
+  if (on) setModeFromSystem();
+}
+
+// Runs immediately at load, not just when the panel is opened, so a live
+// toggle change made during this same page life (or a schema addition
+// this version introduced) is reflected right away. The very first paint
+// is already covered by index.html's own anti-flicker inline script — this
+// is the settings.js-side reconciliation pass, safe to run redundantly
+// against it. settings.js is loaded via the tier-2 sequential loader (see
+// index.html) after the body's own markup has already been parsed, so
+// document.documentElement and every target element already exist by the
+// time this line runs. applyFollowDeviceTheme() runs first since it may
+// itself set STORAGE_PREFIX + '-theme' anew — applyDisplaySettings() reads
+// followDeviceTheme's already-current value either way, so order between
+// the two doesn't actually matter for the hide/show class itself.
+applyFollowDeviceTheme();
+applyDisplaySettings();

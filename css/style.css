@@ -1,4 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600&family=Bangers&family=STIX+Two+Text:ital,wght@0,400;1,400&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&family=Quicksand:wght@400;500;700&display=swap');
+/* IBM Plex/Bangers/STIX/Space/Quicksand font imports moved to a
+   <link rel="stylesheet"> in index.html's <head> (next to the Google Sans
+   Flex link) — @import here was only discovered by the browser after this
+   101KB file finished downloading AND parsing, which serialized
+   HTML → style.css → font CSS → font files instead of letting the
+   preload scanner fetch the font CSS in parallel with everything else. */
 
   :root {
     --bg: #0d1117;
@@ -1598,6 +1603,37 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.3rem;
+  }
+  /* On narrow screens the "max-content 1fr" split leaves almost no width
+     for the boxes column once the meta text (e.g. "0/7 · Q1 · Kinematics
+     & Dynamics · 06 Sept") claims most of the row. With next to nothing
+     left for column 2, flex-wrap has no room to fit even one box per
+     line, so every box wraps onto its own line — a single-box-wide
+     column that spills downward past its own row and over the rows
+     below it, instead of the intended left-to-right wrap. Below 600px,
+     stack meta above boxes in one full-width column instead, so the
+     boxes get the whole row's width to wrap normally across multiple
+     boxes per line. */
+  @media (max-width: 600px) {
+    .recent-attempts-list {
+      grid-template-columns: 1fr;
+      row-gap: 0.5rem;
+    }
+    .recent-attempt-row {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.35rem;
+      padding-bottom: 0.6rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .recent-attempt-row:last-child {
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+    .recent-attempt-boxes {
+      width: 100%;
+    }
   }
   /* The panel already provides the surrounding border, so a second boxed
      button felt visually heavy. Treat this as a quiet footer action instead. */

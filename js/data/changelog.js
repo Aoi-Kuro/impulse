@@ -20,11 +20,15 @@
 // actual quiz content (specific problems, figures/illustrations, per-quiz
 // corrections) — since PHYS162 was the only course this repo ever held
 // content for until now, everything content-specific here is retroactively
-// PHYS162-only, not something PHYS161 users should see in their history.
+// PHYS162-only, not something PHYS 161 users should see in their history.
 
 
 // WARNING! The version has to be bumped in three places: here, in version.json and in quiz-engine.js
 const CHANGELOG = [
+  { version: "10.2.1", note: "Fixed P81 (Q1) error in answer key.", scope: 1 }, 
+   { version: "10.2.0", note: "Added display settings.", scope: 0 }, 
+  { version: "10.1.2", note: "Loading performance improved (tiered loading + WebP usage).", scope: 0 }, 
+  { version: "10.1.1", note: "UI bug fix for mobile devices in results of quiz.", scope: 0 }, 
   { version: "10.1.0", note: "Added top bar with hints, fixed UI & UX bugs.", scope: 0 }, 
   { version: "10.0.1", note: "Introduced Settings!", scope: 0 }, 
   { version: "10.0.0", note: "Stats panel now has table of all problems and you can now filter problem based on whether you tried them already.", scope: 0 }, 

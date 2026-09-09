@@ -274,7 +274,7 @@
 
   window.addEventListener('resize', refreshWhileVisible);
 
-  document.addEventListener('DOMContentLoaded', function () {
+  function initTopBarTips() {
     tipEl = document.getElementById('topBarTip');
     textEl = document.getElementById('topBarTipText');
     if (!tipEl || !textEl) return;
@@ -294,5 +294,15 @@
     });
 
     scheduleNextTrigger();
-  });
+  }
+
+  // This file is now loaded by index.html's tier-2 loader, which can run
+  // after DOMContentLoaded has already fired — a bare 'DOMContentLoaded'
+  // listener added at that point would never fire, so fall back to an
+  // immediate call when the DOM is already past 'loading'.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTopBarTips);
+  } else {
+    initTopBarTips();
+  }
 })();

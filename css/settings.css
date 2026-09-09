@@ -100,6 +100,49 @@
   border-bottom: 1px solid var(--border);
 }
 .settings-row:last-child { border-bottom: none; }
+
+/* ── Grouped rows (a toggle + the sub-toggle nested under it, e.g. "Show
+   daylight switch button" + "Follow device theme") — rendered as one
+   visual unit by renderSettingsDisplayTab, so they read as parent/child
+   instead of two unrelated rows. ── */
+.settings-group { border-radius: calc(6px * var(--radius-mult)); overflow: hidden; }
+.settings-group .settings-row { border-bottom: none; }
+.settings-group .settings-row:first-child { border-bottom: 1px dashed var(--border); }
+.settings-group .settings-row:last-child  { border-bottom: 1px solid var(--border); }
+.settings-body > .settings-row:last-child,
+.settings-body > .settings-group:last-child .settings-row:last-child {
+  border-bottom: none;
+}
+
+/* Sub-row: indented further right than a plain row, with a "·" connector
+   mark standing in for "this belongs to the row above" — no vertical bar,
+   just the dot, per how this was asked to look. The dashed border between
+   this and its parent (below, on .settings-group .settings-row:first-child)
+   is the actual "belongs together" line; this dot is just a visual nudge
+   in the same direction. */
+.settings-row-sub {
+  padding: 0.75rem 0.1rem 0.85rem 2.75rem;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  position: relative;
+}
+.settings-row-sub::before {
+  content: '\00B7';
+  position: absolute;
+  left: 1.5rem;
+  top: 50%;
+  transform: translateY(-65%);
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--muted);
+}
+.settings-row-sub .settings-row-title { font-size: 0.85rem; }
+.settings-row-sub .settings-row-desc  { font-size: 0.76rem; }
+
+/* Blocked: a parent row whose sub-toggle currently overrides it (see
+   `blocked` in renderSettingsDisplayTab) — dimmed and inert rather than
+   removed, so it's clear it's temporarily moot, not gone. */
+.settings-row-blocked { opacity: 0.45; }
+.settings-row-blocked .settings-switch { pointer-events: none; cursor: not-allowed; }
 .settings-row-label { min-width: 0; }
 .settings-row-title {
   font-family: var(--sans);
@@ -155,3 +198,32 @@
 }
 .settings-switch input:checked + .settings-switch-track { background: var(--accent); }
 .settings-switch input:checked + .settings-switch-track::before { transform: translateX(16px); }
+
+/* ── Display toggle effects ──
+   Applied via a class on <html> — not <body> — because the anti-flicker
+   script in index.html's <head> (see the comment there) has to set these
+   before <body> even exists, to avoid a flash of the element before JS
+   gets a chance to hide it. js/settings.js's applyDisplaySettings() targets
+   the same element (document.documentElement) so there's one source of
+   truth for where the class actually lives, whether it's set by the early
+   inline script or by a live toggle flip. No !important needed for these
+   first five: none of these targets carry a conflicting inline style, so
+   plain class-selector specificity is enough. */
+html.settings-hide-avatar .landing-identity-wrap { display: none; }
+html.settings-hide-splashes .mc-splash-wrap { display: none; }
+html.settings-hide-manual-btn #manualBtn { display: none; }
+html.settings-hide-theme-btn #paletteBtn { display: none; }
+html.settings-hide-daylight-btn .theme-toggle-wrap .theme-icon,
+html.settings-hide-daylight-btn #themeTrack { display: none; }
+
+/* The floating Forum FAB (css/forum.css) is always `display: flex` at rest
+   and toggles visibility via opacity/transform/pointer-events on its own
+   `.forum-fab-visible` class (added/removed by forum.js's
+   syncForumFabVisibility(), which fires on nearly every screen switch) —
+   never display:none. `.forum-fab-wrap.forum-fab-visible` in forum.css
+   matches this rule's specificity exactly (two classes each), so without
+   !important, whichever rule's stylesheet happens to load second would
+   silently win regardless of this setting. !important sidesteps that
+   entirely rather than depending on <link> order between forum.css and
+   settings.css staying what it is today. */
+html.settings-hide-forum-fab .forum-fab-wrap { display: none !important; }

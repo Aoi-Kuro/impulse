@@ -181,7 +181,13 @@ if (COURSE_CHANGELOG_SCOPE == null) {
 // items" section of README.md.
 const _display = _active.display || COURSES.phys162.display;
 const COURSE_CODE = _display.courseCode;
-const COURSE_TITLE = `${COURSE_CODE} Practice Quiz`;
+// Display-only: insert a space between the letter prefix and the digits
+// so "PHYS162" reads as "PHYS 162" wherever it's shown to a person —
+// works for any <letters><digits> course code, nothing course-specific
+// hardcoded here. Falls back to COURSE_CODE unchanged if it doesn't match
+// that shape (e.g. already has a space, or no trailing digits).
+const COURSE_CODE_DISPLAY = COURSE_CODE.replace(/^([A-Za-z]+)(\d+)$/, '$1 $2');
+const COURSE_TITLE = `${COURSE_CODE_DISPLAY} Practice Quiz`;
 
 // offline.html and index.html share this file but want different <title>
 // text ("You're offline — ..." vs plain) — distinguished by filename
@@ -213,7 +219,7 @@ _setMetaContent('meta[property="og:url"]', _display.siteUrl);
 window.addEventListener('DOMContentLoaded', () => {
   const _setEyebrowText = (id, suffix) => {
     const el = document.getElementById(id);
-    if (el) el.textContent = `${COURSE_CODE} · ${suffix}`;
+    if (el) el.textContent = `${COURSE_CODE_DISPLAY} · ${suffix}`;
   };
   _setEyebrowText('eyebrowLandingPractice', 'Practice Mode');
   _setEyebrowText('eyebrowLandingSolveAll', 'Solve them all');

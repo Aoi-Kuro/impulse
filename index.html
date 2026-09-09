@@ -23,6 +23,55 @@
   // elsewhere.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 </script>
+<script>
+  // Anti-flicker: applies saved Display settings (Show avatar/splashes/
+  // manual/theme/daylight/forum-FAB — see SETTINGS_DEFAULTS.display in
+  // js/settings.js) to <html> before <body> even exists, so a user who's
+  // turned one of these off never sees it flash on-screen for a frame
+  // first. js/settings.js itself can't do this: it's loaded via the
+  // tier-2 sequential loader (see the bottom of <body>) specifically so
+  // its ~200KB+ chain (manual.js, the Supabase CDN script, forum.js,
+  // push-notifications.js) never competes with the landing screen's own
+  // critical-path bytes — by the time it finally runs, the landing screen
+  // has been sitting fully painted for a while, which is exactly the
+  // window this script exists to cover. Deliberately a standalone,
+  // minimal copy of just the display defaults/keys (not a shared call
+  // into settings.js) since nothing from that file is loaded yet at this
+  // point in the page — same "keep its own copy" convention already used
+  // for SETTINGS_HOSTS/MANUAL_HOSTS/FORUM_FAB_HOSTS elsewhere in this app.
+  // Every key here defaults to shown (true) if unset or on an older save
+  // missing it, matching SETTINGS_DEFAULTS.display's own defaults exactly
+  // — keep the two in sync if that list ever changes.
+  (function () {
+    try {
+      var raw = JSON.parse(localStorage.getItem('flux_settings') || 'null');
+      var d = (raw && raw.display) || {};
+      var hideClassByKey = {
+        showAvatar:      'settings-hide-avatar',
+        showSplashes:    'settings-hide-splashes',
+        showManualBtn:   'settings-hide-manual-btn',
+        showThemeBtn:    'settings-hide-theme-btn',
+        showDaylightBtn: 'settings-hide-daylight-btn',
+        showForumFab:    'settings-hide-forum-fab',
+      };
+      var toAdd = [];
+      for (var key in hideClassByKey) {
+        if (d[key] === false) toAdd.push(hideClassByKey[key]);
+      }
+      // followDeviceTheme (a Display sub-setting under showDaylightBtn —
+      // see js/settings.js) blocks the manual daylight switch from
+      // showing at all while it's on, regardless of showDaylightBtn's own
+      // value, so it needs the same early no-flash treatment here.
+      if (d.followDeviceTheme === true && toAdd.indexOf('settings-hide-daylight-btn') === -1) {
+        toAdd.push('settings-hide-daylight-btn');
+      }
+      if (toAdd.length) document.documentElement.classList.add.apply(document.documentElement.classList, toAdd);
+    } catch (e) {
+      // Corrupted/foreign localStorage value — fail open (everything
+      // shown, today's default) rather than block page load.
+    }
+  })();
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>PHYS162 Practice Quiz</title>
@@ -55,8 +104,31 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400..700&display=swap" rel="stylesheet">
+<!-- Was a `@import` at the top of css/style.css — that's only found by the
+     browser's preload scanner after style.css itself fully downloads and
+     parses, adding a full extra round-trip before quiz text renders in the
+     right font. As a real <link> here, the scanner finds it on the initial
+     HTML pass, same as the Google Sans Flex link above. -->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600&family=Bangers&family=STIX+Two+Text:ital,wght@0,400;1,400&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&family=Quicksand:wght@400;500;700&display=swap" rel="stylesheet">
 
-<!-- ── Styles ── -->
+<!-- ── Styles ──
+     All five load as normal blocking stylesheets. stats.css/forum.css/
+     manual.css/settings.css style screens that are `display:none` until
+     the user opens Stats/Forum/Manual/Settings, but that display:none (and
+     the positioning/opacity for every modal backdrop across the app —
+     .stats-modal-backdrop, .forum-eq-modal-backdrop, .forum-fab-wrap) is
+     defined ONLY in these files, nowhere else. An earlier version of this
+     page deferred them to a tier-2 loader to save bandwidth for the
+     critical path, but that meant the browser rendered all of that
+     markup — the stats/forum/settings/manual screens and every one of the
+     nine .stats-modal-backdrop modals — as plain unstyled, unhidden
+     blocks for the brief window before those files loaded: a visible
+     flash of raw text and shapes on every visit. CSS is comparatively
+     cheap (~108KB total here, fetched in parallel over HTTP/2) next to
+     the JS payload that was the actual bottleneck (forum.js alone is
+     187KB, plus the Supabase CDN script) — those still defer via the
+     tier-2 loader near the end of <body>, since deferred *script*
+     execution has no equivalent flash-of-unstyled-content risk. -->
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/stats.css">
 <link rel="stylesheet" href="css/forum.css">
@@ -215,8 +287,8 @@
 
 <!-- Theme toggle -->
 <div class="theme-toggle-wrap">
-  <button class="palette-icon-btn" id="settingsBtn" onclick="toggleSettingsScreen()" title="Settings">⚙️</button>
-  <button class="palette-icon-btn" id="manualBtn" onclick="toggleManualScreen()" title="User manual">📖</button>
+  <button class="palette-icon-btn" id="settingsBtn" onclick="window.toggleSettingsScreen&&toggleSettingsScreen()" title="Settings">⚙️</button>
+  <button class="palette-icon-btn" id="manualBtn" onclick="window.toggleManualScreen&&toggleManualScreen()" title="User manual">📖</button>
   <button class="palette-icon-btn" id="paletteBtn" onclick="toggleThemePanel(event)" title="Color themes">🎨</button>
   <span class="theme-icon">🌙</span>
   <div class="toggle-track" id="themeTrack" onclick="toggleTheme()">
@@ -1141,29 +1213,57 @@
 
 <!-- ── Quiz engine: all app logic ── -->
 <script src="js/quiz-engine.js"></script>
-<script src="js/fig-attribution.js"></script>
-<script src="js/top-bar-scroll.js"></script>
-<script src="js/top-bar-tips.js"></script>
 
-<!-- ── Changelog + electromagnetic cursor ── -->
-<script src="js/changelog.js"></script>
+<!-- ── Tier 2: everything below is cosmetic/non-critical once the landing
+     screen is up (fig-attr tooltips, top-bar scroll/tips, the changelog
+     cursor effect) or belongs to a screen that's `display:none` until
+     opened (Stats/Forum/Manual/Settings — their CSS is NOT deferred, see
+     the comment on the <link> tags in <head> for why). None of this JS is
+     needed for the landing screen to display and work correctly, so
+     instead of static tags that the browser would start downloading in
+     parallel with the tier-1 scripts above (competing for bandwidth on
+     the very connections tier 1 needs), this small loader builds
+     <script> tags at runtime — which the preload scanner can't see in
+     advance — so they only start fetching once every tier-1 script has
+     actually finished. This still runs immediately, right here, with no
+     wait for user interaction or a load event; it just means tier 2's
+     bytes never race tier 1's. Dependency order is preserved: each item
+     still waits for the previous one, and manual.js/settings.js — which
+     don't touch the forum/Supabase stack — load before the heavier
+     Supabase-client → site-visits.js → forum.js → push-notifications.js
+     chain (same relative order that chain always needed), so the two
+     other always-visible top-bar buttons (Manual, Settings) become usable
+     sooner instead of queueing behind forum.js's 187KB. -->
+<script>
+  (function () {
+    // Loads scripts one at a time, in the given order, each starting only
+    // after the previous one has finished — same guarantee plain
+    // <script src> tags gave, but not discoverable by the preload scanner
+    // until this function actually runs (i.e. after tier 1 is done).
+    function loadSequentially(srcs, i) {
+      i = i || 0;
+      if (i >= srcs.length) return;
+      const s = document.createElement('script');
+      s.src = srcs[i];
+      s.async = false;
+      s.onload = s.onerror = function () { loadSequentially(srcs, i + 1); };
+      document.body.appendChild(s);
+    }
 
-<!-- ── Forum (Step 1: read-only feed) ── -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/site-visits.js"></script>
-<script src="js/forum.js"></script>
-
-<!-- Forum @mention push notifications: permission prompt, subscribe/
-     unsubscribe, and reacting to a tapped notification. Loaded after
-     forum.js (uses getForumDeviceId/openForumForProblem/openForumScreen/
-     setForumStatus) and supabase-config.js (SUPABASE_URL/KEY). -->
-<script src="js/push-notifications.js"></script>
-
-<!-- ── User manual (sidebar section/subsection tree + LaTeX content) ── -->
-<script src="js/manual.js"></script>
-
-<!-- ── Settings (versioned localStorage schema + panel shell — Phase 0) ── -->
-<script src="js/settings.js"></script>
+    loadSequentially([
+      'js/fig-attribution.js',
+      'js/top-bar-scroll.js',
+      'js/top-bar-tips.js',
+      'js/changelog.js',
+      'js/manual.js',
+      'js/settings.js',
+      'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+      'js/site-visits.js',
+      'js/forum.js',
+      'js/push-notifications.js',
+    ]);
+  })();
+</script>
 
 <!-- Registers sw.js (offline.html fallback only — see that file's header
      comment for exactly what it does and doesn't cache). Only takes effect

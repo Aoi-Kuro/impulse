@@ -35,10 +35,10 @@
       "twitter:title": "PHYS 161 Practice Quiz",
       "twitter:description": "Interactive physics practice quiz for PHYS 161 course at Nazarbayev University.",
       "twitter:image": "course/preview.png",
-      "landing_eyebrow_practice": "PHYS161 · Practice Mode",
-      "landing_eyebrow_solve_all": "PHYS161 · Solve them all",
-      "eyebrow_practice": "PHYS161 · Practice Mode",
-      "eyebrow_solve": "PHYS161 · Solve Mode"
+      "landing_eyebrow_practice": "PHYS 161 · Practice Mode",
+      "landing_eyebrow_solve_all": "PHYS 161 · Solve them all",
+      "eyebrow_practice": "PHYS 161 · Practice Mode",
+      "eyebrow_solve": "PHYS 161 · Solve Mode"
     },
     "offline_html": {
       "title": "You're offline — PHYS 161 Practice Quiz"

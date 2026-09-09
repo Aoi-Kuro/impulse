@@ -218,13 +218,27 @@ if ('serviceWorker' in navigator) {
   const params = new URLSearchParams(window.location.search);
   if (params.get('openForum') !== '1') return;
   const data = { scope: params.get('scope'), problem_key: params.get('problem_key') };
-  window.addEventListener('load', () => openForumFromPushData(data));
+  if (document.readyState === 'complete') {
+    openForumFromPushData(data);
+  } else {
+    window.addEventListener('load', () => openForumFromPushData(data));
+  }
   const cleanUrl = window.location.pathname + window.location.hash;
   history.replaceState({}, '', cleanUrl);
 })();
 
-document.addEventListener('DOMContentLoaded', () => {
+function initPushToggleBtn() {
   const btn = document.getElementById('forumPushToggleBtn');
   if (btn) btn.addEventListener('click', onPushToggleBtnClick);
   refreshPushToggleBtn();
-});
+}
+
+// This file is now loaded by index.html's tier-2 loader, which can run
+// after DOMContentLoaded has already fired — a bare 'DOMContentLoaded'
+// listener added at that point would never fire, so fall back to an
+// immediate call when the DOM is already past 'loading'.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initPushToggleBtn);
+} else {
+  initPushToggleBtn();
+}
