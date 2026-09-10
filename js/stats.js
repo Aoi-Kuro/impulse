@@ -717,7 +717,7 @@ function renderTable() {
 
   const header = `
     <div class="stats-table-header">
-      <span class="stats-table-title">Attempt log <span class="sfp-live-dot" id="attemptsSyncDot" title="Synced and up to date" style="display:none;"></span></span>
+      <span class="stats-table-title">Attempt log <span class="sfp-live-dot" id="attemptsSyncDot" title="Synced" style="display:none;"></span></span>
       <span class="stats-table-header-right">
         <button class="stats-io-btn" id="statsExportBtn" onclick="openExportFormatModal()" disabled>↓ Export stats</button>
         <span class="stats-table-count" id="statsRowCount">${attempts.length} attempt${attempts.length !== 1 ? 's' : ''}</span>
@@ -1016,8 +1016,14 @@ function fmtDuration(sec) {
 // numbers — my forum messages, my
 // quizzes taken; (3) "everybody" numbers, each as its own tally-counter
 // dial — total forum participants, total visits, total quizzes taken by
-// everyone. Every number here refreshes together on one 5s interval
-// (pollStatsPanel below, three RPCs in one Promise.allSettled batch) — 
+// everyone. Every number here refreshes together (pollStatsPanel below,
+// three RPCs in one Promise.allSettled batch) whenever js/forum.js's or
+// js/attempts-sync.js's Realtime channel pings ('forum-data-changed'/
+// 'attempts-data-changed', see startStatsPanelPolling below) — plus a slow
+// 45s fallback tick as a safety net (these RPCs aren't table reads, so
+// there's no single table this screen can subscribe to Realtime on
+// directly the way js/forum.js does; it piggybacks on those two other
+// already-open channels instead of opening one of its own) —
 // get_stats_panel covers the first two dials' values plus the "my
 // messages"/join-date text, get_total_quiz_attempts covers the third dial,
 // and get_my_total_quiz_attempts covers "my quizzes taken". The latter two
@@ -1264,22 +1270,57 @@ async function pollStatsPanel() {
   }
 
   if (typeof _settleLiveDot === 'function') {
-    if (ok) _settleLiveDot(dot, 'ok', 'Live — updated just now');
-    else _settleLiveDot(dot, 'error', "Couldn't refresh — will retry automatically");
+    if (ok) _settleLiveDot(dot, 'ok', 'Synced');
+    else _settleLiveDot(dot, 'error', "Connection lost: waiting for network");
   }
 }
 
 function startStatsPanelPolling() {
   stopStatsPanelPolling();
+  document.addEventListener('forum-data-changed', _statsPanelReactiveHandler);
+  document.addEventListener('attempts-data-changed', _statsPanelReactiveHandler);
+  _ensureSiteVisitsRealtime();
+  // Realtime (the listeners above) handles the normal case now — this
+  // interval is just a safety net for a missed ping, so it can be far
+  // slower than the old blind 5s poll.
   _statsPanelPollTimer = setInterval(() => {
-    // Skip the network round trip while the tab is backgrounded, or while
-    // this screen has sat idle 5+ minutes — resumes on its own next active
-    // tick, and immediately on visibilitychange/interaction instead of
-    // waiting out the rest of the current 5s window.
     if (document.hidden) return;
     if (typeof isStatsIdle === 'function' && isStatsIdle()) return;
     pollStatsPanel();
-  }, 5000);
+  }, 45000);
+}
+
+// ── total_visits' Realtime channel ──────────────────────────────────────
+// site_visits isn't tied to any one identity/device (see migration
+// 006_site_visits_realtime_broadcast.sql), so unlike attempts/solve-all
+// this is one shared, unscoped channel — no per-identity key, and no self-
+// echo risk to guard against, since pollStatsPanel() only reads, it never
+// writes in response to this ping. Only open while this screen is (see
+// stop below), same as the panel's own poll timer.
+let _siteVisitsRealtimeChannel = null;
+
+function _ensureSiteVisitsRealtime() {
+  if (_siteVisitsRealtimeChannel) return;
+  const client = (typeof getForumClient === 'function') ? getForumClient() : null;
+  if (!client) return;
+  _siteVisitsRealtimeChannel = client
+    .channel('site-visits')
+    .on('broadcast', { event: 'changed' }, _statsPanelReactiveHandler)
+    .subscribe();
+}
+
+function _teardownSiteVisitsRealtime() {
+  if (_siteVisitsRealtimeChannel) {
+    const client = (typeof getForumClient === 'function') ? getForumClient() : null;
+    if (client) client.removeChannel(_siteVisitsRealtimeChannel);
+  }
+  _siteVisitsRealtimeChannel = null;
+}
+
+function _statsPanelReactiveHandler() {
+  if (document.hidden) return;
+  if (typeof isStatsIdle === 'function' && isStatsIdle()) return;
+  pollStatsPanel();
 }
 
 function stopStatsPanelPolling() {
@@ -1287,6 +1328,9 @@ function stopStatsPanelPolling() {
     clearInterval(_statsPanelPollTimer);
     _statsPanelPollTimer = null;
   }
+  document.removeEventListener('forum-data-changed', _statsPanelReactiveHandler);
+  document.removeEventListener('attempts-data-changed', _statsPanelReactiveHandler);
+  _teardownSiteVisitsRealtime();
 }
 
 document.addEventListener('visibilitychange', () => {

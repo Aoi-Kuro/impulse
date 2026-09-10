@@ -176,12 +176,25 @@ function _ensureSaRealtime(identityId, quizNum, cumulative) {
     .channel('solveall:' + key)
     .on('broadcast', { event: 'changed' }, _onSaBroadcast)
     .subscribe((status) => {
-      if (status !== 'SUBSCRIBED') return;
-      // Reconnected after actually dropping — something could have changed
-      // while we were gone, so catch up now rather than wait on the next
-      // ping or the slow fallback timer.
-      if (_saRealtimeEverConnected && _saSyncActive) _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
-      _saRealtimeEverConnected = true;
+      if (status === 'SUBSCRIBED') {
+        // Reconnected after actually dropping — something could have
+        // changed while we were gone, so catch up now rather than wait on
+        // the next ping or the slow fallback timer. The round trip's own
+        // push/pull results will settle the dot back to green.
+        if (_saRealtimeEverConnected && _saSyncActive) _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
+        _saRealtimeEverConnected = true;
+        return;
+      }
+      // CLOSED / CHANNEL_ERROR / TIMED_OUT — the socket itself is down, not
+      // just a failed push. Without this, the dot just keeps showing
+      // whatever it last happened to be (usually a stale green from the
+      // last successful push) while realtime pings from other devices are
+      // silently not arriving — the exact "malfunction" this dot was meant
+      // to surface. Reflect that honestly; SUBSCRIBED above flips it back
+      // once the client reconnects on its own.
+      if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        _setSolveAllSyncDot('red');
+      }
     });
 }
 
@@ -206,6 +219,7 @@ async function pullSolveAllProgress(quizNum, cumulative) {
       method: 'POST',
       headers: _saHeaders(),
       body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, quiz_num: quizNum, cumulative: !!cumulative, action: 'pull' }),
+      signal: AbortSignal.timeout(10000),
     });
     const json = await res.json().catch(() => null);
     if (!res.ok || !json || !json.ok) return null;
@@ -227,6 +241,7 @@ async function pushSolveAllProgress(quizNum, cumulative, snapshot) {
       method: 'POST',
       headers: _saHeaders(),
       body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, quiz_num: quizNum, cumulative: !!cumulative, action: 'push', data: snapshot }),
+      signal: AbortSignal.timeout(10000), // a hung request would otherwise leave this session's dot on stale "syncing" far longer than it should — see js/attempts-sync.js's syncAttempts for the fuller reasoning
     });
     const json = await res.json().catch(() => null);
     const ok = !!(res.ok && json && json.ok);
@@ -250,6 +265,7 @@ async function resetSolveAllProgressOnServer(quizNum, cumulative) {
       method: 'POST',
       headers: _saHeaders(),
       body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, quiz_num: quizNum, cumulative: !!cumulative, action: 'reset' }),
+      signal: AbortSignal.timeout(10000),
     });
     const json = await res.json().catch(() => null);
     return !!(res.ok && json && json.ok);

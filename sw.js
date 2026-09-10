@@ -156,7 +156,16 @@ self.addEventListener('fetch', (event) => {
       caches.match(event.request).then((cached) => {
         const revalidate = fetch(event.request).then((response) => {
           if (response && response.ok) {
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
+            // Clone SYNCHRONOUSLY, before any await/async gap. caches.open()
+            // is itself async, so calling response.clone() only after it
+            // resolves (the old code) leaves a window where `response` has
+            // already been handed back below and its body may have started
+            // streaming into the page (a real risk under slow network) —
+            // clone() then throws "Response body is already used" and the
+            // cache.put() below silently never happens. Cloning here, before
+            // `response` is returned to anyone, avoids the race entirely.
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
           }
           return response;
         }).catch(() => cached);

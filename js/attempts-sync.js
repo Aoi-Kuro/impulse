@@ -104,7 +104,7 @@ function _updateAttemptsSyncDot(syncing) {
   }
   const upToDate = loadStats().every(a => a.synced);
   if (upToDate) {
-    _settleLiveDot(dot, 'ok', 'Synced and up to date');
+    _settleLiveDot(dot, 'ok', 'Synced');
   } else {
     _settleLiveDot(dot, 'syncing', 'Sync pending…');
   }
@@ -138,6 +138,10 @@ function _onAttemptsBroadcast() {
   _attemptsBroadcastDebounce = setTimeout(() => {
     _attemptsBroadcastDebounce = null;
     syncAttempts();
+    // js/stats.js's total/my quiz-count dials are driven by RPCs, not a
+    // table Realtime can subscribe to directly — piggyback on this ping
+    // instead of giving that panel a channel of its own.
+    document.dispatchEvent(new Event('attempts-data-changed'));
   }, 3000);
 }
 
@@ -151,13 +155,27 @@ function _ensureAttemptsRealtime(identityId) {
     .channel('attempts:' + identityId)
     .on('broadcast', { event: 'changed' }, _onAttemptsBroadcast)
     .subscribe((status) => {
-      if (status !== 'SUBSCRIBED') return;
-      // Reconnected after actually dropping (not the first connect,
-      // already covered by this sync's own immediate call) — something
-      // could have changed while we were gone, so catch up now rather than
-      // wait for the next ping or the slow fallback timer.
-      if (_attemptsRealtimeEverConnected) syncAttempts();
-      _attemptsRealtimeEverConnected = true;
+      if (status === 'SUBSCRIBED') {
+        // Reconnected after actually dropping (not the first connect,
+        // already covered by this sync's own immediate call) — something
+        // could have changed while we were gone, so catch up now rather
+        // than wait for the next ping or the slow fallback timer. This
+        // also naturally settles the dot to a fresh ok/error result,
+        // rather than leaving it on whatever it showed before the drop.
+        if (_attemptsRealtimeEverConnected) syncAttempts();
+        _attemptsRealtimeEverConnected = true;
+        return;
+      }
+      // CHANNEL_ERROR / TIMED_OUT / CLOSED after having been up — the
+      // socket dropped for a reason that might have nothing to do with an
+      // actual sync attempt failing (server restart, brief network blip),
+      // so without this the dot would just sit on stale "green" until
+      // something else happens to fail or the 3-minute fallback tick
+      // fires. Surface it immediately instead.
+      if (_attemptsRealtimeEverConnected) {
+        _lastSyncFailed = true;
+        _updateAttemptsSyncDot(false);
+      }
     });
 }
 
@@ -170,6 +188,32 @@ function _teardownAttemptsRealtime() {
   _attemptsRealtimeEverConnected = false;
   _attemptsIdentityId = null;
 }
+
+// ── Connectivity-aware dots ──────────────────────────────────────────────
+// navigator.onLine flips the moment the OS itself reports the network is
+// down — far faster than waiting for an in-flight request to time out, or
+// for the 3-minute fallback tick. Covers all three live dots this project
+// has (Attempt log, Forum & Site panel, Solve-All), since none of them are
+// meaningful to show as "synced" while genuinely offline regardless of
+// which one's own channel happens to notice first.
+window.addEventListener('offline', () => {
+  _lastSyncFailed = true;
+  _updateAttemptsSyncDot(false);
+  const sfpDot = document.getElementById('sfpLiveDot');
+  if (sfpDot && typeof _settleLiveDot === 'function') _settleLiveDot(sfpDot, 'error', "Offline — will retry automatically");
+  if (typeof _setSolveAllSyncDot === 'function' && typeof _saSyncActive !== 'undefined' && _saSyncActive) _setSolveAllSyncDot('red');
+});
+
+window.addEventListener('online', () => {
+  // Don't just flip back to green optimistically — actually re-check each
+  // thing that's currently relevant, so every dot reflects a real, current
+  // result the instant connectivity returns rather than a guess.
+  syncAttempts();
+  if (typeof pollStatsPanel === 'function' && document.getElementById('sfpLiveDot')) pollStatsPanel();
+  if (typeof _saSyncActive !== 'undefined' && _saSyncActive && typeof _saSyncRoundTrip === 'function') {
+    _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
+  }
+});
 
 async function syncAttempts() {
   if (_attemptsSyncing) return; // already in flight — the caller's own next open/click will pick up the result
@@ -211,6 +255,18 @@ async function syncAttempts() {
     // supabase-js's .functions.invoke(), which isn't used anywhere else
     // here and would be an unverified assumption about what getForumClient()
     // actually wraps.
+    //
+    // AbortSignal.timeout matters more here than it looks: without it, a
+    // request that goes out right as the network drops can sit "pending"
+    // for close to a minute before the browser itself gives up and rejects
+    // it — and since _attemptsSyncing stays true that whole time, EVERY
+    // other call to this function (including the 'online' handler's own
+    // reconnect attempt, above) just silently no-ops until that original
+    // hung request finally settles. That's what made this dot/sync visibly
+    // slower to recover than the stats panel's (which has no such
+    // single-flight guard to get stuck behind). 10s is generous for a
+    // small JSON round trip but short enough that "offline" gets
+    // discovered promptly either way.
     const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-quiz-attempts`, {
       method: 'POST',
       headers: {
@@ -219,6 +275,7 @@ async function syncAttempts() {
         'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       },
       body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, attempts: pending }),
+      signal: AbortSignal.timeout(10000),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || 'sync_failed');

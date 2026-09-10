@@ -232,6 +232,11 @@ function _forumRealtimeWake() {
   if (_forumUnreadActive) pollForumUnread();
   if (_forumLiveActive) forumLiveTick();
   if (_forumProblemCountsActive) forumCountsByProblemKey().then(applyForumProblemCounts);
+  // js/stats.js's panel dials (total_participants, my_total_messages) are
+  // driven by RPCs, not a table Realtime can subscribe to directly — this
+  // lets that panel piggyback on this already-open channel instead of
+  // needing one of its own. No-op if stats.js never loaded/no listener.
+  document.dispatchEvent(new Event('forum-data-changed'));
 }
 
 // Tracks whether this channel has ever reached SUBSCRIBED before, so we can
