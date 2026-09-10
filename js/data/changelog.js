@@ -25,6 +25,7 @@
 
 // WARNING! The version has to be bumped in three places: here, in version.json and in quiz-engine.js
 const CHANGELOG = [
+  { version: "10.3.2", note: "Fixed vector values formatting in quiz 1.", scope: 1 },
   { version: "10.3.1", note: "Fixed equations' formatting breaking in Solve Them All mode.", scope: 0 }, 
   { version: "10.3.0", note: "Major reorganization of HTTP requests to the database (realtime mode is added).", scope: 0 }, 
   { version: "10.2.1", note: "Fixed P81 (Q1) error in answer key.", scope: 1 }, 

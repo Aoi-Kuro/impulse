@@ -23,13 +23,22 @@ const MATH_CACHE_DB_VERSION = 1;
 // that already got truncated this way; persistMathCacheStyles below now
 // merges instead of overwriting, so it shouldn't happen again going
 // forward.
-const MATH_CACHE_SCHEMA = 3;
+//
+// bumped again: persistMathCacheStyles was only ever called once, at the
+// very end of runWithLoadingScreen's animation sequence (collide + fade,
+// ~0.7-2s after the last card was already cached by cacheTypesetBatch) —
+// so a page reload, quiz switch, or closed tab inside that window left
+// cards cached with HTML whose glyph classes were never actually
+// persisted, in a way normal use could never self-heal (cached cards
+// don't get re-typeset). js/quiz-engine.js's cacheTypesetBatch now calls
+// persistMathCacheStyles per batch instead, closing that gap going
+// forward; this bump clears out whatever's already missing from it.
+const MATH_CACHE_SCHEMA = 4;
 
 let _mathCacheDB = null;
 let _mathCacheMap = new Map();   // problemId -> { hash, html }
 let _mathCacheStyles = '';       // last known CHTML stylesheet snapshot
 let _mathCacheReady = null;
-let _mathCacheSelectorSet = null; // lazily (re)built from _mathCacheStyles — see below
 
 function _mathCacheHash(str) {
   // djb2 — fast, good-enough distribution for change detection.
@@ -102,51 +111,6 @@ function _mathCacheClearAll() {
   });
 }
 
-// Splits a raw CHTML stylesheet string into the individual selectors it
-// declares, breaking comma-grouped rules ("(.mjx-c41-B, .mjx-c42-B { ... }")
-// into their own entries — a glyph covered only as part of a compound rule
-// still counts as covered. Cheap enough to rebuild once whenever
-// _mathCacheStyles changes; never run per-card.
-function _selectorSetFrom(cssText) {
-  const set = new Set();
-  if (!cssText) return set;
-  const ruleRe = /([^{}]+)\{[^{}]*\}/g;
-  let m;
-  while ((m = ruleRe.exec(cssText))) {
-    m[1].split(',').forEach(s => set.add(s.trim()));
-  }
-  return set;
-}
-
-function _mathCacheSelectors() {
-  if (!_mathCacheSelectorSet) _mathCacheSelectorSet = _selectorSetFrom(_mathCacheStyles);
-  return _mathCacheSelectorSet;
-}
-
-const _MJX_CLASS_RE = /class="([^"]*mjx-c[0-9A-Fa-f]+[^"]*)"/g;
-
-// Verifies that every mjx-c* glyph class referenced in a piece of cached
-// CHTML actually has a matching rule in the currently-persisted stylesheet.
-// This is the same check the "missing glyph classes" console diagnostic
-// does, run automatically so a historical incomplete persist (e.g. from a
-// page/session interrupted mid-typeset — see the sw.js clone() fix and the
-// MATH_CACHE_SCHEMA comment above) can't silently poison an entry forever.
-// Without this, a card whose stylesheet gap was never backfilled stays a
-// permanent cache hit and never gets a chance to regenerate its own rules,
-// since cache hits are exactly the cards that skip MathJax entirely.
-function mathCacheHtmlIsCovered(html) {
-  const selectors = _mathCacheSelectors();
-  _MJX_CLASS_RE.lastIndex = 0;
-  let m;
-  while ((m = _MJX_CLASS_RE.exec(html))) {
-    const classes = m[1].split(/\s+/).filter(c => c.startsWith('mjx-c'));
-    for (const c of classes) {
-      if (!selectors.has('.' + c)) return false;
-    }
-  }
-  return true;
-}
-
 function _injectCachedStyles(cssText) {
   let el = document.getElementById('mjx-cache-preload-styles');
   if (!el) {
@@ -177,7 +141,6 @@ function initMathCache() {
       const styles = await _mathCacheGet('meta', 'styles');
       if (styles) {
         _mathCacheStyles = styles;
-        _mathCacheSelectorSet = null; // stale — rebuilt lazily on next check
         _injectCachedStyles(styles);
       }
       const all = await _mathCacheGetAll('cards');
@@ -194,13 +157,7 @@ function initMathCache() {
 function getCachedMathHTML(problemId, sourceText) {
   const entry = _mathCacheMap.get(problemId);
   if (!entry) return null;
-  if (entry.hash !== _mathCacheHash(sourceText)) return null;
-  // Persisted stylesheet doesn't cover this entry's glyphs (a stale/
-  // incomplete snapshot) — treat it as a miss so the normal render path
-  // retypesets it with MathJax, which backfills the missing rules via
-  // persistMathCacheStyles the next time a batch finishes.
-  if (!mathCacheHtmlIsCovered(entry.html)) return null;
-  return entry.html;
+  return entry.hash === _mathCacheHash(sourceText) ? entry.html : null;
 }
 
 function mathCacheHashOf(sourceText) {
@@ -265,7 +222,6 @@ function persistMathCacheStyles() {
   const merged = _mergeCssRules(_mathCacheStyles, css);
   if (merged === _mathCacheStyles) return;
   _mathCacheStyles = merged;
-  _mathCacheSelectorSet = null; // stale — rebuilt lazily on next check
   _injectCachedStyles(merged);
   _mathCachePut('meta', 'styles', merged).catch(err =>
     console.error('Math cache style write error:', err));

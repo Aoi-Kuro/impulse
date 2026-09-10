@@ -1292,6 +1292,17 @@ function rerenderSolveAllEquations() {
 // excluding cards restored from cache). Captures the fresh output so the
 // next time solve-all is opened — even after a reload — these same cards
 // can skip MathJax entirely.
+//
+// Persists the CSS those glyphs need (persistMathCacheStyles) right here,
+// batch by batch, rather than waiting for the whole loading screen to
+// finish. runWithLoadingScreen's finish() sits behind the collide/fade
+// animation's setTimeouts (~0.7-2s) after the last batch — if the user
+// closes solve-all, switches quizzes, or reloads inside that window, HTML
+// already cached by this function would otherwise be left referencing
+// glyph classes whose CSS never got saved. Since cached cards are never
+// re-typeset, that gap doesn't self-heal — it only shows up later as
+// overlapping/garbled math, and accumulates every time it happens, until
+// someone runs "Rerender Equations". Persisting per-batch closes the gap.
 function cacheTypesetBatch(batch) {
   for (const card of batch) {
     const idx = card.id.replace('sa-card-', '');
@@ -1301,6 +1312,7 @@ function cacheTypesetBatch(batch) {
     if (!textEl) continue;
     storeCachedMathHTML(mathCacheKeyFor(p), mathCacheHashOf(p.text), textEl.innerHTML);
   }
+  persistMathCacheStyles();
 }
 
 // Builds solve-all cards in small batches, yielding a frame between
@@ -2236,7 +2248,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '10.3.1';
+const CURRENT_VERSION = '10.3.2';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

@@ -61,10 +61,10 @@ const Quiz_1_Problems = [
     text:"Given vector $\\vec{B} = 3\\mathbf{\\hat{i}} + 2\\mathbf{\\hat{j}} + 3\\mathbf{\\hat{k}}$, find its magnitude." },
 
   { id:"P19", topic:"Vectors", answer:37.13489, units:["m"],
-    text:"Given the two displacements $\\vec{D} = 8\\mathbf{\\hat{i}} + 10\\mathbf{\\hat{j}} - 10\\mathbf{\\hat{k}}$ m and $\\vec{E} = 5\\mathbf{\\hat{i}} - 3\\mathbf{\\hat{j}} + 7\\mathbf{\\hat{k}}$ m, find the magnitude of the displacement $2\\vec{D}-\\vec{E}$." },
+    text:"Given the two displacements $\\vec{D} = (8\\mathbf{\\hat{i}} + 10\\mathbf{\\hat{j}} - 10\\mathbf{\\hat{k}})$ m and $\\vec{E} = (5\\mathbf{\\hat{i}} - 3\\mathbf{\\hat{j}} + 7\\mathbf{\\hat{k}})$ m, find the magnitude of the displacement $2\\vec{D}-\\vec{E}$." },
 
   { id:"P20", topic:"Vectors", answer:10.518, units:["m"],
-    text:"Given the two displacements $\\vec{D} = 5\\mathbf{\\hat{i}} + 7\\mathbf{\\hat{j}} - 7\\mathbf{\\hat{k}}$ m and $\\vec{E} = 5\\mathbf{\\hat{i}} + 3\\mathbf{\\hat{j}} - 6\\mathbf{\\hat{k}}$ m, find the magnitude of the component of $\\vec{D}$ along the direction of $\\vec{E}$." },
+    text:"Given the two displacements $\\vec{D} = (5\\mathbf{\\hat{i}} + 7\\mathbf{\\hat{j}} - 7\\mathbf{\\hat{k}})$ m and $\\vec{E} = (5\\mathbf{\\hat{i}} + 3\\mathbf{\\hat{j}} - 6\\mathbf{\\hat{k}})$ m, find the magnitude of the component of $\\vec{D}$ along the direction of $\\vec{E}$." },
 
   { id:"P21", topic:"Vectors", answer:18.8959, units:[],
     text:"Find the scalar product $\\vec{A} \\cdot \\vec{B}$ of the two vectors in figure below. The magnitudes of the vectors are $|\\vec{A}|$ = 7 and $|\\vec{B}|$ = 12. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_1/unnamed(1).webp\" alt=\"figure\" width=\"300px\"></div>" },
@@ -234,25 +234,25 @@ const Quiz_1_Problems = [
     text:"A rocket moves in the $xy$-plane. The rocket's acceleration has components $a_{x}(t) = \\alpha t^{2}$ and $a_{y}(t) = \\beta - \\gamma t$, where $\\alpha$ = 2.3 m s$^{-4}$, $\\beta$ = 9 m s$^{-2}$, and $\\gamma$ = 1.1 m s$^{-3}$. At $t$ = 0 the rocket is at the origin and has velocity $\\vec{v}_{0} = v_{0x}\\mathbf{\\hat{i}} + v_{0y}\\mathbf{\\hat{j}}$, with $v_{0x}$ = 1.2 m s$^{-1}$ and $v_{0y}$ = 7 m s$^{-1}$. Calculate the magnitude of the velocity at $t$ = 4 s." },
 
   { id:"P74", topic:"Kinematics of 2D and 3D motion in vectors form", answer:0.19611613513818, units:["m/s^2"],
-    text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = -3\\mathbf{\\hat{i}} + 3\\mathbf{\\hat{j}}$ m s$^{-1}$ at a point in the ocean. After the fish swims with constant acceleration for 26 s, its velocity is $\\vec{v} = -2\\mathbf{\\hat{i}} + 8\\mathbf{\\hat{j}}$ m s$^{-1}$. What is the magnitude of the acceleration?" },
+    text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = (-3\\mathbf{\\hat{i}} + 3\\mathbf{\\hat{j}})$ m s$^{-1}$ at a point in the ocean. After the fish swims with constant acceleration for 26 s, its velocity is $\\vec{v} = (-2\\mathbf{\\hat{i}} + 8\\mathbf{\\hat{j}})$ m s$^{-1}$. What is the magnitude of the acceleration?" },
 
   { id:"P75", topic:"Kinematics of 2D and 3D motion in vectors form", answer:45.0, units:[],
-    text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = -5\\mathbf{\\hat{i}} + 1\\mathbf{\\hat{j}}$ m s$^{-1}$ at a point in the ocean. After the fish swims with constant acceleration for 29 s, its velocity is $\\vec{v} = 4\\mathbf{\\hat{i}} + 10\\mathbf{\\hat{j}}$ m s$^{-1}$. What is the angle of the acceleration vector, measured counterclockwise from the $+x$ axis? Give the answer in degrees." },
+    text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = (-5\\mathbf{\\hat{i}} + 1\\mathbf{\\hat{j}})$ m s$^{-1}$ at a point in the ocean. After the fish swims with constant acceleration for 29 s, its velocity is $\\vec{v} = (4\\mathbf{\\hat{i}} + 10\\mathbf{\\hat{j}})$ m s$^{-1}$. What is the angle of the acceleration vector, measured counterclockwise from the $+x$ axis? Give the answer in degrees." },
 
   { id:"P76", topic:"Kinematics of 2D and 3D motion in vectors form", answer:-107.53846153846, units:["m"],
-    text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = 2\\mathbf{\\hat{i}} + 6\\mathbf{\\hat{j}}$ m s$^{-1}$ at a point in the ocean where the position relative to a certain rock is $\\vec{r}_{i} = -6\\mathbf{\\hat{i}} + 4\\mathbf{\\hat{j}}$ m. After the fish swims with constant acceleration for 13 s, its velocity is $\\vec{v} = -2\\mathbf{\\hat{i}} + 2\\mathbf{\\hat{j}}$ m s$^{-1}$. If the fish maintains constant acceleration, what is its horizontal position at $t$ = 33 s?" },
+    text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = (2\\mathbf{\\hat{i}} + 6\\mathbf{\\hat{j}})$ m s$^{-1}$ at a point in the ocean where the position relative to a certain rock is $\\vec{r}_{i} = (-6\\mathbf{\\hat{i}} + 4\\mathbf{\\hat{j}})$ m. After the fish swims with constant acceleration for 13 s, its velocity is $\\vec{v} = (-2\\mathbf{\\hat{i}} + 2\\mathbf{\\hat{j}})$ m s$^{-1}$. If the fish maintains constant acceleration, what is its horizontal position at $t$ = 33 s?" },
 
   { id:"P77", topic:"Kinematics of 2D and 3D motion in vectors form", answer:227.076923, units:["m"],
-    text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = 3\\mathbf{\\hat{i}} + 1\\mathbf{\\hat{j}}$ m s$^{-1}$ at a point in the ocean where the position relative to a certain rock is $\\vec{r}_{i} = 3\\mathbf{\\hat{i}} + 4\\mathbf{\\hat{j}}$ m. After the fish swims with constant acceleration for 13 s, its velocity is $\\vec{v} = 8\\mathbf{\\hat{i}} + 7\\mathbf{\\hat{j}}$ m s$^{-1}$. If the fish maintains constant acceleration, what is its vertical position at $t$ = 29 s?" },
+    text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = (3\\mathbf{\\hat{i}} + 1\\mathbf{\\hat{j}})$ m s$^{-1}$ at a point in the ocean where the position relative to a certain rock is $\\vec{r}_{i} = (3\\mathbf{\\hat{i}} + 4\\mathbf{\\hat{j}})$ m. After the fish swims with constant acceleration for 13 s, its velocity is $\\vec{v} = (8\\mathbf{\\hat{i}} + 7\\mathbf{\\hat{j}})$ m s$^{-1}$. If the fish maintains constant acceleration, what is its vertical position at $t$ = 29 s?" },
 
   { id:"P78", topic:"Kinematics of 2D and 3D motion in vectors form", answer:81.334863373587, units:["m"],
     text:"A particle starts from the origin at $t$ = 0 with an initial velocity having an x component of -3 m s$^{-1}$ and a y component of $-5$ m s$^{-1}$. The particle moves in the $xy$ plane with an x component of acceleration only, given by $a_{x}$ = 5.2 m s$^{-2}$. Determine the distance from the origin at $t$ = 6 s." },
 
   { id:"P79", topic:"Kinematics of 2D and 3D motion in vectors form", answer:251.58895047279, units:["m/s"],
-    text:"A spaceship is traveling at a constant velocity of $v = 255 \\mathbf{\\vec{i}}$ m s$^{-1}$ when its engines fire up, giving it constant acceleration $\\vec{a} = -2\\mathbf{\\hat{i}} + 12\\mathbf{\\hat{k}}$ m s$^{-2}$. What is the magnitude of the spaceship's velocity 3 s after the engines fired?" },
+    text:"A spaceship is traveling at a constant velocity of $v = 255 \\mathbf{\\vec{i}}$ m s$^{-1}$ when its engines fire up, giving it constant acceleration $\\vec{a} = (-2\\mathbf{\\hat{i}} + 12\\mathbf{\\hat{k}})$ m s$^{-2}$. What is the magnitude of the spaceship's velocity 3 s after the engines fired?" },
 
   { id:"P80", topic:"Kinematics of 2D and 3D motion in vectors form", answer:816.106, units:["m"],
-    text:"A spaceship is traveling at a constant velocity of $v = 275 \\mathbf{\\vec{i}}$ m s$^{-1}$ when its engines fire up, giving it constant acceleration $\\vec{a} = -2.2\\mathbf{\\hat{i}} + 9\\mathbf{\\hat{k}}$ m s$^{-2}$. What is the magnitude of the spaceship's displacement 3 s after the engines fired?" },
+    text:"A spaceship is traveling at a constant velocity of $v = 275 \\mathbf{\\vec{i}}$ m s$^{-1}$ when its engines fire up, giving it constant acceleration $\\vec{a} = (-2.2\\mathbf{\\hat{i}} + 9\\mathbf{\\hat{k}})$ m s$^{-2}$. What is the magnitude of the spaceship's displacement 3 s after the engines fired?" },
 
   // ──────────────────── Circular motion ────────────────────
 
@@ -360,10 +360,10 @@ const Quiz_1_Problems = [
     text:"There is a banana at the top of a 10 m long rope. A monkey of mass $m$ = 10.4 kg starts from rest at the bottom and climbs to the banana in 2.7 s with constant acceleration. What is the tension in the rope? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
   { id:"P114", topic:"Newton’s 2nd law", answer:31.5, units:["m"],
-    text:"A particle of mass 2 kg is acted on by a single force $F =14 \\mathbf{\\hat{i}}$ N. If the particle starts at rest, how far does it travel in the first 3 s?" },
+    text:"A particle of mass 2 kg is acted on by a single force $F =14 (\\mathbf{\\hat{i}})$ N. If the particle starts at rest, how far does it travel in the first 3 s?" },
 
   { id:"P115", topic:"Newton’s 2nd law", answer:87.0, units:["m"],
-    text:"A particle of mass 2 kg is acted on by a single force $F =14 \\mathbf{\\hat{i}}$ N. At $t$ = 0 the particle has velocity $\\vec{v}_{0} = -6.5\\mathbf{\\hat{i}}$ m s$^{-1}$. What is the magnitude of its displacement during the first 6 s?" },
+    text:"A particle of mass 2 kg is acted on by a single force $F =14 (\\mathbf{\\hat{i}})$ N. At $t$ = 0 the particle has velocity $\\vec{v}_{0} = (-6.5\\mathbf{\\hat{i}})$ m s$^{-1}$. What is the magnitude of its displacement during the first 6 s?" },
 
   { id:"P116", topic:"Newton’s 2nd law", answer:66.0468, units:["kg"],
     text:"An elevator accelerating upward carries a man standing on a weighing scale indicating $F_{1}$ = 678.9 N. The scale reads $F_{2}$ = 767.3 N when the man picks up a 8.6 kg box. Find the man's mass." },
@@ -372,7 +372,7 @@ const Quiz_1_Problems = [
     text:"A man of mass 73.5 kg stands on a weighing scale in an elevator that is accelerating upward. The scale reads 925 N. Find the magnitude of the acceleration of the elevator. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
   { id:"P118", topic:"Newton’s 2nd law", answer:13.491, units:["N"],
-    text:"Particle moves with constant velocity $\\vec{v} = 2\\mathbf{\\hat{i}} - 7\\mathbf{\\hat{j}}$ m s$^{-1}$ under the combined action of three forces. Two of the forces acting on this particle are $\\vec{F}_{1} = 6\\mathbf{\\hat{i}} + 7\\mathbf{\\hat{j}} - 10\\mathbf{\\hat{k}}$ N and $\\vec{F}_{2} = -9\\mathbf{\\hat{i}} - 9\\mathbf{\\hat{j}} - 3\\mathbf{\\hat{k}}$ N. What is the third vector magnitude?" },
+    text:"Particle moves with constant velocity $\\vec{v} = (2\\mathbf{\\hat{i}} - 7\\mathbf{\\hat{j}})$ m s$^{-1}$ under the combined action of three forces. Two of the forces acting on this particle are $\\vec{F}_{1} = (6\\mathbf{\\hat{i}} + 7\\mathbf{\\hat{j}} - 10\\mathbf{\\hat{k}})$ N and $\\vec{F}_{2} = (-9\\mathbf{\\hat{i}} - 9\\mathbf{\\hat{j}} - 3\\mathbf{\\hat{k}})$ N. What is the third vector magnitude?" },
 
   { id:"P119", topic:"Newton’s 2nd law", answer:1.09756, units:["m/s^2"],
     text:"The friction is very small for ice skating and can be neglected. Find the acceleration magnitude of an ice dancer A of mass 53.3 kg pushing his partner B of mass 66.4 kg with the force 58.5 N." },
