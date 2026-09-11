@@ -156,7 +156,13 @@ self.addEventListener('fetch', (event) => {
       caches.match(event.request).then((cached) => {
         const revalidate = fetch(event.request).then((response) => {
           if (response && response.ok) {
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
+            // Clone synchronously, right here, before any async work — if
+            // this were deferred until inside caches.open().then(...), the
+            // response returned below could already be locked/streaming to
+            // the page by the time clone() runs, throwing "Response body
+            // is already used".
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
           }
           return response;
         }).catch(() => cached);

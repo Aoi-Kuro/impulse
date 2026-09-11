@@ -33,8 +33,14 @@ function nextFrame() {
 // Children already carrying the 'mj-cached' class are skipped — their
 // math was restored verbatim from the persistent render cache (see
 // math-cache.js) and doesn't need MathJax at all. `onBatch(batch)`, if
-// given, is called after each batch actually gets typeset, so a caller
-// (e.g. solve-all) can capture the fresh output into that cache.
+// given, is called after each batch actually gets typeset (and after one
+// frame tick — see the comment at the call site below for why that
+// matters), so a caller (e.g. solve-all) can capture the fresh output
+// into that cache — and is awaited here (it may itself be async, e.g.
+// cacheTypesetBatch) so this loop can't move on to the next batch — or,
+// on the last batch, let the caller's promise resolve — before that
+// capture's own writes have actually finished committing. See
+// cacheTypesetBatch's own comment for why that matters.
 async function renderMathInBatches(container, batchSize = 6, onBatch) {
   if (!container) return;
   if (!window.MathJax || !window.MathJax.typesetPromise) {
@@ -45,8 +51,18 @@ async function renderMathInBatches(container, batchSize = 6, onBatch) {
   for (let i = 0; i < cards.length; i += batchSize) {
     const batch = cards.slice(i, i + batchSize);
     await MathJax.typesetPromise(batch).catch(err => console.error("MathJax render error:", err));
-    if (onBatch) onBatch(batch);
+    // A frame tick *before* onBatch, not after: MathJax's own dynamic
+    // stylesheet update (the <style id="MJX-CHTML-styles"> element new
+    // glyphs get added to) isn't guaranteed to have flushed into the DOM
+    // the instant typesetPromise's promise resolves — it can lag by a
+    // frame. onBatch (e.g. cacheTypesetBatch) reads that stylesheet to
+    // capture each card's needed CSS, so reading it too early silently
+    // captures an incomplete snapshot — this was actually happening:
+    // real testing found freshly-typeset cards caching with most or all
+    // of their needed glyph rules missing, not because extraction itself
+    // was wrong, but because it ran a tick before the rules existed yet.
     await nextFrame();
+    if (onBatch) await onBatch(batch);
   }
 }
 

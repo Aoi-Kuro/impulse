@@ -5,7 +5,7 @@
 //   3. Set enabled: true and point problems: to the array
 const QUIZZES = [
   { name: "Kinematics & Dynamics", problems: Quiz_1_Problems, enabled: true  },
-  { name: "", problems: Quiz_2_Problems, enabled: false },
+  { name: "Energy, Momentum & Rotation", problems: Quiz_2_Problems, enabled: true },
   { name: "",       problems: Quiz_3_Problems, enabled: false },
   { name: "",       problems: Quiz_4_Problems, enabled: false },
 ];

@@ -1256,7 +1256,7 @@ function renderSolveAll() {
       subEl.classList.toggle('show', hasUncached);
     }
     runWithLoadingScreen(screen, container, () => buildSolveAllCards(container), cacheTypesetBatch)
-      .then(persistMathCacheStyles);
+      .then(finalizeFreshMathCache);
   });
 }
 
@@ -1283,36 +1283,71 @@ function rerenderSolveAllEquations() {
     if (subEl) subEl.classList.add('show');
 
     runWithLoadingScreen(screen, container, () => buildSolveAllCards(container), cacheTypesetBatch)
-      .then(persistMathCacheStyles)
+      .then(finalizeFreshMathCache)
       .finally(() => { if (btn) btn.disabled = false; });
   });
 }
 
 // Called after each batch of cards actually gets typeset by MathJax (i.e.
-// excluding cards restored from cache). Captures the fresh output so the
-// next time solve-all is opened — even after a reload — these same cards
-// can skip MathJax entirely.
+// excluding cards restored from cache). Captures the fresh output — HTML
+// plus the exact CSS rules it needs (extractCssForHtml), as one bundle —
+// so the next time solve-all is opened, even after a reload, these same
+// cards can skip MathJax entirely and still render correctly on their
+// own. See math-cache.js's file header for why HTML and CSS are stored
+// together rather than through a separate shared stylesheet.
 //
-// Persists the CSS those glyphs need (persistMathCacheStyles) right here,
-// batch by batch, rather than waiting for the whole loading screen to
-// finish. runWithLoadingScreen's finish() sits behind the collide/fade
-// animation's setTimeouts (~0.7-2s) after the last batch — if the user
-// closes solve-all, switches quizzes, or reloads inside that window, HTML
-// already cached by this function would otherwise be left referencing
-// glyph classes whose CSS never got saved. Since cached cards are never
-// re-typeset, that gap doesn't self-heal — it only shows up later as
-// overlapping/garbled math, and accumulates every time it happens, until
-// someone runs "Rerender Equations". Persisting per-batch closes the gap.
-function cacheTypesetBatch(batch) {
+// Async, and every write below is awaited (not fire-and-forget):
+// storeCachedMathHTML returns its IndexedDB write's own promise,
+// resolving only once that transaction's oncomplete actually fires —
+// i.e. once the browser considers it durably committed, not just handed
+// off. renderMathInBatches awaits this function before starting the next
+// batch, so a reload can't land between "this batch looked done" and
+// "its write actually finished" — the remaining risk is only ever
+// whatever's still in the very batch the user interrupted mid-typeset,
+// which was never cached at all and just re-typesets cleanly next time.
+//
+// Also records each card in _freshlyCachedThisRender so
+// finalizeFreshMathCache can double-check it once the whole render is
+// done (see that function for why).
+let _freshlyCachedThisRender = [];
+
+async function cacheTypesetBatch(batch) {
   for (const card of batch) {
     const idx = card.id.replace('sa-card-', '');
     const p = solveAllProblems[idx];
     if (!p) continue;
     const textEl = card.querySelector('.problem-text');
     if (!textEl) continue;
-    storeCachedMathHTML(mathCacheKeyFor(p), mathCacheHashOf(p.text), textEl.innerHTML);
+    const html = textEl.innerHTML;
+    const css = extractCssForHtml(html);
+    await storeCachedMathHTML(mathCacheKeyFor(p), mathCacheHashOf(p.text), html, css);
+    _freshlyCachedThisRender.push(p);
   }
-  persistMathCacheStyles();
+}
+
+// Safety net, run once after the whole card-building pass finishes (see
+// renderSolveAll/rerenderSolveAllEquations). extractCssForHtml is called
+// per-batch, immediately after that batch's own typesetting — real
+// testing found that MathJax's dynamic stylesheet can still lag a frame
+// behind at that exact point even with the frame tick renderMathInBatches
+// now inserts first, so a card can end up cached with only some (or
+// none) of the CSS rules it actually needs. By the time the *entire*
+// render is finished, that stylesheet is unambiguously complete and
+// stable — so re-running extraction here, against the final state, and
+// overwriting anything that was captured incompletely, closes the gap
+// for good regardless of exactly where the per-batch timing lands.
+async function finalizeFreshMathCache() {
+  const entries = _freshlyCachedThisRender;
+  _freshlyCachedThisRender = [];
+  for (const p of entries) {
+    const key = mathCacheKeyFor(p);
+    const existing = getCachedMathHTML(key, p.text);
+    if (!existing) continue; // text changed again already, or something else invalidated it — skip
+    const css = extractCssForHtml(existing.html);
+    if (css && css !== existing.css) {
+      await storeCachedMathHTML(key, mathCacheHashOf(p.text), existing.html, css);
+    }
+  }
 }
 
 // Builds solve-all cards in small batches, yielding a frame between
@@ -1322,6 +1357,13 @@ function cacheTypesetBatch(batch) {
 // matters). Returns a promise so the caller can wait for it to finish.
 function buildSolveAllCards(container, batchSize = 12) {
   container.innerHTML = '';
+
+  // Every card restored from cache carries its own CSS bundled with its
+  // HTML (see math-cache.js) — collect those snippets as we go and keep
+  // injecting the running union after each batch, so cards already on
+  // screen always have the rules they need by the time they're visible,
+  // without waiting for the whole set to finish building.
+  const restoredCss = [];
 
   return new Promise((resolve, reject) => {
     let i = 0;
@@ -1339,20 +1381,25 @@ function buildSolveAllCards(container, batchSize = 12) {
           card.id = 'sa-card-' + i;
 
           // If this exact problem text was already typeset in a previous
-          // visit, reuse that HTML directly and skip MathJax for this card
-          // entirely (see math-cache.js). A 'mj-cached' card whose text
-          // hasn't changed since caching needs no re-typesetting; if the
-          // text has changed, getCachedMathHTML returns null and we fall
-          // back to the normal raw-text path below.
-          const cachedText = getCachedMathHTML(mathCacheKeyFor(p), p.text);
-          if (cachedText !== null) card.classList.add('mj-cached');
+          // visit, reuse that HTML+CSS bundle directly and skip MathJax
+          // for this card entirely (see math-cache.js). A 'mj-cached'
+          // card whose text hasn't changed since caching needs no
+          // re-typesetting; if the text has changed, getCachedMathHTML
+          // returns null and we fall back to the normal raw-text path
+          // below (MathJax will typeset it and cacheTypesetBatch will
+          // capture a fresh bundle for it).
+          const cached = getCachedMathHTML(mathCacheKeyFor(p), p.text);
+          if (cached !== null) {
+            card.classList.add('mj-cached');
+            if (cached.css) restoredCss.push(cached.css);
+          }
 
           card.innerHTML = `
             <div class="card-header">
               <span class="problem-num">${p.id}</span>
               <span class="problem-topic">${p.topic}</span>
             </div>
-            <div class="problem-text">${cachedText !== null ? cachedText : p.text}</div>
+            <div class="problem-text">${cached !== null ? cached.html : p.text}</div>
             <div class="answer-row">
               <span class="answer-label">Value =</span>
               <input class="answer-input" id="sa-ans-${i}" type="text" placeholder="e.g. 3.2e-8" autocomplete="off" spellcheck="false">
@@ -1393,6 +1440,12 @@ function buildSolveAllCards(container, batchSize = 12) {
         // document.getElementById, which only finds nodes that are
         // actually in the document (not ones still sitting in a fragment).
         container.appendChild(frag);
+
+        // Cheap dedup-by-selector pass over whatever's been restored so
+        // far (see injectRestoredStyles) — cards from this and every
+        // earlier batch this build are covered before the browser gets a
+        // chance to paint them without their glyph rules.
+        if (restoredCss.length) injectRestoredStyles(restoredCss);
 
         for (let j = batchStart; j < end; j++) {
           const p = solveAllProblems[j];
@@ -2248,7 +2301,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '10.3.2';
+const CURRENT_VERSION = '10.3.3';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;
