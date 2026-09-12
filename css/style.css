@@ -1476,11 +1476,35 @@
     color: var(--accent);
     line-height: 1;
     display: flex;
+    flex-wrap: wrap; /* narrow screens: duration drops to its own line instead of overflowing/squeezing the score */
+    row-gap: 0.3rem;
     align-items: baseline;
     gap: 0.15rem;
   }
   .result-big .result-score-den {
     font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  /* Attempt duration ("21 min 41 s") — pushed to the far right of the
+     row via margin-left:auto (works because .result-big is display:flex
+     and, being a block-level flex container, already stretches to the
+     panel's full width). One size step down from the main score/its
+     denominator: big enough to read as a real stat, not so big it
+     competes with the score for attention. */
+  .result-duration {
+    margin-left: auto;
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+  }
+  .result-duration-num {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .result-duration-unit {
+    font-size: 0.78rem;
     font-weight: 600;
     color: var(--muted);
   }
@@ -1534,6 +1558,86 @@
     height: 1.7rem;
     padding: 0 0.4rem;
     font-size: 0.64rem;
+  }
+
+  /* ── P⇄Q toggle (cumulative-mode rows only) ──
+     A row that mixes problems from more than one quiz (see the
+     showToggle checks in quiz-engine.js — rows with only one quiz never
+     get this markup at all) renders every chip with BOTH labels
+     stacked on top of each other via position:absolute, and a single
+     .pq-toggle-btn per row that flips which one shows. Crossfading two
+     always-present labels by opacity, rather than swapping textContent
+     via JS, is what gives the "double fade" its smoothness for free —
+     the outgoing label fades down while the incoming one fades up in
+     the same transition, with no frame where the chip is briefly empty. */
+  .score-box {
+    position: relative; /* anchors the two absolutely-positioned .pq-label spans */
+  }
+  .pq-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.14s ease;
+    pointer-events: none; /* clicks/taps still land on the .score-box itself */
+  }
+  .pq-label-p { opacity: 1; } /* default: problem id showing, quiz label hidden */
+
+  /* Pinned state — toggled by clicking .pq-toggle-btn (togglePQRow in
+     quiz-engine.js), which just flips this class on the row. */
+  .pq-row.show-q .pq-label-p { opacity: 0; }
+  .pq-row.show-q .pq-label-q { opacity: 1; }
+
+  /* Hover preview — hovering the button (not clicking it) previews the
+     P→Q flip while pinned to P, without touching the pinned class, so it
+     reverts the instant the hover ends. Deliberately one-directional:
+     once pinned to Q the button is already "on" (see .pq-toggle-btn.is-on
+     below), so hovering it again previews nothing — there's no unclear
+     state left to explain, and reverting to P on hover would read as the
+     button turning itself off just by looking at it. :has() lets the row
+     react to its own button's :hover; browsers without :has() support
+     just skip the preview and keep the plain click-toggle behavior. */
+  .pq-row:has(.pq-toggle-btn:hover):not(.show-q) .pq-label-p { opacity: 0; }
+  .pq-row:has(.pq-toggle-btn:hover):not(.show-q) .pq-label-q { opacity: 1; }
+
+  .pq-toggle-btn {
+    height: 1.7rem;
+    margin-left: auto; /* pushes to the right end of the row's flex-wrap */
+    padding: 0 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: calc(4px * var(--radius-mult));
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  }
+  .pq-toggle-btn:hover,
+  .pq-toggle-btn:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  /* Single-quiz rows still get the button (see pqToggleButton in
+     quiz-engine.js) so the row's layout doesn't shift depending on
+     whether toggling is possible — it's just disabled and faded instead
+     of hidden. pointer-events:none also stops the :has(.pq-toggle-btn:hover)
+     preview rule above from ever matching, on top of blocking the click. */
+  .pq-toggle-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  /* "On" state — pinned to Q. Filled instead of just outlined so it
+     reads as an active toggle at a glance, not just another hover-tint. */
+  .pq-row.show-q .pq-toggle-btn {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent, #fff);
   }
 
   /* ── Recent attempts (last 5) ── */
@@ -2185,6 +2289,54 @@
   .sticky-stat-num.s-correct { color: var(--correct); }
   .sticky-stat-num.s-partial { color: var(--partial); }
   .sticky-stat-num.s-wrong   { color: var(--wrong); }
+
+  /* ── Live quiz timer (floating "00:00" clock) ──
+     Same fixed bottom-right slot as #stickyScore — safe to reuse since the
+     two are never shown together (this one's Random 6/cumulative, that
+     one's Solve-All). Minutes get the accent color; seconds and the colon
+     are deliberately dimmed (opacity, not just a muted color) so the
+     ticking digit doesn't keep pulling the eye while working. Both digit
+     spans use a fixed `width: 2ch` (not min-width) in the monospace font
+     already used everywhere else — every digit has the same advance width,
+     so the colon between them never shifts as the numbers change. */
+  #liveQuizTimer {
+    display: none;
+    position: fixed;
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    right: calc(1.5rem + env(safe-area-inset-right, 0px));
+    z-index: 800;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: calc(6px * var(--radius-mult));
+    padding: 0.55rem 0.9rem;
+    font-family: var(--mono);
+    box-shadow: 0 4px 24px color-mix(in srgb, var(--shadow) calc(0.5 * 100%), transparent);
+  }
+  #liveQuizTimer.visible { display: block; }
+  .live-timer-min,
+  .live-timer-sec {
+    display: inline-block;
+    width: 2ch;
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .live-timer-min {
+    color: var(--accent);
+  }
+  .live-timer-sec {
+    color: var(--muted);
+    opacity: 0.55; /* deliberately low-key — see block comment above */
+  }
+  .live-timer-colon {
+    display: inline-block;
+    color: var(--muted);
+    opacity: 0.55;
+    font-size: 1.3rem;
+    font-weight: 700;
+    line-height: 1;
+  }
 
   /* ── Solve-all retry / see-answer ── */
   .btn-retry {

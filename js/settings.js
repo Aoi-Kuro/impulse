@@ -43,9 +43,12 @@ const SETTINGS_DEFAULTS = {
     showDaylightBtn: true,
     followDeviceTheme: false,
     showForumFab:    true,
+    hideFieldLinesByDefault: false,
   },
   notifications: {},
-  study: {},
+  study: {
+    showLiveTimer: true,
+  },
   offline: {},
 };
 
@@ -307,7 +310,7 @@ function renderSettingsBody() {
   } else if (settingsActiveTab === 'notifications') {
     body.innerHTML = `<div class="settings-empty-note">Nothing here yet: mute controls (update/theme/bug-report reminders, "go silent", and per-type forum notification muting) land in a later phase.</div>`;
   } else if (settingsActiveTab === 'study') {
-    body.innerHTML = `<div class="settings-empty-note">Nothing here yet: reduce motion, LaTeX re-render on Enter, Random N loader/filter behavior, Solve-Them-All order lock, and answer-reveal mode land in a later phase.</div>`;
+    body.innerHTML = renderSettingsStudyTab();
   } else if (settingsActiveTab === 'offline') {
     body.innerHTML = `<div class="settings-empty-note">Nothing here yet: Prepare/Go offline lands in a later phase.</div>`;
   }
@@ -358,6 +361,11 @@ const DISPLAY_TOGGLES = [
     title: 'Show floating forum button',
     desc: 'Shows the floating 💬 forum button that follows you mid-quiz, in Stats, and elsewhere off the main page.',
   },
+  {
+    key: 'hideFieldLinesByDefault',
+    title: 'Hide field lines by default',
+    desc: 'Open changelog with the animated field-lines effect (around the changelog button) turned off every time.',
+  },
 ];
 
 // Toggles that have a `sub` entry pointing at them get rendered as one
@@ -377,6 +385,11 @@ function renderSettingsDisplayTab() {
     // followDeviceTheme also has to (re)sync the actual light/dark mode
     // and its matchMedia listener the moment it's flipped, not just the
     // hide/show class applyDisplaySettings() handles for every other row.
+    // hideFieldLinesByDefault is intentionally NOT special-cased here
+    // (unlike followDeviceTheme above): it only ever writes the persisted
+    // default via the generic branch below, with no call into
+    // setFieldLinesEnabled — see js/changelog.js's toggleFieldLines() for
+    // the session-only counterpart this no longer syncs with.
     const onchange = t.key === 'followDeviceTheme'
       ? `setSetting('display', '${t.key}', this.checked); applyFollowDeviceTheme(); applyDisplaySettings(); renderSettingsBody();`
       : `setSetting('display', '${t.key}', this.checked); applyDisplaySettings();`;
@@ -408,6 +421,32 @@ function renderSettingsDisplayTab() {
     `);
   }
   return html.join('');
+}
+
+// Study tab, first real row: the floating live "00:00" clock shown during a
+// Random 6/cumulative attempt (see startLiveQuizTimer/stopLiveQuizTimer in
+// quiz-engine.js). Same on-by-default framing as the Display toggles above.
+// Calling startLiveQuizTimer()/stopLiveQuizTimer() directly from onchange
+// (rather than only taking effect on the next quiz) means switching this
+// off or back on mid-attempt updates the floating clock immediately —
+// startLiveQuizTimer() itself guards against showing up anywhere that
+// isn't an actual active, unchecked attempt (e.g. flipped on while just
+// browsing Settings from the landing screen).
+function renderSettingsStudyTab() {
+  const on = getSetting('study', 'showLiveTimer') !== false;
+  return `
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Show live timer</div>
+        <div class="settings-row-desc">Shows a floating clock, bottom-right, counting up while you take a Random 6 or cumulative quiz.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${on ? 'checked' : ''}
+               onchange="setSetting('study', 'showLiveTimer', this.checked); if (this.checked) { if (typeof startLiveQuizTimer === 'function') startLiveQuizTimer(); } else { if (typeof stopLiveQuizTimer === 'function') stopLiveQuizTimer(); }">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+  `;
 }
 
 // Maps each Display toggle's key to the <html> class that hides its
@@ -514,3 +553,14 @@ function applyFollowDeviceTheme() {
 // the two doesn't actually matter for the hide/show class itself.
 applyFollowDeviceTheme();
 applyDisplaySettings();
+// changelog.js loads before this file in the tier-2 sequence (see index.html's
+// loader list) and defaults fieldLinesEnabled to true since it has no way to
+// read a persisted setting yet at that point — apply the "hide by default"
+// starting state here, the one time it actually applies: this file loading
+// is the start of the session, exactly what the setting controls. Nothing
+// after this point keeps the two in sync on purpose — see
+// hideFieldLinesByDefault above and toggleFieldLines() in changelog.js.
+// No flash-of-wrong-state risk the way theme/display toggles have: field
+// lines only ever become visible once the person opens the changelog
+// panel, a later action that's already well past this point.
+if (typeof setFieldLinesEnabled === 'function') setFieldLinesEnabled(getSetting('display', 'hideFieldLinesByDefault') !== true);

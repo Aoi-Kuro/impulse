@@ -97,9 +97,12 @@ async function computeAttemptHash(identityName, quizNum, mode, attemptedAt, scor
 // Fire-and-forget from checkAll() (not awaited — the hash computation and
 // any resulting sync attempt happen in the background while the person is
 // already looking at their results panel, same as this file's other
-// best-effort network calls).
-async function recordAttemptFromQuiz(score, maxScore, mode, answers) {
-  const dur = stopAttemptTimer();
+// best-effort network calls). `dur` is passed in (via stopAttemptTimer(),
+// called once in checkAll() itself) rather than this function calling
+// stopAttemptTimer() directly — checkAll() also needs that same number
+// synchronously, to render on the result panel, and stopAttemptTimer()
+// zeroes out _attemptStart on read, so a second call here would just get 0.
+async function recordAttemptFromQuiz(score, maxScore, mode, answers, dur) {
   const attemptedAt = new Date().toISOString();
   const identityName = (typeof getForumNickname === 'function' ? getForumNickname() : '') || '';
 

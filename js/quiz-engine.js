@@ -639,6 +639,47 @@ function updateFilterActiveNote() {
   note.style.display = _filterNarrowsCurrentPool() ? '' : 'none';
 }
 
+// ─── Live quiz timer (floating "00:00" clock, bottom-right — same visual
+// slot/pattern as #stickyScore's own floating badge in Solve-All mode;
+// never shown at the same time as that one since they belong to different
+// screens) ───────────────────────────────────────────────────────────────
+// Ticks once a second from newQuiz() until checkAll() submits or the
+// person leaves the quiz screen (see exitAppOrChoiceToLanding's
+// showLanding()). Deliberately keeps its own start timestamp rather than
+// reading stats.js's private _attemptStart — the two are set within the
+// same line of newQuiz() so they never visibly drift, and this way
+// quiz-engine.js doesn't need to reach into another file's internal state
+// just to display something. Purely visual: turning it off, or it being
+// off from the start (see the Study setting in settings.js), never
+// touches the actual recorded duration.
+let _liveQuizTimerInterval = null;
+function startLiveQuizTimer() {
+  stopLiveQuizTimer(); // defensive: never leave a second interval running if this somehow gets called twice in a row
+  if (typeof getSetting === 'function' && getSetting('study', 'showLiveTimer') === false) return;
+  // Also callable directly from the Study-tab toggle's onchange (settings.js)
+  // when it's flipped back on mid-session — this guard is what stops that
+  // from popping the clock up while sitting on the landing screen or
+  // anywhere else that isn't an active, unchecked attempt.
+  const appPage = document.getElementById('appPage');
+  if (!appPage || !appPage.classList.contains('visible') || checked) return;
+  const el = document.getElementById('liveQuizTimer');
+  if (!el) return;
+  const startedAt = Date.now();
+  function tick() {
+    const totalSec = Math.floor((Date.now() - startedAt) / 1000);
+    document.getElementById('liveQuizTimerMin').textContent = String(Math.floor(totalSec / 60)).padStart(2, '0');
+    document.getElementById('liveQuizTimerSec').textContent = String(totalSec % 60).padStart(2, '0');
+  }
+  tick();
+  el.classList.add('visible');
+  _liveQuizTimerInterval = setInterval(tick, 1000);
+}
+function stopLiveQuizTimer() {
+  if (_liveQuizTimerInterval) { clearInterval(_liveQuizTimerInterval); _liveQuizTimerInterval = null; }
+  const el = document.getElementById('liveQuizTimer');
+  if (el) el.classList.remove('visible');
+}
+
 function newQuiz() {
   // A fresh draw should reflect any attempt just recorded (checkAll()) —
   // e.g. a "Not attempted" Type-filter pool shrinking now that the
@@ -684,6 +725,8 @@ function newQuiz() {
   if (typeof stopForumProblemCountsPolling === 'function') stopForumProblemCountsPolling();
   // ── Stats: start timer for this attempt (Random 6 mode only) ──
   if (typeof startAttemptTimer !== 'undefined') startAttemptTimer();
+  // ── Floating live clock (see its own comment above for details/settings gate) ──
+  startLiveQuizTimer();
 }
 
 function render() {
@@ -783,7 +826,7 @@ function checkAll() {
       fb.innerHTML = `✗ Expected ≈ <strong>${fmt(p.answer)}</strong> ${fmtUnit(p.units)} <span class="pts-badge pts-zero">+0 pt</span>`;
     }
 
-    breakdown.push({ id: p.id, pts });
+    breakdown.push({ id: p.id, pts, quizNum: p._quizNum || selectedQuizNum });
     answers.push({
       problem_id: p.id,
       quiz_num: p._quizNum || selectedQuizNum,
@@ -795,13 +838,24 @@ function checkAll() {
 
   const panel = document.getElementById("resultPanel");
   const disp  = Number.isInteger(totalPts) ? totalPts : totalPts.toFixed(1);
+  // Read once, here — stopAttemptTimer() zeroes its internal start time on
+  // read, so this same value is threaded through to recordAttemptFromQuiz()
+  // below rather than having it call stopAttemptTimer() a second time
+  // (which would just get 0 back).
+  const attemptDurationSec = (typeof stopAttemptTimer === 'function') ? stopAttemptTimer() : 0;
+  stopLiveQuizTimer(); // final duration is now frozen on the result panel — the floating clock has nothing left to count
   document.getElementById("resultScore").innerHTML =
-    `<span class="result-score-num">${disp}</span><span class="result-score-den">/${quiz.length}</span>`;
-  document.getElementById("resultBreakdown").innerHTML =
+    `<span class="result-score-num">${disp}</span><span class="result-score-den">/${quiz.length}</span>`
+    + `<span class="result-duration">${formatAttemptDuration(attemptDurationSec)}</span>`;
+  const breakdownShowToggle = new Set(breakdown.map(b => b.quizNum)).size > 1;
+  const resultBreakdownEl = document.getElementById("resultBreakdown");
+  resultBreakdownEl.classList.remove('show-q'); // fresh attempt always starts pinned to P, not whatever the last attempt was left on
+  resultBreakdownEl.innerHTML =
     breakdown.map(b => {
       const cls = b.pts === 1 ? "score-box-correct" : b.pts === 0.9 ? "score-box-partial" : "score-box-wrong";
-      return `<span class="score-box ${cls}" title="${b.pts} pt">${b.id}</span>`;
-    }).join("");
+      return `<span class="score-box ${cls}" title="${b.pts} pt">${pqChipInner(b.id, b.quizNum)}</span>`;
+    }).join("")
+    + pqToggleButton(breakdownShowToggle);
   panel.classList.add("show");
   panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   // ── Forum: FAB and per-problem "Discuss" buttons only make sense once
@@ -824,9 +878,46 @@ function checkAll() {
       Number.isInteger(totalPts) ? totalPts : parseFloat(totalPts.toFixed(1)),
       quiz.length,
       selectedCumulativeMode,
-      answers
+      answers,
+      attemptDurationSec
     );
   }
+}
+
+// ─── P⇄Q toggle (cumulative-mode result rows) ──────────────────────────────
+// Builds a chip's inner markup with both labels present (see the .pq-label
+// CSS rules in style.css for why both are always rendered rather than
+// swapped via JS) — one row's worth of chips share a single .pq-toggle-btn,
+// added by the caller only when that row actually mixes more than one
+// quiz (a row where every chip is already the same quiz has nothing
+// useful to toggle to).
+function pqChipInner(problemId, quizNum) {
+  return `<span class="pq-label pq-label-p">${problemId}</span><span class="pq-label pq-label-q">Q${quizNum}</span>`;
+}
+function togglePQRow(btn) {
+  const row = btn.closest('.pq-row');
+  if (row) row.classList.toggle('show-q');
+}
+// Always renders the button, even for a single-quiz row — a real toggle
+// when showToggle is true, a visibly disabled (low-opacity, unclickable)
+// placeholder otherwise, so the control's position stays consistent
+// between cumulative and single-quiz rows instead of the row's width
+// jumping depending on which kind of attempt it was.
+function pqToggleButton(showToggle) {
+  return showToggle
+    ? `<button type="button" class="pq-toggle-btn" onclick="togglePQRow(this)">P⇄Q</button>`
+    : `<button type="button" class="pq-toggle-btn" disabled title="Only one quiz in this attempt">P⇄Q</button>`;
+}
+// "21 min 41 s" with each number in a larger accent-colored span and its
+// unit in a smaller muted one — mirrors the big-number/small-denominator
+// styling already used for the score itself, one size step down. Omits
+// the "min" pair entirely under a minute rather than always showing
+// "0 min", since that reads as noise on short attempts.
+function formatAttemptDuration(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  const pair = (n, unit) => `<span class="result-duration-num">${n}</span><span class="result-duration-unit">${unit}</span>`;
+  return (m > 0 ? pair(m, 'min') : '') + pair(s, 's');
 }
 
 // ─── Recent attempts mini-panel (last 5, shown under the result panel) ─────
@@ -854,20 +945,25 @@ function renderRecentAttemptsMini() {
     list.innerHTML = '<div class="recent-attempts-empty">No previous attempts yet.</div>';
   } else {
     list.innerHTML = recent.map(a => {
-      const quizName = (typeof QUIZZES !== 'undefined' && QUIZZES[a.quizNum - 1]) ? QUIZZES[a.quizNum - 1].name : '';
       const dateStr = new Date(a.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+      const timeStr = new Date(a.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
       const scoreStr = Number.isInteger(a.score) ? a.score : a.score.toFixed(1);
+      // Only worth a toggle if this attempt actually mixed problems from
+      // more than one quiz (cumulative mode) — a single-quiz attempt has
+      // nothing to switch to, so it keeps the plain P-only chip it always had.
+      const rowShowToggle = new Set((a.answers || []).map(ans => ans.quiz_num || a.quizNum)).size > 1;
       const boxes = (a.answers || []).map(ans => {
         const cls = ans.points === 1 ? 'score-box-correct' : ans.points === 0.9 ? 'score-box-partial' : 'score-box-wrong';
         const problemId = String(ans.problem_id || '').replace(/'/g, "\\'");
-        return `<span class="score-box score-box-sm ${cls} recent-attempt-problem" title="Open ${ans.problem_id} forum" role="button" tabindex="0" onclick="openForumForProblem(${ans.quiz_num || a.quizNum}, '${problemId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">${ans.problem_id}</span>`;
-      }).join('');
+        const qNum = ans.quiz_num || a.quizNum;
+        return `<span class="score-box score-box-sm ${cls} recent-attempt-problem" title="Open ${ans.problem_id} forum" role="button" tabindex="0" onclick="openForumForProblem(${qNum}, '${problemId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">${pqChipInner(ans.problem_id, qNum)}</span>`;
+      }).join('') + pqToggleButton(rowShowToggle);
       return `
         <div class="recent-attempt-row">
           <span class="recent-attempt-meta">
-            <span class="score">${scoreStr}/${a.maxScore}</span> · Q${a.quizNum}${quizName ? ' · ' + quizName : ''} · ${dateStr}
+            <span class="score">${scoreStr}/${a.maxScore}</span> · Q${a.quizNum} · ${dateStr} · ${timeStr}
           </span>
-          <span class="recent-attempt-boxes">${boxes}</span>
+          <span class="recent-attempt-boxes pq-row">${boxes}</span>
         </div>`;
     }).join('');
   }
@@ -2252,6 +2348,11 @@ function exitAppOrChoiceToLanding() {
     // Covers leaving a *checked* plain Random 6 attempt too — exitSolveAll()
     // above only stops the poll it itself started. Idempotent either way.
     if (typeof stopForumProblemCountsPolling === 'function') stopForumProblemCountsPolling();
+    // Covers abandoning an unchecked attempt (checkAll() already stops this
+    // on a normal submit, so this is a no-op then) — leaving the quiz
+    // screen mid-attempt shouldn't leave the floating clock's interval
+    // ticking in the background.
+    if (typeof stopLiveQuizTimer === 'function') stopLiveQuizTimer();
     appPage.classList.remove('visible', 'fading-out');
     choice.classList.add('hidden');
     if (typeof showNewSplash === 'function') showNewSplash();
@@ -2301,7 +2402,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '10.3.3';
+const CURRENT_VERSION = '11.0.1';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

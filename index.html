@@ -486,7 +486,7 @@
 <div class="result-panel" id="resultPanel">
   <div class="result-big" id="resultScore"></div>
   <div class="result-label" id="resultMaxScore">Final Score</div>
-  <div class="result-breakdown" id="resultBreakdown"></div>
+  <div class="result-breakdown pq-row" id="resultBreakdown"></div>
 </div>
 
 <div class="recent-attempts-panel" id="recentAttemptsPanel">
@@ -648,6 +648,16 @@
     </div>
   </div>
   <button class="sticky-retry-btn" id="stickyRetryBtn" onclick="openMistakesModal()">📋 Quiz: wrong problems</button>
+</div>
+
+<!-- ── Live quiz timer (outside #appPage for the same transform containing-
+     block reason as #stickyScore above; never visible at the same time as
+     it — this one's shown during a plain Random 6/cumulative attempt,
+     #stickyScore during Solve-All — so they safely share the same corner).
+     Turned on/off via startLiveQuizTimer()/stopLiveQuizTimer() (js/quiz-
+     engine.js) and the Study tab's "Show live timer" setting (js/settings.js). ── -->
+<div id="liveQuizTimer">
+  <span class="live-timer-min" id="liveQuizTimerMin">00</span><span class="live-timer-colon">:</span><span class="live-timer-sec" id="liveQuizTimerSec">00</span>
 </div>
 
 <!-- ── Stats Screen ── -->
