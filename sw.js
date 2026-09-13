@@ -80,7 +80,21 @@ async function respondFullOffline(event) {
   // host requests" half of the 24h window: refused outright, not just
   // left unfetched, so a real connection coming back mid-window changes
   // nothing.
-  if (url.origin !== self.location.origin) {
+  //
+  // Google Fonts is the one exception: it's a read-only static asset (the
+  // splash text's 'Bangers' font, plus the rest of index.html's <link>
+  // fonts) with no bearing on "block DB + host requests" at all, and Go
+  // offline's manifest never downloads it (Google serves different actual
+  // font files per User-Agent from one dynamic CSS URL, so it can't be
+  // predownloaded the same static way as everything else in
+  // OFFLINE_CORE_FILES). Blocking it just meant the splash text silently
+  // fell back to a plain sans-serif font for no real benefit. Falls
+  // through to the browser's own HTTP cache below (fonts are typically
+  // cached long-lived already from any earlier visit) instead of being
+  // refused outright.
+  if (url.origin !== self.location.origin
+      && url.hostname !== 'fonts.googleapis.com'
+      && url.hostname !== 'fonts.gstatic.com') {
     return new Response(null, { status: 503, statusText: 'Offline mode active' });
   }
 
