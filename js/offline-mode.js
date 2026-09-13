@@ -58,6 +58,7 @@ const OFFLINE_CORE_FILES = [
   'css/stats.css',
   'css/forum.css',
   'js/course-config.js',
+  'js/theme-colors.js',
   'js/banner-manager.js',
   'js/themes.js',
   'js/splash.js',

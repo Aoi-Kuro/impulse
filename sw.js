@@ -107,7 +107,12 @@ async function respondFullOffline(event) {
     return null; // shouldn't happen: startGoOffline() never activates the window unless every file, including index.html, was cached successfully
   }
 
-  const cached = await caches.match(request, { cacheName: OFFLINE_MODE_CACHE_NAME });
+  // ignoreSearch: true — index.html requests site.webmanifest with a
+  // ?v=1.0.3 cache-busting query string, but it's cached here under its
+  // plain path (OFFLINE_CORE_FILES has no query strings at all), so an
+  // exact-URL match would always miss and fall through to a network
+  // request that fails outright when there's no real connection.
+  const cached = await caches.match(request, { cacheName: OFFLINE_MODE_CACHE_NAME, ignoreSearch: true });
   return cached || null;
 }
 const OFFLINE_URL = 'offline.html';
