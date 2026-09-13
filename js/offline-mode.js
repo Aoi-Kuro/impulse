@@ -97,6 +97,7 @@ const OFFLINE_CORE_FILES = [
   'favicon/web-app-manifest-192x192.png',
   'favicon/web-app-manifest-512x512.png',
   'favicon/site.webmanifest',
+  'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600&family=Bangers&family=STIX+Two+Text:ital,wght@0,400;1,400&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&family=Quicksand:wght@400;500;700&display=swap'
 ];
 
 // Same MathJax vendor list sw.js already precaches for offline.html — one
