@@ -12,7 +12,7 @@ const Quiz_2_Problems = [
     text:"Find the magnitude of work to be done lifting the mass of 1.5 kg from height 0.3 m up to 1.4 m. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
   { id:"P4", topic:"Work and Power", answer:3.92, units:["J"],
-    text:"A small particle of mass 400 g is pulled to the top of a frictionless half-cylinder of radius 1 m by a cord that passes over the top of the cylinder as illustrated in Figure below. Find the work done by $F$ in moving the particle at constant speed from bottom to the top of the half-cylinder. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed.webp\" alt=\"figure\" width=\"350px\"></div>" },
+    text:"A small particle of mass 400 g is pulled to the top of a frictionless half-cylinder of radius 1 m by a cord that passes over the top of the cylinder as illustrated in Figure below. Find the work done by $F$ in moving the particle at constant speed from bottom to the top of the half-cylinder. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(1).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
   { id:"P5", topic:"Work and Power", answer:-9.114, units:["J"],
     text:"A small particle of mass 0.6 kg is pulled at constant speed to the top of a frictionless half-cylinder of radius 1.55 m by a cord that passes over the top of the cylinder. Find the work done by gravity on the particle as it moves from the bottom to the top. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(1).webp\" alt=\"figure\" width=\"350px\"></div>" },
