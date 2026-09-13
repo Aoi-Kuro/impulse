@@ -878,7 +878,13 @@
       <div class="settings-header-left">
         <div class="settings-title">⚙️ Settings</div>
       </div>
-      <button class="stats-close-btn" onclick="closeSettingsScreen()">✕ Close</button>
+      <div class="settings-header-right">
+        <button class="filter-reset-btn settings-reset-all-btn" id="settingsResetAllBtn" onclick="handleSettingsResetClick()" title="Reset all settings to defaults">
+          <svg class="reset-confirm-ring" viewBox="0 0 100 32" preserveAspectRatio="none"><rect x="1.5" y="1.5" rx="7"></rect></svg>
+          <span class="filter-reset-label">↺ Reset all</span>
+        </button>
+        <button class="stats-close-btn" onclick="closeSettingsScreen()">✕ Close</button>
+      </div>
     </div>
     <nav class="settings-tabs" id="settingsTabs">
       <!-- Rendered by renderSettingsTabs() in js/settings.js -->
@@ -1267,6 +1273,7 @@
       'js/changelog.js',
       'js/manual.js',
       'js/settings.js',
+      'js/offline-mode.js',
       'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
       'js/site-visits.js',
       'js/forum.js',
@@ -1275,10 +1282,13 @@
   })();
 </script>
 
-<!-- Registers sw.js (offline.html fallback only — see that file's header
-     comment for exactly what it does and doesn't cache). Only takes effect
-     from the NEXT navigation onward, since the very first visit has nothing
-     installed yet to intercept it. -->
+<!-- Registers sw.js. Originally just the offline.html fallback (see that
+     file's own header comment); now also enforces Settings > Offline &
+     Sync's 24h full-offline window once js/offline-mode.js's "Go offline"
+     has been used — same file, two jobs layered together rather than a
+     second service worker (only one is allowed per scope anyway). Only
+     takes effect from the NEXT navigation onward, since the very first
+     visit has nothing installed yet to intercept it. -->
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

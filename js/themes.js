@@ -269,6 +269,7 @@ function scheduleThemeNudge(){
   setTimeout(triggerThemeNudge, 15 * 60 * 1000);
 }
 function triggerThemeNudge(){
+  if (typeof getSetting === 'function' && getSetting('notifications', 'hideThemeNudge') === true) return;
   const last = +localStorage.getItem(NUDGE_KEY) || 0;
   if (Date.now() - last < NUDGE_INTERVAL) return;
   BannerManager.request('theme');

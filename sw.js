@@ -1,7 +1,23 @@
-// Minimal service worker — its ONLY job is showing offline.html when a page
-// reload happens with no internet. It does not cache or serve the rest of
-// the site (quiz pages, forum, etc.) for offline use — this is just the
-// "you're offline" fallback, not a full offline-first app shell.
+// This service worker does two independent jobs, layered on top of each
+// other rather than fighting for the same fetch events:
+//
+//   1. (Original, always on) Shows offline.html when a page reload happens
+//      with no internet — a lightweight "you're offline" fallback, not a
+//      full offline-first app shell. See PRECACHE_URLS/CACHE_NAME below.
+//
+//   2. (Phase 4, js/offline-mode.js) Settings > Offline & Sync's "Go
+//      offline" button downloads the FULL app — course data, quiz images,
+//      every JS/CSS file — into its own cache (OFFLINE_MODE_CACHE_NAME,
+//      completely separate from CACHE_NAME below so a version bump on
+//      either one never deletes the other's files — see 'activate') and
+//      sets a 24h expiry. While that window is running, every fetch —
+//      same-origin or not, network reachable or not — gets routed through
+//      respondFullOffline() first: cross-origin requests (Supabase, GitHub,
+//      the jsdelivr CDN, etc.) are refused outright, same-origin requests
+//      are served from that cache. Job 1's logic (below, in
+//      respondDefault()) only ever runs once job 2 has confirmed it has
+//      nothing to say about a given request — normal online behavior is
+//      completely unaffected outside the 24h window.
 //
 // The MathJax vendor bundle is precached too because offline.html renders
 // LaTeX (its "meanwhile, look at..." panel) using the site's own local
@@ -16,6 +32,70 @@
 // other file here does. This is a manual swap item at release time —
 // change the 'phys162' prefix by hand alongside the data-course attribute.
 const CACHE_NAME = 'phys161-offline-v5';
+
+// ── Phase 4: full offline mode (js/offline-mode.js) ──
+// OFFLINE_MODE_CACHE_NAME must match that file's own copy of the same
+// constant exactly — it's the cache startGoOffline() fills and this file
+// reads from. OFFLINE_MODE_DB_NAME/STORE must match its
+// writeOfflineModeUntilFlag()'s copy the same way: IndexedDB is the one
+// storage a service worker and a page both have access to (no
+// localStorage here), same reasoning as the existing Go-silent mute flag
+// below.
+const OFFLINE_MODE_CACHE_NAME = 'flux-offline-mode-v1';
+const OFFLINE_MODE_DB_NAME = 'flux-offline-mode';
+const OFFLINE_MODE_STORE = 'flags';
+
+function readOfflineModeUntil() {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(OFFLINE_MODE_DB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(OFFLINE_MODE_STORE); };
+      req.onsuccess = () => {
+        const db = req.result;
+        try {
+          const tx = db.transaction(OFFLINE_MODE_STORE, 'readonly');
+          const getReq = tx.objectStore(OFFLINE_MODE_STORE).get('until');
+          getReq.onsuccess = () => { resolve(getReq.result || null); db.close(); };
+          getReq.onerror = () => { resolve(null); db.close(); };
+        } catch (e) { resolve(null); db.close(); }
+      };
+      req.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+
+// Handles one fetch while the 24h full-offline window is active. Returns a
+// Response if it has one, or null to fall through to respondDefault()
+// below — the only expected null case is a same-origin request for
+// something Go offline's manifest didn't happen to include (e.g. a URL
+// added to a quiz after the last download), which is safe to just let
+// through normally since it never leaves the same origin.
+async function respondFullOffline(event) {
+  const request = event.request;
+  const url = new URL(request.url);
+
+  // Cross-origin — the Supabase backend, GitHub API (manual.js's version
+  // check), the Dicebear avatar service, the jsdelivr Supabase client
+  // bundle, push subscription calls, etc. This is the actual "block DB +
+  // host requests" half of the 24h window: refused outright, not just
+  // left unfetched, so a real connection coming back mid-window changes
+  // nothing.
+  if (url.origin !== self.location.origin) {
+    return new Response(null, { status: 503, statusText: 'Offline mode active' });
+  }
+
+  if (request.mode === 'navigate') {
+    // Serve the actual app shell, not just offline.html's minimal fallback
+    // — job 1 only ever shows offline.html on a failed *network* request,
+    // but here there's no attempt at the network at all.
+    const shell = await caches.match('index.html', { cacheName: OFFLINE_MODE_CACHE_NAME });
+    if (shell) return shell;
+    return null; // shouldn't happen: startGoOffline() never activates the window unless every file, including index.html, was cached successfully
+  }
+
+  const cached = await caches.match(request, { cacheName: OFFLINE_MODE_CACHE_NAME });
+  return cached || null;
+}
 const OFFLINE_URL = 'offline.html';
 const PRECACHE_URLS = [
   OFFLINE_URL,
@@ -117,65 +197,92 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       .then((names) => Promise.all(
-        names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
+        // Never touch OFFLINE_MODE_CACHE_NAME here — it's versioned and
+        // managed entirely by js/offline-mode.js's own startGoOffline()/
+        // endOfflineMode(), on a completely different lifecycle than this
+        // worker's own install/activate. Deleting it on every activate (as
+        // a naive "clean up anything not CACHE_NAME" pass would) would
+        // wipe out everything Go offline downloaded the next time this
+        // file's own CACHE_NAME gets bumped for an unrelated reason.
+        names.filter((n) => n !== CACHE_NAME && n !== OFFLINE_MODE_CACHE_NAME).map((n) => caches.delete(n))
       ))
       .then(() => self.clients.claim())
   );
 });
 
-// Network-first for page navigations: try the real page, and only fall
-// back to the cached offline.html if the network request actually fails.
-//
-// For every other request that matches something we precached (dark/light
-// theme images, style.css, themes.js, offline-laws.json, the MathJax
-// vendor bundle + its fonts): cache-first, revalidating in the background.
-// Serve the cached copy immediately if there is one — no network round
-// trip in the way at all — then still kick off a real fetch to refresh the
-// cache for next time. Previously this was network-first-with-cache-
-// fallback, which meant every one of these requests waited for the
-// network call to actually finish failing before falling back — with no
-// connection, that's not instant, it's however long Chrome takes to give
-// up on the request (5-10s in practice), which is why the theme images and
-// MathJax's fonts visibly stalled instead of appearing immediately. Since
-// PRECACHE_URLS is already versioned by CACHE_NAME (bumped on any change
-// per the comment above), cache-first can't serve something stale forever
-// — a version bump always repopulates it on the next install.
 self.addEventListener('fetch', (event) => {
+  event.respondWith(routeFetch(event));
+});
+
+async function routeFetch(event) {
+  const until = await readOfflineModeUntil();
+  if (until && Date.now() < until) {
+    const handled = await respondFullOffline(event);
+    if (handled) return handled;
+    // null: same-origin request Go offline's manifest didn't cover — fall
+    // through to the normal job-1 handling below, same as if full offline
+    // mode weren't running at all.
+  }
+  return respondDefault(event);
+}
+
+// Everything below is job 1, completely unchanged from before Phase 4 —
+// only ever reached once routeFetch() above has confirmed full offline
+// mode either isn't active or has nothing cached for this particular
+// request.
+function respondDefault(event) {
   const url = new URL(event.request.url);
   const isPrecached = PRECACHE_URLS.some((p) => url.pathname.endsWith('/' + p) || url.pathname === '/' + p);
 
+  // Network-first for page navigations: try the real page, and only fall
+  // back to the cached offline.html if the network request actually fails.
+  //
+  // For every other request that matches something we precached (dark/light
+  // theme images, style.css, themes.js, offline-laws.json, the MathJax
+  // vendor bundle + its fonts): cache-first, revalidating in the background.
+  // Serve the cached copy immediately if there is one — no network round
+  // trip in the way at all — then still kick off a real fetch to refresh the
+  // cache for next time. Previously this was network-first-with-cache-
+  // fallback, which meant every one of these requests waited for the
+  // network call to actually finish failing before falling back — with no
+  // connection, that's not instant, it's however long Chrome takes to give
+  // up on the request (5-10s in practice), which is why the theme images and
+  // MathJax's fonts visibly stalled instead of appearing immediately. Since
+  // PRECACHE_URLS is already versioned by CACHE_NAME (bumped on any change
+  // per the comment above), cache-first can't serve something stale forever
+  // — a version bump always repopulates it on the next install.
   if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match(OFFLINE_URL))
-    );
-    return;
+    return fetch(event.request).catch(() => caches.match(OFFLINE_URL));
   }
 
   if (isPrecached) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => {
-        const revalidate = fetch(event.request).then((response) => {
-          if (response && response.ok) {
-            // Clone synchronously, right here, before any async work — if
-            // this were deferred until inside caches.open().then(...), the
-            // response returned below could already be locked/streaming to
-            // the page by the time clone() runs, throwing "Response body
-            // is already used".
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
-          }
-          return response;
-        }).catch(() => cached);
-        // Cache hit: return it now, let the network call finish in the
-        // background purely to refresh the cache. Cache miss (e.g. this
-        // one entry failed during precache — see the .catch on cache.add
-        // in 'install' above): fall through to that same network call,
-        // which still falls back to whatever's cached if it fails.
-        return cached || revalidate;
-      })
-    );
+    return caches.match(event.request).then((cached) => {
+      const revalidate = fetch(event.request).then((response) => {
+        if (response && response.ok) {
+          // Clone synchronously, right here, before any async work — if
+          // this were deferred until inside caches.open().then(...), the
+          // response returned below could already be locked/streaming to
+          // the page by the time clone() runs, throwing "Response body
+          // is already used".
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+        }
+        return response;
+      }).catch(() => cached);
+      // Cache hit: return it now, let the network call finish in the
+      // background purely to refresh the cache. Cache miss (e.g. this
+      // one entry failed during precache — see the .catch on cache.add
+      // in 'install' above): fall through to that same network call,
+      // which still falls back to whatever's cached if it fails.
+      return cached || revalidate;
+    });
   }
-});
+
+  // Not a navigation, not precached — same as never having called
+  // event.respondWith() at all (job 1's original behavior): just do the
+  // normal network fetch.
+  return fetch(event.request);
+}
 
 // ── Push notifications (forum @mentions) ──
 // This is the part that makes notifications work even with the site fully
@@ -185,6 +292,35 @@ self.addEventListener('fetch', (event) => {
 // running in its own background thread. The actual send happens server-side
 // (post-message.ts's sendMentionPushNotifications, via the Web Push
 // protocol + VAPID), this is only the "show something when it arrives" half.
+
+// Settings > Notifications > "Go silent" (js/settings.js) mirrors its
+// effective state into this same IndexedDB database/store/key — this is
+// the read side. Can't just check localStorage: a service worker has no
+// access to it at all, and this event in particular is the one case where
+// there might not even be a page open to read it from anyway. Name/store/
+// key must stay in sync with js/settings.js's NOTIF_MUTE_DB_NAME/
+// NOTIF_MUTE_STORE. Resolves false (not muted) on any failure — an
+// unreadable flag should never be the reason a real mention silently never
+// shows up.
+function readNotifMuteFlag() {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open('flux-notif-mute', 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore('flags'); };
+      req.onsuccess = () => {
+        const db = req.result;
+        try {
+          const tx = db.transaction('flags', 'readonly');
+          const getReq = tx.objectStore('flags').get('muted');
+          getReq.onsuccess = () => { resolve(!!getReq.result); db.close(); };
+          getReq.onerror = () => { resolve(false); db.close(); };
+        } catch (e) { resolve(false); db.close(); }
+      };
+      req.onerror = () => resolve(false);
+    } catch (e) { resolve(false); }
+  });
+}
+
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) { /* malformed payload — show a generic notification below */ }
@@ -205,7 +341,12 @@ self.addEventListener('push', (event) => {
     tag: data.problem_key ? `forum-${data.problem_key}` : 'forum-global',
     data,
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    readNotifMuteFlag().then((muted) => {
+      if (muted) return; // Go silent is on — skip showing anything
+      return self.registration.showNotification(title, options);
+    })
+  );
 });
 
 // Tapping the notification. Two cases: a tab is already open (focus it and

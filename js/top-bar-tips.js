@@ -2,8 +2,8 @@
    top-bar-tips.js · Rotating one-line tips in the top bar
    ───────────────────────────────────────────────────────────────────
    Data lives in js/data/tips.js as window.TOP_BAR_TIPS = [string, ...],
-   rotated through in order. Add more there — nothing here needs to
-   change.
+   shown in random order (never the same tip twice in a row) — see
+   nextTip() below. Add more tips there — nothing here needs to change.
 
    Width: every screen in this app uses its own content column
    (main#quizContainer's 760px, .stats-wrap's 860px, .review-wrap's
@@ -172,10 +172,19 @@
     return width > 0 ? width : null; // no room at all — don't show a squished tip
   }
 
+  // Picks a random tip, never repeating the one just shown back-to-back
+  // (only matters once there are 2+ tips — with exactly one, it's the only
+  // option every time). tipIndex here just tracks "last shown", not a
+  // rotation cursor.
   function nextTip() {
     const tips = window.TOP_BAR_TIPS;
     if (!Array.isArray(tips) || tips.length === 0) return null;
-    tipIndex = (tipIndex + 1) % tips.length;
+    if (tips.length === 1) { tipIndex = 0; return tips[0]; }
+    let next;
+    do {
+      next = Math.floor(Math.random() * tips.length);
+    } while (next === tipIndex);
+    tipIndex = next;
     return tips[tipIndex];
   }
 
@@ -220,6 +229,12 @@
 
   function showTip() {
     if (!tipEl || isMobile() || !barScrolled) return;
+    // Settings > Display > "Show running line" — off means never trigger a
+    // tip at all, not just hide it visually via CSS (see
+    // html.settings-hide-top-bar-tip in css/settings.css, which still
+    // covers the case this setting is toggled off while a tip happens to
+    // already be showing).
+    if (typeof getSetting === 'function' && getSetting('display', 'showTopBarTip') === false) return;
     const bounds = getSafeBounds();
     const width = resolveWidthPx(bounds);
     if (width === null) return; // nothing eligible showing right now

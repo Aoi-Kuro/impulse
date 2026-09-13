@@ -1,6 +1,42 @@
-let selectedQuizNum = 1;
+// Reads a Study setting directly out of localStorage, bypassing
+// getSetting() (js/settings.js) entirely — this file's own top-level `let`
+// initializers below run immediately as this script parses, long before
+// settings.js (loaded later, via the tier-2 sequential loader) exists.
+// Same "read the raw localStorage shape early" convention already used by
+// index.html's own anti-flicker inline script; kept minimal on purpose —
+// this only ever needs to peek at two keys, once, at boot.
+function _readStudySettingRaw(key, defaultValue) {
+  try {
+    const raw = JSON.parse(localStorage.getItem('flux_settings') || 'null');
+    if (raw && raw.study && Object.prototype.hasOwnProperty.call(raw.study, key)) return raw.study[key];
+  } catch (e) { /* corrupted/foreign value — fall through to the default */ }
+  return defaultValue;
+}
+
+// Highest-numbered quiz with `enabled: true` — new content is normally
+// what people actually want to jump into, not always quiz #1. Falls back
+// to 1 if every quiz is somehow disabled (shouldn't happen in practice).
+function _latestEnabledQuizNum() {
+  for (let i = QUIZZES.length; i >= 1; i--) {
+    if (QUIZZES[i - 1] && QUIZZES[i - 1].enabled) return i;
+  }
+  return 1;
+}
+
+// Settings > Study > "Select latest quiz by default" / "Default to
+// cumulative for quiz 2+" (both default false) — see SETTINGS_DEFAULTS.study
+// in js/settings.js for the Settings-tab-facing copy of these same defaults.
+const _selectLatestQuizDefault = _readStudySettingRaw('selectLatestQuizByDefault', false);
+const _cumulativeDefaultOn     = _readStudySettingRaw('cumulativeDefaultOn', false);
+
+let selectedQuizNum = _selectLatestQuizDefault ? _latestEnabledQuizNum() : 1;
 let selectedMode    = 'quiz'; // 'quiz' | 'solveall'
-let selectedCumulativeMode = 'single'; // 'single' | 'cumulative'
+// Quiz 2+ defaults to cumulative (draws from every quiz up to and
+// including the selected one) rather than single, when that setting is on
+// — picking a later quiz number usually means wanting cumulative review,
+// not just that one quiz alone. selectQuiz() (below) still forces this
+// back to 'single' the moment quiz #1 is ever selected, same as before.
+let selectedCumulativeMode = (_cumulativeDefaultOn && selectedQuizNum >= 2) ? 'cumulative' : 'single';
 let ACTIVE_PROBLEMS = QUIZZES[selectedQuizNum - 1].problems;
 
 
@@ -653,13 +689,38 @@ function updateFilterActiveNote() {
 // off from the start (see the Study setting in settings.js), never
 // touches the actual recorded duration.
 let _liveQuizTimerInterval = null;
-function startLiveQuizTimer() {
-  stopLiveQuizTimer(); // defensive: never leave a second interval running if this somehow gets called twice in a row
-  if (typeof getSetting === 'function' && getSetting('study', 'showLiveTimer') === false) return;
-  // Also callable directly from the Study-tab toggle's onchange (settings.js)
-  // when it's flipped back on mid-session — this guard is what stops that
-  // from popping the clock up while sitting on the landing screen or
-  // anywhere else that isn't an active, unchecked attempt.
+// True whenever a Random-N/cumulative timed attempt is actually in
+// progress, regardless of whether the floating clock itself is shown (the
+// 'showLiveTimer' Study setting can be off while a quiz is still very much
+// under way) — this is what the Notifications tab's "update outside quiz
+// mode" detection AND the Study tab's 50-minute auto-stop (both below) read,
+// since neither can rely on a display preference to know whether an
+// attempt is actually still running.
+let _quizTimerActive = false;
+function isQuizTimerActive() { return _quizTimerActive; }
+
+// Settings > Study > "Automatically stop after 50 minutes" — scheduled
+// fresh in newQuiz() (see its own comment there) each time a new Random-N
+// attempt actually starts, and cleared here whenever that attempt ends for
+// real, same lifecycle as _quizTimerActive itself.
+let _autoStopTimer = null;
+
+// Just the floating clock's own interval + DOM visibility — no
+// attempt-tracking side effects at all. Split out from
+// startLiveQuizTimer/stopLiveQuizTimer below so the "Show live timer"
+// setting's own onchange (settings.js) can show/hide *only* the clock
+// without that ever being mistaken for the attempt itself starting or
+// ending — before this split, switching that display setting off mid-quiz
+// called the same stopLiveQuizTimer() that also means "the attempt is
+// over", which would have wrongly cleared _quizTimerActive/_autoStopTimer
+// (and could have fired an unwanted forced update-reload) just from hiding
+// a clock.
+function _clearLiveQuizTimerDisplay() {
+  if (_liveQuizTimerInterval) { clearInterval(_liveQuizTimerInterval); _liveQuizTimerInterval = null; }
+  const el = document.getElementById('liveQuizTimer');
+  if (el) el.classList.remove('visible');
+}
+function _beginLiveQuizTimerDisplay() {
   const appPage = document.getElementById('appPage');
   if (!appPage || !appPage.classList.contains('visible') || checked) return;
   const el = document.getElementById('liveQuizTimer');
@@ -674,10 +735,38 @@ function startLiveQuizTimer() {
   el.classList.add('visible');
   _liveQuizTimerInterval = setInterval(tick, 1000);
 }
+// Called directly by the "Show live timer" setting's onchange (settings.js)
+// instead of startLiveQuizTimer/stopLiveQuizTimer — only ever touches the
+// clock's own visibility, never _quizTimerActive.
+function setLiveQuizTimerDisplayEnabled(enabled) {
+  _clearLiveQuizTimerDisplay();
+  if (enabled && _quizTimerActive) _beginLiveQuizTimerDisplay();
+}
+
+function startLiveQuizTimer() {
+  stopLiveQuizTimer(); // defensive: never leave a second interval/timer running if this somehow gets called twice in a row
+  _quizTimerActive = true;
+  if (typeof getSetting === 'function' && getSetting('study', 'showLiveTimer') === false) return;
+  // Also callable directly from the Study-tab toggle's onchange (settings.js)
+  // when it's flipped back on mid-session — _beginLiveQuizTimerDisplay()'s
+  // own guard is what stops that from popping the clock up while sitting on
+  // the landing screen or anywhere else that isn't an active, unchecked
+  // attempt.
+  _beginLiveQuizTimerDisplay();
+}
 function stopLiveQuizTimer() {
-  if (_liveQuizTimerInterval) { clearInterval(_liveQuizTimerInterval); _liveQuizTimerInterval = null; }
-  const el = document.getElementById('liveQuizTimer');
-  if (el) el.classList.remove('visible');
+  const wasActive = _quizTimerActive;
+  _quizTimerActive = false;
+  _clearLiveQuizTimerDisplay();
+  if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
+  // Only fire this when the call represents an attempt that was genuinely
+  // running actually ending — startLiveQuizTimer() itself calls this
+  // defensively before every new attempt starts, and that call must never
+  // be mistaken for "the quiz just ended": at that exact instant
+  // _quizTimerActive is transiently false right before being set true
+  // again for the new attempt, and without this guard a pending update
+  // would force a reload at the exact moment a fresh quiz begins.
+  if (wasActive && typeof maybeForceUpdateOutsideQuiz === 'function') maybeForceUpdateOutsideQuiz();
 }
 
 function newQuiz() {
@@ -727,11 +816,24 @@ function newQuiz() {
   if (typeof startAttemptTimer !== 'undefined') startAttemptTimer();
   // ── Floating live clock (see its own comment above for details/settings gate) ──
   startLiveQuizTimer();
+  // ── Settings > Study > "Automatically stop after 50 minutes" ──
+  // Scheduled fresh for every new attempt; stopLiveQuizTimer() (called from
+  // checkAll() on submit, and from exitAppOrChoiceToLanding's showLanding()
+  // on leaving mid-quiz) always clears this, so it can never fire against
+  // an attempt that already ended one way or another.
+  if (typeof getSetting === 'function' && getSetting('study', 'autoStopAt50Min') === true) {
+    _autoStopTimer = setTimeout(() => { if (!checked) checkAll(); }, 50 * 60 * 1000);
+  }
 }
 
 function render() {
   const container = document.getElementById("quizContainer");
   container.innerHTML = "";
+  // Settings > Study > "Hide problem topic while active" reads this class
+  // (see css/settings.css) — reset on every fresh render so a new attempt
+  // always starts hidden again (per that setting) rather than staying
+  // revealed from the previous attempt's checkAll().
+  container.classList.remove('results-shown');
   quiz.forEach((p, i) => {
     const isCumulative = selectedCumulativeMode === 'cumulative' && p._quizNum != null;
     const numDisplay   = isCumulative ? `${p.id} · Quiz #${p._quizNum}` : p.id;
@@ -858,6 +960,19 @@ function checkAll() {
     + pqToggleButton(breakdownShowToggle);
   panel.classList.add("show");
   panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  // Settings > Study > "Hide problem topic while active" — scores are now
+  // shown, so every card's topic label (top-right, see css/settings.css)
+  // comes back regardless of that setting; render()/newQuiz() removes this
+  // class again for the next fresh attempt.
+  document.getElementById("quizContainer").classList.add('results-shown');
+  // Settings > Study > "Full screen for Random N" — leave fullscreen the
+  // instant scores are revealed, same moment the topic labels above come
+  // back. Only acts if the browser is actually in fullscreen right now (a
+  // person who exited it manually mid-quiz, e.g. with Esc, isn't put back
+  // into it just to immediately leave again).
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
   // ── Forum: FAB and per-problem "Discuss" buttons only make sense once
   // there's something to discuss — see syncForumFabVisibility() in
   // forum.js, which now hides the FAB during a plain Random 6 attempt but
@@ -1709,6 +1824,15 @@ function checkSingleProblem(i) {
     const resultType = pts === 0.9 ? 'partial' : 'wrong';
     solveAllChecked.set(i, resultType);
 
+    // Settings > Study > "Reveal wrong answer instantly" — a genuinely
+    // wrong answer (not partial-credit unit slip-ups, which still get a
+    // real shot at just fixing the unit) skips straight to revealAnswer(i)
+    // instead of the manual "See correct answer" step below.
+    if (resultType === 'wrong' && typeof getSetting === 'function' && getSetting('study', 'revealWrongInstantly') === true) {
+      revealAnswer(i);
+      return;
+    }
+
     if (pts === 0.9) {
       fb.classList.add('partial-fb');
       const unitHint = uStat === 'invalid'
@@ -1964,6 +2088,15 @@ function checkMistakeProblem(i) {
     const resultType = pts === 0.9 ? 'partial' : 'wrong';
     mistakesChecked.set(i, resultType);
 
+    // Settings > Study > "Reveal wrong answer instantly" — same rule as
+    // checkSingleProblem's Solve-All counterpart above: only a genuinely
+    // wrong answer skips straight to the reveal, partial credit still gets
+    // a real shot at fixing just the unit.
+    if (resultType === 'wrong' && typeof getSetting === 'function' && getSetting('study', 'revealWrongInstantly') === true) {
+      revealMistakeAnswer(i);
+      return;
+    }
+
     if (pts === 0.9) {
       fb.classList.add('partial-fb');
       const unitHint = uStat === 'invalid'
@@ -2119,6 +2252,7 @@ function selectQuiz(n) {
   const q = QUIZZES[n - 1];
   if (!q.enabled) return; // disabled / not yet available
 
+  const prevQuizNum = selectedQuizNum;
   selectedQuizNum = n;
   ACTIVE_PROBLEMS = q.problems;
 
@@ -2138,6 +2272,22 @@ function selectQuiz(n) {
     document.getElementById('cumulativeToggle').classList.remove('on');
     document.getElementById('cumLabelSingle').classList.add('active');
     document.getElementById('cumLabelCumulative').classList.remove('active');
+  }
+
+  // Settings > Study > "Default to cumulative for quiz 2+" — quiz #1 is
+  // always forced to 'single' above, so that setting's effect never got a
+  // chance to apply once the page had already loaded on quiz #1 (e.g.
+  // "Select latest quiz by default" off). Mirror the same default here the
+  // moment you leave quiz #1 for quiz #2+, same as what boot itself
+  // computes when the page loads directly on a 2+ quiz. Only fires on that
+  // 1 -> 2+ transition, so a manual per-quiz choice made afterwards (e.g.
+  // switching quiz 3 back to single, then over to quiz 4) is left alone.
+  if (prevQuizNum === 1 && n >= 2 && _cumulativeDefaultOn && selectedMode !== 'solveall'
+      && selectedCumulativeMode !== 'cumulative') {
+    selectedCumulativeMode = 'cumulative';
+    document.getElementById('cumulativeToggle').classList.add('on');
+    document.getElementById('cumLabelSingle').classList.remove('active');
+    document.getElementById('cumLabelCumulative').classList.add('active');
   }
 
   // Update titles to reflect the chosen quiz's exam name — all three
@@ -2246,12 +2396,42 @@ function startSelected() {
       // page sitting underneath it either.
       const appPage = document.getElementById('appPage');
       appPage.classList.remove('visible', 'fading-out');
-      openSolveAllModal();
+      // Settings > Study > "Lock order" (+ its ordered/shuffled sub) —
+      // when on, skip the order-picker modal entirely: resume straight
+      // into saved progress if there is any (matching what the modal's
+      // own "progress kept" hint already implies people expect), otherwise
+      // jump directly into the locked order. openSolveAllModal() itself
+      // still runs normally whenever this is off.
+      if (typeof getSetting === 'function' && getSetting('study', 'lockSolveAllOrder') === true) {
+        const saved = loadSolveAllProgress();
+        const hasSaved = saved && (
+          (saved.checkedById && Object.keys(saved.checkedById).length > 0) ||
+          (saved.checked && saved.checked.length > 0)
+        );
+        const lockedOrder = getSetting('study', 'solveAllLockedOrder') === 'unordered' ? 'unordered' : 'ordered';
+        appPage.classList.add('visible');
+        _startSolveAllCore(hasSaved ? 'resume' : lockedOrder);
+      } else {
+        openSolveAllModal();
+      }
     } else {
       const appPage = document.getElementById('appPage');
       appPage.classList.add('visible');
       initTopics();
       newQuiz();
+      // Settings > Study > "Full screen for Random N" — entered the moment
+      // Random N mode actually opens; checkAll() (above) leaves it again
+      // the instant scores are revealed. Wrapped in a try/catch and a
+      // .catch() on the promise since some browsers refuse this outside a
+      // sufficiently direct user gesture, or if the person already denied
+      // it once — either way, failing silently just means staying in the
+      // normal window instead, never a broken quiz.
+      if (typeof getSetting === 'function' && getSetting('study', 'fullscreenRandomN') === true) {
+        try {
+          const req = document.documentElement.requestFullscreen();
+          if (req && typeof req.catch === 'function') req.catch(() => {});
+        } catch (e) { /* Fullscreen API unavailable — just stay windowed */ }
+      }
     }
   });
 }
@@ -2353,6 +2533,13 @@ function exitAppOrChoiceToLanding() {
     // screen mid-attempt shouldn't leave the floating clock's interval
     // ticking in the background.
     if (typeof stopLiveQuizTimer === 'function') stopLiveQuizTimer();
+    // stopLiveQuizTimer() above only re-checks a pending update when
+    // _quizTimerActive was true — which it never is for Solve-All/Mistakes
+    // (only a Random-6/cumulative attempt sets it), so leaving those modes
+    // silently skipped the "update anyway outside quiz mode" check
+    // entirely. This is the actual "leaving a quiz" moment for every mode,
+    // so check unconditionally here too.
+    if (typeof maybeForceUpdateOutsideQuiz === 'function') maybeForceUpdateOutsideQuiz();
     appPage.classList.remove('visible', 'fading-out');
     choice.classList.add('hidden');
     if (typeof showNewSplash === 'function') showNewSplash();
@@ -2392,6 +2579,20 @@ function exitAppOrChoiceToLanding() {
   // hardcoded into index.html's static markup regardless of which
   // course/quiz that actually is, until the user clicks a quiz button.
   selectQuiz(selectedQuizNum);
+  // selectQuiz() only ever flips the cumulative toggle's own visual state
+  // when actively switching TO quiz #1 (forcing single) — every prior
+  // initial state was 'single' anyway (matching the static HTML's own
+  // default markup), so nothing needed reconciling at boot before now.
+  // Now that the default itself can be 'cumulative' (see
+  // _cumulativeDefaultOn above), sync the toggle/labels to match here the
+  // same way toggleCumulativeMode() does after a real click — otherwise
+  // the switch would sit there visually showing "Single quiz" while
+  // selectedCumulativeMode is actually 'cumulative' underneath it.
+  if (selectedCumulativeMode === 'cumulative') {
+    document.getElementById('cumulativeToggle').classList.add('on');
+    document.getElementById('cumLabelSingle').classList.remove('active');
+    document.getElementById('cumLabelCumulative').classList.add('active');
+  }
   // "Random 6" label reflects this course's actual quiz size
   // (QUIZ_SIZE from course-config.js) instead of a hardcoded "6" —
   // courses with a different exam size get the label right for free.
@@ -2402,7 +2603,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '11.0.1';
+const CURRENT_VERSION = '11.1.0';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;
@@ -2413,11 +2614,35 @@ const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;
 const VERSION_MANIFEST_URL = 'version.json';
 
 let _updateDismissed = false;
+// True once a real version mismatch has actually been seen — independent
+// of whether the banner itself is showing, so maybeForceUpdateOutsideQuiz()
+// (below) still has something to act on even while Notifications >
+// "Hide update reminder" keeps checkForUpdate() from ever calling
+// BannerManager.request in the first place.
+let _updatePending = false;
 
 // Update always takes top priority — it has no hider, since nothing outranks it.
 BannerManager.register('update', () => {
   document.getElementById('update-banner').classList.add('visible');
 });
+
+// Notifications > "Update anyway outside quiz mode" (settings.js) — only
+// does anything while the reminder itself is hidden; the point is to still
+// actually get the update applied for someone who's opted out of ever
+// seeing the nag banner, just never while it'd cost them an in-progress
+// timed attempt. Called right after a mismatch is first detected, and
+// again the instant a quiz attempt ends (see stopLiveQuizTimer above) so a
+// pending update doesn't sit around for up to another 5-minute poll once
+// it's finally safe to apply.
+function maybeForceUpdateOutsideQuiz() {
+  if (!_updatePending) return;
+  if (typeof getSetting !== 'function') return;
+  const hidden = getSetting('notifications', 'hideUpdateReminder') === true;
+  const forceOutside = getSetting('notifications', 'forceRefreshOutsideQuiz') === true;
+  if (!hidden || !forceOutside) return;
+  if (isQuizTimerActive()) return; // never interrupt a live timed attempt
+  location.reload(true);
+}
 
 async function checkForUpdate() {
   if (_updateDismissed) return; // user already dismissed; stop bothering them this session
@@ -2427,7 +2652,14 @@ async function checkForUpdate() {
     const data = await res.json();
     const latest = (data.version || '').trim();
     if (latest && latest !== CURRENT_VERSION) {
+      _updatePending = true;
       document.getElementById('banner-new-version').textContent = latest;
+      if (typeof getSetting === 'function' && getSetting('notifications', 'hideUpdateReminder') === true) {
+        // Reminder hidden: never occupy BannerManager's queue for it — just
+        // see if this is already a safe moment to silently apply the update.
+        maybeForceUpdateOutsideQuiz();
+        return;
+      }
       BannerManager.request('update');
     }
   } catch (_) {
@@ -2461,6 +2693,7 @@ BannerManager.register('bug',
 );
 
 function showBugBanner() {
+  if (typeof getSetting === 'function' && getSetting('notifications', 'hideBugReportReminder') === true) return;
   const last = +localStorage.getItem(BUG_NUDGE_KEY) || 0;
   if (Date.now() - last < BUG_NUDGE_INTERVAL) return;
   BannerManager.request('bug');
@@ -2484,4 +2717,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Telegram/bug-report nudge: once a day, after 10 minutes of usage.
   setTimeout(showBugBanner, BUG_NUDGE_DELAY);
+
+  // "Update anyway outside quiz mode" was only ever re-checked when
+  // *leaving* a quiz (showLanding() above) or on the next 5-min
+  // checkForUpdate() poll — sitting on the main page (or Solve-All) the
+  // whole time with a pending update meant waiting on that poll. Coming
+  // back to the tab is a natural extra moment to retry right away.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && typeof maybeForceUpdateOutsideQuiz === 'function') maybeForceUpdateOutsideQuiz();
+  });
 });

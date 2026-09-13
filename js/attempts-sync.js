@@ -204,15 +204,24 @@ window.addEventListener('offline', () => {
   if (typeof _setSolveAllSyncDot === 'function' && typeof _saSyncActive !== 'undefined' && _saSyncActive) _setSolveAllSyncDot('red');
 });
 
-window.addEventListener('online', () => {
-  // Don't just flip back to green optimistically — actually re-check each
-  // thing that's currently relevant, so every dot reflects a real, current
-  // result the instant connectivity returns rather than a guess.
+// Re-checks every live sync surface immediately, rather than waiting on
+// each one's own fallback poll — shared by the real 'online' event below
+// and by endOfflineMode() (js/offline-mode.js), since turning offline mode
+// off doesn't touch navigator.onLine (the connection never actually
+// changed), so the 'online' event alone never fires for that case.
+function reconnectAllLiveSync() {
   syncAttempts();
   if (typeof pollStatsPanel === 'function' && document.getElementById('sfpLiveDot')) pollStatsPanel();
   if (typeof _saSyncActive !== 'undefined' && _saSyncActive && typeof _saSyncRoundTrip === 'function') {
     _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
   }
+}
+
+window.addEventListener('online', () => {
+  // Don't just flip back to green optimistically — actually re-check each
+  // thing that's currently relevant, so every dot reflects a real, current
+  // result the instant connectivity returns rather than a guess.
+  reconnectAllLiveSync();
 });
 
 async function syncAttempts() {
@@ -329,6 +338,13 @@ async function syncAttempts() {
   } catch (err) {
     console.error('Attempt sync error:', err);
     _lastSyncFailed = true;
+    // The success path above re-renders via renderStats() so a just-synced
+    // attempt's badge updates immediately — this path never did the same,
+    // so a failure (offline, connection lost mid-request) left the table
+    // showing whatever was last painted instead of the current synced:false
+    // state, even though the underlying data was always correct. This is
+    // exactly the "not synced" caption not showing up while offline.
+    renderStats();
   } finally {
     _attemptsSyncing = false;
     _setSyncButtonState('idle');
@@ -344,7 +360,7 @@ async function syncAttempts() {
 // screen" reasoning as before — since it's a once-every-few-minutes no-op
 // rather than a real cost. Each tick is also a cheap no-op if there's no
 // claimed identity yet (syncAttempts() itself gates on that first).
-const ATTEMPTS_SYNC_FALLBACK_MS = 180000; // 3 min — was a 10s poll before Realtime
+const ATTEMPTS_SYNC_FALLBACK_MS = 45000; // matches the stats panel's own fallback poll — was 180s, which is what left attempts stuck for ~90s on average after reconnecting
 let _attemptsSyncPollTimer = null;
 
 function startAttemptsSyncPolling() {

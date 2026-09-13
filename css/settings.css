@@ -36,6 +36,17 @@
   margin-bottom: 1.6rem;
 }
 .settings-header-left { display: flex; align-items: center; gap: 0.9rem; }
+/* Groups the new "Reset all" button with the existing Close button so
+   Reset all lands immediately to Close's left, same row. */
+.settings-header-right { display: flex; align-items: center; gap: 0.7rem; }
+/* .filter-reset-btn (css/style.css) is normally positioned absolute/relative
+   with a top/right offset meant for its usual spot pinned inside
+   .topic-selector-wrap's corner — cancel that here so it just sits inline
+   in the header's normal flex flow like any other header button. Still
+   needs position: relative (not static) so its .reset-confirm-ring child
+   (position: absolute; inset: 0) anchors to this button and not some
+   further-out ancestor. */
+.settings-header-right .filter-reset-btn { position: relative; top: 0; right: 0; }
 .settings-title {
   font-family: var(--mono);
   font-size: 1.1rem;
@@ -227,3 +238,199 @@ html.settings-hide-daylight-btn #themeTrack { display: none; }
    entirely rather than depending on <link> order between forum.css and
    settings.css staying what it is today. */
 html.settings-hide-forum-fab .forum-fab-wrap { display: none !important; }
+html.settings-hide-top-bar-tip .top-bar-tip { display: none !important; }
+
+/* ── Notifications tab effects ──
+   Same <html>-class mechanism as the Display toggles above, applied by
+   applyNotificationSettings() (js/settings.js) instead of
+   applyDisplaySettings() — kept as a separate function since Go silent
+   also has to touch IndexedDB (for sw.js's push handler) and run a 24h
+   auto-off check, neither of which any Display toggle needs. */
+html.settings-hide-update-banner #update-banner { display: none; }
+html.settings-hide-theme-banner #theme-nudge-banner { display: none; }
+html.settings-hide-bug-banner #bug-report-banner { display: none; }
+
+/* Go silent's badge targets all set their display via inline style
+   (badge.style.display = 'flex'/'none' in forum.js) rather than a class —
+   inline styles always beat a plain class-selector rule regardless of
+   specificity, so this needs !important the same way .forum-fab-wrap
+   above does, just for a different underlying reason. */
+html.settings-silent-badges .forum-problem-btn-badge,
+html.settings-silent-badges .forum-problem-btn-at,
+html.settings-silent-badges #forumUnreadBadge,
+html.settings-silent-badges #forumUnreadAtBadge,
+html.settings-silent-badges #forumFabUnreadBadge,
+html.settings-silent-badges #forumFabUnreadAtBadge {
+  display: none !important;
+}
+
+/* ── Study tab: visible section headers (Random Quiz / Solve Them All) ──
+   Plain labels, not another .settings-group — these aren't a parent+sub
+   pair, just a heading over a run of otherwise-independent rows. No
+   border-top here: the row immediately above already ends in its own
+   border-bottom (.settings-row), so adding a second line here would just
+   draw two adjacent separators. That row's border-bottom is the only line
+   between it and this header. */
+.settings-section-header {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 1.3rem 0 0.3rem;
+  padding-top: 0.9rem;
+}
+.settings-body > .settings-section-header:first-child { margin-top: 0; padding-top: 0; }
+
+/* ── Study tab: two-option choice control (Solve Them All's "Order" sub) ──
+   Same segmented-button visual language as .filter-type-tab (css/style.css)
+   rather than a checkbox switch — this is a 2-way pick, not an on/off. */
+.settings-choice-group { display: flex; gap: 0.4rem; flex-shrink: 0; }
+.settings-choice-btn {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.4rem 0.7rem;
+  border-radius: calc(4px * var(--radius-mult));
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.settings-choice-btn:hover:not(:disabled) { border-color: var(--muted); }
+.settings-choice-btn.active {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.settings-choice-btn:disabled { cursor: not-allowed; }
+
+/* ── Study tab effects (applyStudySettings() in js/settings.js) ── */
+
+/* Reduce motion: a blanket kill-switch for CSS animations/transitions
+   site-wide. Deliberately scoped to CSS only — canvas-driven effects (the
+   ⚡ field-lines overlay, the Random N loading screen) aren't touched by
+   this and have their own separate settings/toggles instead. */
+html.settings-reduce-motion *,
+html.settings-reduce-motion *::before,
+html.settings-reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Hide topic while active: scoped to #quizContainer specifically (Random N
+   cards only) rather than the bare .problem-topic class, which Solve-All
+   and Mistakes-review cards also use — those two don't have a "scores
+   revealed" moment the way Random N does (checkAll()), so this setting
+   only ever applies there. render()/newQuiz() remove '.results-shown' at
+   the start of every fresh attempt; checkAll() adds it back the moment
+   scores are shown — see their own comments in js/quiz-engine.js. */
+html.settings-hide-topic-while-active #quizContainer:not(.results-shown) .problem-topic {
+  display: none;
+}
+
+/* ── Offline & Sync tab (js/offline-mode.js renders the content, this just
+   styles it) ── */
+.settings-offline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.4rem 0.1rem 1.1rem;
+}
+.settings-offline-heading {
+  font-family: var(--sans);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.settings-offline-desc {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* Primary action button — same structural language as .filter-reset-btn
+   (css/style.css: relative positioning + an absolutely-positioned ring
+   child) but accent-colored rather than red, since "Go offline" isn't a
+   destructive reset. Sized for a standalone panel button rather than a
+   small header icon-button. */
+.settings-offline-btn {
+  position: relative;
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--bg);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.6rem 1.1rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.settings-offline-btn:hover { background: rgba(var(--accent-rgb), 0.1); }
+.settings-offline-btn.confirming {
+  color: var(--accent);
+  border-color: transparent;
+}
+.settings-offline-btn-secondary {
+  color: var(--muted);
+  border-color: var(--border);
+}
+.settings-offline-btn-secondary:hover {
+  color: var(--text);
+  border-color: var(--text);
+  background: transparent;
+}
+
+/* Same tap-to-confirm ring idiom as .reset-confirm-ring (css/style.css) —
+   armed by _armGoOfflineConfirm() (js/offline-mode.js): a single dash the
+   length of the button's own perimeter, drawn fully visible, then its
+   offset animates over GO_OFFLINE_CONFIRM_MS so the outline recedes back
+   to nothing — a countdown traced right on the button's own border. */
+.settings-offline-confirm-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.settings-offline-btn.confirming .settings-offline-confirm-ring { opacity: 1; }
+.settings-offline-confirm-ring rect {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Download progress — a plain instant-set width rather than a CSS
+   transition: this redraws via a full renderSettingsOfflineTab() call on
+   every file (see startGoOffline()'s comment on why that's fine here,
+   unlike a toggle switch), so there's no persisting bar node for a
+   transition to animate from anyway; it just steps forward file by file. */
+.settings-offline-progress-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--border);
+  overflow: hidden;
+}
+.settings-offline-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 5px;
+}
+.settings-offline-progress-label {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+}

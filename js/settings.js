@@ -44,12 +44,45 @@ const SETTINGS_DEFAULTS = {
     followDeviceTheme: false,
     showForumFab:    true,
     hideFieldLinesByDefault: false,
+    showTopBarTip:   true,
   },
-  notifications: {},
+  notifications: {
+    hideUpdateReminder: false,
+    forceRefreshOutsideQuiz: false,
+    hideThemeNudge: false,
+    hideBugReportReminder: false,
+    goSilent: false,
+    goSilentAutoOff24h: false,
+    // Timestamp (ms) of when goSilent was last turned on — null while it's
+    // off. Drives the 24h auto-off check in applyNotificationSettings();
+    // stored (not just held in memory) so the 24h window survives a reload
+    // instead of quietly resetting every visit.
+    goSilentEnabledAt: null,
+  },
   study: {
     showLiveTimer: true,
+    reduceMotion: false,
+    resetFilterOnLoad: false,
+    autoStopAt50Min: false,
+    fullscreenRandomN: false,
+    hideTopicWhileActive: false,
+    selectLatestQuizByDefault: false,
+    cumulativeDefaultOn: false,
+    lockSolveAllOrder: false,
+    // 'ordered' | 'unordered' — sub of lockSolveAllOrder, which order gets
+    // used automatically once the order-picker modal is skipped.
+    solveAllLockedOrder: 'ordered',
+    revealWrongInstantly: false,
   },
-  offline: {},
+  offline: {
+    // ms epoch when the current "Go offline" 24h window expires — null
+    // while offline mode is off. See js/offline-mode.js, which owns
+    // everything else about this feature (the download, the IndexedDB
+    // mirror sw.js reads, the tab's own rendering); this file only needs
+    // to know the key exists so getSetting/setSetting/migrateSettings work
+    // the same way for it as for every other setting.
+    until: null,
+  },
 };
 
 let settingsCache = null;
@@ -270,7 +303,93 @@ function closeSettingsScreen(forceLanding) {
   }, 280);
 }
 
-// ── Tabs ────────────────────────────────────────────────────────────────
+// ── Reset all settings button ── same tap-to-arm confirmation pattern as
+// the Study filter's "↺ Reset" button (js/quiz-engine.js's
+// handleResetClick/_armResetConfirm/_disarmResetConfirm): first tap arms
+// it (label swaps to "Sure?", a red ring traces out of the border over
+// RESET_CONFIRM_MS as a visual countdown), a second tap while armed
+// commits, and letting the ring finish on its own just disarms back to
+// normal. Kept as its own independent copy of that logic (own armed flag/
+// timer) rather than sharing quiz-engine.js's — that one lives on a
+// completely different screen, and reusing the same module-level flag
+// would let arming one button silently steal/desync the other's in the
+// (admittedly rare) case both ever ended up mid-confirmation at once.
+const SETTINGS_RESET_CONFIRM_MS = 3000;
+let _settingsResetConfirmArmed = false;
+let _settingsResetConfirmTimer = null;
+
+function handleSettingsResetClick() {
+  const btn = document.getElementById('settingsResetAllBtn');
+  if (!btn) return;
+  if (_settingsResetConfirmArmed) {
+    _disarmSettingsResetConfirm(btn);
+    doResetAllSettings();
+    return;
+  }
+  _armSettingsResetConfirm(btn);
+}
+
+function _armSettingsResetConfirm(btn) {
+  _settingsResetConfirmArmed = true;
+  btn.classList.add('confirming');
+  btn.title = 'Tap again to confirm reset';
+  const label = btn.querySelector('.filter-reset-label');
+  if (label) label.textContent = 'Sure?';
+
+  // Same live-measured ring sizing as _armResetConfirm (js/quiz-engine.js)
+  // — traces the button's own current border box rather than a hardcoded
+  // size, so it still lines up correctly if this button's own CSS ever
+  // changes.
+  const ring = btn.querySelector('.reset-confirm-ring');
+  const rect = ring && ring.querySelector('rect');
+  if (ring && rect) {
+    const w = btn.offsetWidth, h = btn.offsetHeight;
+    const strokeW = 1.5;
+    const inset = strokeW / 2;
+    const radius = parseFloat(getComputedStyle(btn).borderTopLeftRadius) || 0;
+    ring.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    rect.setAttribute('x', inset);
+    rect.setAttribute('y', inset);
+    rect.setAttribute('width', Math.max(0, w - inset * 2));
+    rect.setAttribute('height', Math.max(0, h - inset * 2));
+    rect.setAttribute('rx', Math.max(0, radius - inset));
+    const len = rect.getTotalLength();
+    rect.style.transition = 'none';
+    rect.style.strokeDasharray = len;
+    rect.style.strokeDashoffset = 0;
+    void rect.getBoundingClientRect(); // force reflow before transitioning
+    rect.style.transition = `stroke-dashoffset ${SETTINGS_RESET_CONFIRM_MS}ms linear`;
+    requestAnimationFrame(() => { rect.style.strokeDashoffset = len; });
+  }
+
+  clearTimeout(_settingsResetConfirmTimer);
+  _settingsResetConfirmTimer = setTimeout(() => _disarmSettingsResetConfirm(btn), SETTINGS_RESET_CONFIRM_MS);
+}
+
+function _disarmSettingsResetConfirm(btn) {
+  _settingsResetConfirmArmed = false;
+  clearTimeout(_settingsResetConfirmTimer);
+  _settingsResetConfirmTimer = null;
+  btn.classList.remove('confirming');
+  btn.title = 'Reset all settings to defaults';
+  const label = btn.querySelector('.filter-reset-label');
+  if (label) label.textContent = '↺ Reset all';
+}
+
+// Wipes the whole settings store (every tab, every toggle) back to
+// SETTINGS_DEFAULTS and reloads. A full reload — rather than re-rendering
+// in place the way doResetFilterPreferences() does — is deliberate here:
+// several of these settings only ever get applied once, at boot, before
+// this very script even runs (index.html's anti-flicker inline script,
+// changelog.js's field-lines default, etc.), so there's no single
+// in-place code path that could reliably re-apply every one of them
+// consistently. A reload re-runs that whole boot sequence for free.
+function doResetAllSettings() {
+  localStorage.removeItem(SETTINGS_STORAGE_KEY);
+  location.reload(true);
+}
+
+
 const SETTINGS_TABS = [
   { id: 'display',       label: 'Display' },
   { id: 'notifications', label: 'Notifications' },
@@ -308,11 +427,11 @@ function renderSettingsBody() {
   if (settingsActiveTab === 'display') {
     body.innerHTML = renderSettingsDisplayTab();
   } else if (settingsActiveTab === 'notifications') {
-    body.innerHTML = `<div class="settings-empty-note">Nothing here yet: mute controls (update/theme/bug-report reminders, "go silent", and per-type forum notification muting) land in a later phase.</div>`;
+    body.innerHTML = renderSettingsNotificationsTab();
   } else if (settingsActiveTab === 'study') {
     body.innerHTML = renderSettingsStudyTab();
   } else if (settingsActiveTab === 'offline') {
-    body.innerHTML = `<div class="settings-empty-note">Nothing here yet: Prepare/Go offline lands in a later phase.</div>`;
+    body.innerHTML = renderSettingsOfflineTab(); // js/offline-mode.js
   }
 }
 
@@ -353,7 +472,7 @@ const DISPLAY_TOGGLES = [
   {
     key: 'followDeviceTheme',
     title: 'Follow device theme',
-    desc: 'Match light/dark mode to your device automatically. While this is on, the daylight switch above stays hidden — there\u2019s nothing to flip by hand.',
+    desc: 'Match light/dark mode to your device automatically.',
     sub: 'showDaylightBtn', // rendered indented, directly under the row for the key above
   },
   {
@@ -362,9 +481,14 @@ const DISPLAY_TOGGLES = [
     desc: 'Shows the floating 💬 forum button that follows you mid-quiz, in Stats, and elsewhere off the main page.',
   },
   {
+    key: 'showTopBarTip',
+    title: 'Show running line',
+    desc: 'Shows the rotating one-line tip that occasionally appears in the top bar once it\u2019s scrolled.',
+  },
+  {
     key: 'hideFieldLinesByDefault',
     title: 'Hide field lines by default',
-    desc: 'Open changelog with the animated field-lines effect (around the changelog button) turned off every time.',
+    desc: 'Hides field lines animation that appear upon changelog opening.',
   },
 ];
 
@@ -391,10 +515,10 @@ function renderSettingsDisplayTab() {
     // setFieldLinesEnabled — see js/changelog.js's toggleFieldLines() for
     // the session-only counterpart this no longer syncs with.
     const onchange = t.key === 'followDeviceTheme'
-      ? `setSetting('display', '${t.key}', this.checked); applyFollowDeviceTheme(); applyDisplaySettings(); renderSettingsBody();`
+      ? `setSetting('display', '${t.key}', this.checked); applyFollowDeviceTheme(); applyDisplaySettings(); syncShowDaylightBtnBlock(this.checked);`
       : `setSetting('display', '${t.key}', this.checked); applyDisplaySettings();`;
     return `
-      <div class="settings-row${opts.sub ? ' settings-row-sub' : ''}${blocked ? ' settings-row-blocked' : ''}">
+      <div class="settings-row${opts.sub ? ' settings-row-sub' : ''}${blocked ? ' settings-row-blocked' : ''}" data-row-key="${t.key}">
         <div class="settings-row-label">
           <div class="settings-row-title">${t.title}</div>
           <div class="settings-row-desc">${t.desc}</div>
@@ -423,30 +547,316 @@ function renderSettingsDisplayTab() {
   return html.join('');
 }
 
-// Study tab, first real row: the floating live "00:00" clock shown during a
-// Random 6/cumulative attempt (see startLiveQuizTimer/stopLiveQuizTimer in
-// quiz-engine.js). Same on-by-default framing as the Display toggles above.
-// Calling startLiveQuizTimer()/stopLiveQuizTimer() directly from onchange
-// (rather than only taking effect on the next quiz) means switching this
-// off or back on mid-attempt updates the floating clock immediately —
-// startLiveQuizTimer() itself guards against showing up anywhere that
-// isn't an actual active, unchecked attempt (e.g. flipped on while just
-// browsing Settings from the landing screen).
-function renderSettingsStudyTab() {
-  const on = getSetting('study', 'showLiveTimer') !== false;
+// In-place counterpart to a full renderSettingsBody() for followDeviceTheme
+// -> showDaylightBtn: a full re-render would rebuild followDeviceTheme's
+// own switch too, mid-flip — the new checkbox node is created already
+// sitting in its final checked position, so its on/off slide never gets a
+// frame to animate from and just snaps instead. This only patches the
+// OTHER row (showDaylightBtn), leaving the switch that was actually
+// clicked untouched so its own CSS transition plays normally. Mirrors the
+// `blocked` forced-off logic in renderRow above: while Follow device theme
+// is on, the row renders dimmed/disabled and its switch shows off,
+// regardless of showDaylightBtn's own stored value.
+function syncShowDaylightBtnBlock(followDeviceOn) {
+  const row = document.querySelector('[data-row-key="showDaylightBtn"]');
+  if (!row) return;
+  row.classList.toggle('settings-row-blocked', followDeviceOn);
+  const input = row.querySelector('input[type="checkbox"]');
+  if (!input) return;
+  input.disabled = followDeviceOn;
+  input.checked = followDeviceOn ? false : (getSetting('display', 'showDaylightBtn') !== false);
+}
+
+// Notifications tab: two independent single toggles (theme nudge, bug
+// report) plus two parent+sub groups. Unlike the Display tab's groups
+// above, the blocking direction here runs the other way — each sub only
+// does anything while its OWN parent is ON, so the sub is what renders
+// blocked/disabled, not the parent:
+//   - hideUpdateReminder -> forceRefreshOutsideQuiz (sub blocked unless the
+//     reminder is actually hidden — the sub has nothing to override
+//     otherwise)
+//   - goSilent -> goSilentAutoOff24h (sub blocked unless Go silent is
+//     actually on — nothing to auto-turn-off otherwise)
+// All six default OFF, unlike Display's default-on toggles, since every
+// one of these is an opt-in suppression of today's normal behavior.
+function renderSettingsNotificationsTab() {
+  function renderRow(key, title, desc, opts) {
+    opts = opts || {};
+    const blocked = !!opts.blocked;
+    const on = getSetting('notifications', key) === true;
+    // goSilent also has to stamp/clear goSilentEnabledAt (the 24h auto-off
+    // window's start time) the moment it's flipped, not just the hide
+    // classes applyNotificationSettings() handles for every other row.
+    // Only hideUpdateReminder and goSilent have a sub-row to unblock, so
+    // only those two call syncNotificationSubBlock — the rest have nothing
+    // else on the page depending on them and don't need any DOM sync
+    // beyond their own switch, which the browser already handles on its
+    // own via the input's :checked CSS transition (see
+    // syncShowDaylightBtnBlock's comment, above renderSettingsDisplayTab,
+    // for why calling a full re-render here — as this used to — would kill
+    // that transition for every one of these six switches).
+    const onchange = key === 'goSilent'
+      ? `setSetting('notifications', 'goSilent', this.checked); setSetting('notifications', 'goSilentEnabledAt', this.checked ? Date.now() : null); applyNotificationSettings(); syncNotificationSubBlock('goSilent', this.checked);`
+      : (key === 'hideUpdateReminder'
+          ? `setSetting('notifications', '${key}', this.checked); applyNotificationSettings(); syncNotificationSubBlock('hideUpdateReminder', this.checked);`
+          : `setSetting('notifications', '${key}', this.checked); applyNotificationSettings();`);
+    return `
+      <div class="settings-row${opts.sub ? ' settings-row-sub' : ''}${blocked ? ' settings-row-blocked' : ''}" data-row-key="${key}">
+        <div class="settings-row-label">
+          <div class="settings-row-title">${title}</div>
+          <div class="settings-row-desc">${desc}</div>
+        </div>
+        <label class="settings-switch">
+          <input type="checkbox" ${on ? 'checked' : ''} ${blocked ? 'disabled' : ''}
+                 onchange="${onchange}">
+          <span class="settings-switch-track"></span>
+        </label>
+      </div>
+    `;
+  }
+
+  const hideUpdate = getSetting('notifications', 'hideUpdateReminder') === true;
+  const goSilentOn = getSetting('notifications', 'goSilent') === true;
+
   return `
+    <div class="settings-group">
+      ${renderRow('hideUpdateReminder', 'Hide update reminder', 'Hides the "new version available" banner.')}
+      ${renderRow('forceRefreshOutsideQuiz', 'Update anyway outside quiz mode', 'While the reminder above is hidden, silently reloads the page the instant you\u2019re not in the middle of a timed Random-quiz attempt.', { sub: true, blocked: !hideUpdate })}
+    </div>
+    ${renderRow('hideThemeNudge', 'Hide try new theme reminder', 'Hides the occasional "trying the X theme" banner.')}
+    ${renderRow('hideBugReportReminder', 'Hide bug report reminder', 'Hides the "Report on Telegram" banner.')}
+    <div class="settings-group">
+      ${renderRow('goSilent', 'Go silent', 'Hides every notification badge (problem buttons, the forum button) and every banner above, and mutes forum push notifications while it\u2019s on.')}
+      ${renderRow('goSilentAutoOff24h', 'Turn off automatically after 24 hours', 'Turns Go silent back off on its own a day after you enable it.', { sub: true, blocked: !goSilentOn })}
+    </div>
+  `;
+}
+
+// In-place counterpart to a full renderSettingsBody() for the two
+// Notifications parent/sub pairs — see syncShowDaylightBtnBlock's comment
+// (Display tab, above) for why re-rendering the whole tab here would kill
+// the parent switch's own on/off animation. Both subs here are only ever
+// blocked by "parent is off" (unlike showDaylightBtn, which also gets
+// forced to a different on/off value), so this only needs to touch the
+// dimmed look and the disabled state.
+const NOTIFICATION_SUB_ROW_KEYS = {
+  hideUpdateReminder: 'forceRefreshOutsideQuiz',
+  goSilent: 'goSilentAutoOff24h',
+};
+function syncNotificationSubBlock(parentKey, parentOn) {
+  const subKey = NOTIFICATION_SUB_ROW_KEYS[parentKey];
+  const row = subKey && document.querySelector(`[data-row-key="${subKey}"]`);
+  if (!row) return;
+  row.classList.toggle('settings-row-blocked', !parentOn);
+  const input = row.querySelector('input[type="checkbox"]');
+  if (input) input.disabled = !parentOn;
+}
+
+// Study tab: a general row (Reduce motion), then two visibly-labeled
+// sections — Random Quiz and Solve Them All — since most of these settings
+// only make sense for one mode or the other. Two parent+sub pairs here
+// follow the Notifications tab's "sub blocked unless parent is on" shape
+// (lockSolveAllOrder -> its ordered/shuffled choice), while
+// autoStopAt50Min/hideTopicWhileActive/etc. are plain standalone toggles.
+function renderSettingsStudyTab() {
+  const showLiveTimerOn = getSetting('study', 'showLiveTimer') !== false;
+  const lockOrderOn     = getSetting('study', 'lockSolveAllOrder') === true;
+  const lockedOrder     = getSetting('study', 'solveAllLockedOrder') === 'unordered' ? 'unordered' : 'ordered';
+
+  return `
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Reduce motion</div>
+        <div class="settings-row-desc">Cuts every animation/transition site-wide down to effectively instant. Might be helpful for power-saving.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'reduceMotion') === true ? 'checked' : ''}
+               onchange="setSetting('study', 'reduceMotion', this.checked); applyStudySettings();">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-section-header">Random Quiz</div>
+
     <div class="settings-row">
       <div class="settings-row-label">
         <div class="settings-row-title">Show live timer</div>
         <div class="settings-row-desc">Shows a floating clock, bottom-right, counting up while you take a Random 6 or cumulative quiz.</div>
       </div>
       <label class="settings-switch">
-        <input type="checkbox" ${on ? 'checked' : ''}
-               onchange="setSetting('study', 'showLiveTimer', this.checked); if (this.checked) { if (typeof startLiveQuizTimer === 'function') startLiveQuizTimer(); } else { if (typeof stopLiveQuizTimer === 'function') stopLiveQuizTimer(); }">
+        <input type="checkbox" ${showLiveTimerOn ? 'checked' : ''}
+               onchange="setSetting('study', 'showLiveTimer', this.checked); if (typeof setLiveQuizTimerDisplayEnabled === 'function') setLiveQuizTimerDisplayEnabled(this.checked);">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Reset filter on page load</div>
+        <div class="settings-row-desc">Clears any saved topic/number/type filter back to "everything" the moment the page loads, instead of remembering what you last had set.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'resetFilterOnLoad') === true ? 'checked' : ''}
+               onchange="setSetting('study', 'resetFilterOnLoad', this.checked);">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Automatically stop after 50 minutes</div>
+        <div class="settings-row-desc">Submits the attempt on its own if 50 minutes pass without you finishing.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'autoStopAt50Min') === true ? 'checked' : ''}
+               onchange="setSetting('study', 'autoStopAt50Min', this.checked);">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Full screen for Random N</div>
+        <div class="settings-row-desc">Enters full screen the moment a Random N attempt starts, and leaves it again the instant your score is revealed.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'fullscreenRandomN') === true ? 'checked' : ''}
+               onchange="setSetting('study', 'fullscreenRandomN', this.checked);">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Select latest quiz by default</div>
+        <div class="settings-row-desc">Landing on the main page selects the newest available quiz instead of always Quiz #1. Applies from your next page load.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'selectLatestQuizByDefault') === true ? 'checked' : ''}
+               onchange="setSetting('study', 'selectLatestQuizByDefault', this.checked);">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Select cumulative by default</div>
+        <div class="settings-row-desc">Selecting quiz #2 or later starts with the Cumulative switch already on, instead of Single quiz. Applies from your next page load.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'cumulativeDefaultOn') === true ? 'checked' : ''}
+               onchange="setSetting('study', 'cumulativeDefaultOn', this.checked);">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Hide topic while active</div>
+        <div class="settings-row-desc">Hides each problem's topic label (top-right of the card) while the attempt is in progress. Comes back once your score is revealed.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'hideTopicWhileActive') === true ? 'checked' : ''}
+               onchange="setSetting('study', 'hideTopicWhileActive', this.checked); applyStudySettings();">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-section-header">Solve Them All</div>
+
+    <div class="settings-group">
+      <div class="settings-row" data-row-key="lockSolveAllOrder">
+        <div class="settings-row-label">
+          <div class="settings-row-title">Lock order</div>
+          <div class="settings-row-desc">Skips the order picker: jumps straight into the order chosen below.</div>
+        </div>
+        <label class="settings-switch">
+          <input type="checkbox" ${lockOrderOn ? 'checked' : ''}
+                 onchange="setSetting('study', 'lockSolveAllOrder', this.checked); syncSolveAllOrderBlock(this.checked);">
+          <span class="settings-switch-track"></span>
+        </label>
+      </div>
+      <div class="settings-row settings-row-sub${lockOrderOn ? '' : ' settings-row-blocked'}" data-row-key="solveAllOrder">
+        <div class="settings-row-label">
+          <div class="settings-row-title">Order</div>
+          <div class="settings-row-desc">Which order gets used automatically once the picker above is skipped.</div>
+        </div>
+        <div class="settings-choice-group">
+          <button type="button" class="settings-choice-btn${lockedOrder === 'ordered' ? ' active' : ''}" ${lockOrderOn ? '' : 'disabled'} data-order="ordered"
+                  onclick="setSetting('study', 'solveAllLockedOrder', 'ordered'); syncSolveAllOrderActive('ordered');">Ordered</button>
+          <button type="button" class="settings-choice-btn${lockedOrder === 'unordered' ? ' active' : ''}" ${lockOrderOn ? '' : 'disabled'} data-order="unordered"
+                  onclick="setSetting('study', 'solveAllLockedOrder', 'unordered'); syncSolveAllOrderActive('unordered');">Shuffled</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Reveal wrong answer instantly</div>
+        <div class="settings-row-desc">Skips the "See correct answer" step. A wrong answer (not partial credit) shows the correct one right away.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'revealWrongInstantly') === true ? 'checked' : ''}
+               onchange="setSetting('study', 'revealWrongInstantly', this.checked);">
         <span class="settings-switch-track"></span>
       </label>
     </div>
   `;
+}
+
+// In-place counterpart to a full renderSettingsBody() for Lock order ->
+// Order — see syncShowDaylightBtnBlock's comment (Display tab, above
+// renderSettingsDisplayTab) for why re-rendering the whole tab on every
+// flip would kill Lock order's own switch animation. The Order sub-row
+// only ever gets blocked/unblocked here, never forced to a different
+// choice, so this just toggles the dimmed look and the two buttons'
+// disabled state.
+function syncSolveAllOrderBlock(lockOrderOn) {
+  const row = document.querySelector('[data-row-key="solveAllOrder"]');
+  if (!row) return;
+  row.classList.toggle('settings-row-blocked', !lockOrderOn);
+  row.querySelectorAll('.settings-choice-btn').forEach(btn => { btn.disabled = !lockOrderOn; });
+}
+
+// In-place counterpart to a full renderSettingsBody() for the
+// Ordered/Shuffled choice buttons themselves — same reasoning as
+// syncSolveAllOrderBlock above, just for the .active highlight instead of
+// the blocked state.
+function syncSolveAllOrderActive(order) {
+  const row = document.querySelector('[data-row-key="solveAllOrder"]');
+  if (!row) return;
+  row.querySelectorAll('.settings-choice-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.order === order);
+  });
+}
+
+// Applies the Study-tab settings that need an <html> class (reduce motion,
+// hide-topic-while-active) — same mechanism as applyDisplaySettings/
+// applyNotificationSettings above. Called once at load and again from each
+// relevant row's onchange.
+function applyStudySettings() {
+  document.documentElement.classList.toggle('settings-reduce-motion', getSetting('study', 'reduceMotion') === true);
+  document.documentElement.classList.toggle('settings-hide-topic-while-active', getSetting('study', 'hideTopicWhileActive') === true);
+}
+
+// Settings > Study > "Reset filter on page load" — clears every quiz's
+// saved topic/number/type filter (and filter-mode) back to defaults.
+// Called once at load, before the person has any real chance to have
+// opened a quiz yet — see the "own copy, read early" reasoning on
+// _readStudySettingRaw (js/quiz-engine.js) for why this can't just wait
+// for initTopics() to run instead: that only runs once a mode is actually
+// selected, by which point the filter's already been read and rendered
+// with whatever was there before this clears it.
+function maybeResetProblemPoolFilters() {
+  if (getSetting('study', 'resetFilterOnLoad') !== true) return;
+  if (typeof QUIZZES === 'undefined' || typeof STORAGE_PREFIX === 'undefined') return;
+  QUIZZES.forEach((_, idx) => {
+    const n = idx + 1;
+    localStorage.removeItem(STORAGE_PREFIX + '_topics_q' + n);
+    localStorage.removeItem(STORAGE_PREFIX + '_typefilter_q' + n);
+    localStorage.removeItem(STORAGE_PREFIX + '_numfilter_q' + n);
+    localStorage.removeItem(STORAGE_PREFIX + '_filtermode_q' + n);
+  });
 }
 
 // Maps each Display toggle's key to the <html> class that hides its
@@ -464,6 +874,7 @@ const DISPLAY_TOGGLE_HIDE_CLASSES = {
   showThemeBtn:    'settings-hide-theme-btn',
   showDaylightBtn: 'settings-hide-daylight-btn',
   showForumFab:    'settings-hide-forum-fab',
+  showTopBarTip:   'settings-hide-top-bar-tip',
 };
 
 // Applies every current Display setting to <html>'s classList (not
@@ -484,6 +895,85 @@ function applyDisplaySettings() {
     document.documentElement.classList.toggle(cls, !shown);
   }
 }
+
+// ── Notifications ───────────────────────────────────────────────────────
+// Banner-hide classes: one per banner, each driven by "its own hide
+// setting OR Go silent" — Go silent is a blanket override on top of the
+// three individual reminders, not a separate fourth hide mechanism.
+const NOTIF_BANNER_HIDE_CLASSES = {
+  hideUpdateReminder:     'settings-hide-update-banner',
+  hideThemeNudge:         'settings-hide-theme-banner',
+  hideBugReportReminder:  'settings-hide-bug-banner',
+};
+
+// IndexedDB mirror of the effective Go-silent state, so sw.js's 'push'
+// handler can read it: that handler is a true service-worker-only event
+// (fires even with the site fully closed, no tab/page context at all — see
+// sw.js's own comment), and localStorage — where every other setting
+// lives — simply isn't reachable from a service worker. IndexedDB is the
+// one storage both sides can actually get to. Same DB name/store/key must
+// stay in sync with sw.js's own copy of this.
+const NOTIF_MUTE_DB_NAME = 'flux-notif-mute';
+const NOTIF_MUTE_STORE = 'flags';
+function writeNotifMuteFlag(muted) {
+  if (typeof indexedDB === 'undefined') return;
+  try {
+    const req = indexedDB.open(NOTIF_MUTE_DB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(NOTIF_MUTE_STORE); };
+    req.onsuccess = () => {
+      const db = req.result;
+      try {
+        const tx = db.transaction(NOTIF_MUTE_STORE, 'readwrite');
+        tx.objectStore(NOTIF_MUTE_STORE).put(!!muted, 'muted');
+        tx.oncomplete = () => db.close();
+        tx.onerror = () => db.close();
+      } catch (e) { db.close(); }
+    };
+    // req.onerror: IndexedDB unavailable/blocked — push notifications (if
+    // any are even subscribed) just show as normal; nothing further to do.
+  } catch (e) { /* ignore */ }
+}
+
+// Applies every current Notifications setting: banner-hide classes on
+// <html> (same mechanism as applyDisplaySettings — see css/settings.css),
+// the badge-hide class for Go silent, and the IndexedDB mirror push
+// notifications read. Called once at load (bottom of this file) and again
+// from every row's onchange above. Also where the 24h auto-off actually
+// gets enforced — checked every time this runs, which includes the
+// periodic recheck scheduleGoSilentAutoOffCheck() sets up below, so it
+// still fires even if the tab's been left open past the 24h mark without
+// a reload.
+function applyNotificationSettings() {
+  // ── 24h auto-off ──
+  const goSilentOn = getSetting('notifications', 'goSilent') === true;
+  const autoOffOn  = getSetting('notifications', 'goSilentAutoOff24h') === true;
+  const enabledAt  = getSetting('notifications', 'goSilentEnabledAt');
+  if (goSilentOn && autoOffOn && enabledAt && (Date.now() - enabledAt >= 24 * 60 * 60 * 1000)) {
+    setSetting('notifications', 'goSilent', false);
+    setSetting('notifications', 'goSilentEnabledAt', null);
+  }
+  const effectiveSilent = getSetting('notifications', 'goSilent') === true; // re-read: may have just been auto-cleared above
+
+  // ── Per-banner hide classes (own setting OR Go silent) ──
+  for (const key of Object.keys(NOTIF_BANNER_HIDE_CLASSES)) {
+    const cls = NOTIF_BANNER_HIDE_CLASSES[key];
+    const hide = getSetting('notifications', key) === true || effectiveSilent;
+    document.documentElement.classList.toggle(cls, hide);
+  }
+
+  // ── Badges (problem buttons + forum button) — Go silent only ──
+  document.documentElement.classList.toggle('settings-silent-badges', effectiveSilent);
+
+  // ── Push notifications mirror ──
+  writeNotifMuteFlag(effectiveSilent);
+}
+
+// Catches the 24h auto-off boundary even if the tab is simply left open
+// (not reloaded) past it — applyNotificationSettings() re-checks this
+// every time it runs, this just makes sure it keeps running periodically
+// rather than only on the next settings change. Same interval as the
+// version-update poll; no need for anything finer-grained than that.
+setInterval(() => { if (typeof applyNotificationSettings === 'function') applyNotificationSettings(); }, 5 * 60 * 1000);
 
 // ── Follow device theme ─────────────────────────────────────────────────
 // Day/night mode (body.light + localStorage[STORAGE_PREFIX + '-theme'] —
@@ -508,6 +998,11 @@ let _deviceThemeListening = false;
 
 function setModeFromSystem() {
   const isLight = !!(DEVICE_THEME_QUERY && !DEVICE_THEME_QUERY.matches);
+  // Skip entirely if the site is already showing what the device wants —
+  // without this, turning the setting on (or every page load) always ran
+  // the fade tick and re-applied every hook below even when dark-to-dark
+  // or light-to-light, causing a visible flicker for no actual change.
+  if (document.body.classList.contains('light') === isLight) return;
   if (window.themeFadeTick) themeFadeTick();
   document.body.classList.toggle('light', isLight);
   const track = document.getElementById('themeTrack');
@@ -564,3 +1059,18 @@ applyDisplaySettings();
 // lines only ever become visible once the person opens the changelog
 // panel, a later action that's already well past this point.
 if (typeof setFieldLinesEnabled === 'function') setFieldLinesEnabled(getSetting('display', 'hideFieldLinesByDefault') !== true);
+
+// Notifications: applies banner-hide classes, the badge-hide class, the
+// 24h Go-silent auto-off check, and mirrors the effective mute state into
+// IndexedDB for sw.js's push handler — all on this same "start of session"
+// pass, same reasoning as the two calls above.
+applyNotificationSettings();
+
+// Study: reduce-motion + hide-topic-while-active <html> classes, and the
+// one-time "clear every quiz's saved filter" pass — same "start of
+// session" timing as everything above. selectLatestQuizByDefault/
+// cumulativeDefaultOn/lockSolveAllOrder/autoStopAt50Min/fullscreenRandomN/
+// revealWrongInstantly all read getSetting() directly at the point they're
+// needed instead (quiz-engine.js), so nothing else needs applying here.
+applyStudySettings();
+maybeResetProblemPoolFilters();

@@ -71,10 +71,10 @@ const Quiz_2_Problems = [
     text:"The mass of a proton is 1836 times the mass of an electron. A proton is traveling at a speed of $5.5\\times 10^4$ m s$^{-1}$. At what speed would an electron have the same momentum as the proton?" },
 
   { id:"P23", topic:"Kinetic Energy", answer:162.0, units:["J"],
-    text:"A 4 kg object has a velocity of $(2\\mathbf{\\vec{i}}+2\\mathbf{\\vec{j}})$ m s$^{-1}$. What is the net work done on the object if its velocity changes to $(8\\mathbf{\\vec{i}}+5\\mathbf{\\vec{j}})$ m s$^{-1}$?" },
+    text:"A 4 kg object has a velocity of $(2\\mathbf{\\hat{i}}+2\\mathbf{\\hat{j}})$ m s$^{-1}$. What is the net work done on the object if its velocity changes to $(8\\mathbf{\\hat{i}}+5\\mathbf{\\hat{j}})$ m s$^{-1}$?" },
 
   { id:"P24", topic:"Kinetic Energy", answer:17.2047, units:["kg m/s"],
-    text:"A 2 kg object has a velocity of $(2\\mathbf{\\vec{i}}+1\\mathbf{\\vec{j}})$ m s$^{-1}$. Its velocity then changes to $(7\\mathbf{\\vec{i}}+8\\mathbf{\\vec{j}})$ m s$^{-1}$. What is the magnitude of the change in the object's momentum?" },
+    text:"A 2 kg object has a velocity of $(2\\mathbf{\\hat{i}}+1\\mathbf{\\hat{j}})$ m s$^{-1}$. Its velocity then changes to $(7\\mathbf{\\hat{i}}+8\\mathbf{\\hat{j}})$ m s$^{-1}$. What is the magnitude of the change in the object's momentum?" },
 
   { id:"P25", topic:"Kinetic Energy", answer:3.206, units:["m/s"],
     text:"A physics professor is pushed up a ramp inclined upward at 26° above the horizontal as he sits in his desk chair that slides on frictionless rollers. The combined mass of the professor and chair is 87 kg. He is pushed 2.6 m along the incline by a group of students who together exert a constant horizontal force of 500 N. The professor's speed at the bottom of the ramp is 2.4 m s$^{-1}$. Find his speed at the top of the ramp. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
@@ -210,10 +210,10 @@ const Quiz_2_Problems = [
     text:"A steel ball with mass 59 g is dropped from a height of 2.5 m onto a horizontal steel slab. The ball rebounds to a height of 1.6 m. If the ball is in contact with the slab for 2 ms, find the magnitude of the average force on the ball during impact. The gravitational acceleration is $g = 9.8$ m s$^{-2}$." },
 
   { id:"P68", topic:"Impulse and Collisions", answer:1.5868, units:["N s"],
-    text:"Just before it is struck by a racket, a tennis ball weighing 0.7 N has a velocity of (24 m s$^{-1}$) $\\mathbf{\\vec{i}}$ $-$ (3 m s$^{-1}$) $\\mathbf{\\vec{j}}$. During the 4 ms that the racket and ball are in contact, the net force on the ball is constant and equal to ($-$382 N) $\\mathbf{\\vec{i}}$ + (107 N) $\\mathbf{\\vec{j}}$. What is the magnitude of the impulse of the net force applied to the ball?" },
+    text:"Just before it is struck by a racket, a tennis ball weighing 0.7 N has a velocity of (24 m s$^{-1}$) $\\mathbf{\\hat{i}}$ $-$ (3 m s$^{-1}$) $\\mathbf{\\hat{j}}$. During the 4 ms that the racket and ball are in contact, the net force on the ball is constant and equal to ($-$382 N) $\\mathbf{\\hat{i}}$ + (107 N) $\\mathbf{\\hat{j}}$. What is the magnitude of the impulse of the net force applied to the ball?" },
 
   { id:"P69", topic:"Impulse and Collisions", answer:5.278, units:["m/s"],
-    text:"Just before it is struck by a racket, a tennis ball weighing 0.65 N has a velocity of (19 m s$^{-1}$) $\\mathbf{\\vec{i}}$ $-$ (4 m s$^{-1}$) $\\mathbf{\\vec{j}}$. During the 4 ms that the racket and ball are in contact, the net force on the ball is constant and equal to ($-$392 N) $\\mathbf{\\vec{i}}$ + (108 N) $\\mathbf{\\vec{j}}$. What is the magnitude of the final velocity of the ball? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
+    text:"Just before it is struck by a racket, a tennis ball weighing 0.65 N has a velocity of (19 m s$^{-1}$) $\\mathbf{\\hat{i}}$ $-$ (4 m s$^{-1}$) $\\mathbf{\\hat{j}}$. During the 4 ms that the racket and ball are in contact, the net force on the ball is constant and equal to ($-$392 N) $\\mathbf{\\hat{i}}$ + (108 N) $\\mathbf{\\hat{j}}$. What is the magnitude of the final velocity of the ball? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
   { id:"P70", topic:"Impulse and Collisions", answer:6.584, units:["N s"],
     text:"A rubber ball of mass 0.55 kg is released from rest at height 2.1 m above the floor. After its first bounce, it rises to 75% of its original height. What impulse does the floor exert on this ball during its first bounce? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
@@ -248,7 +248,7 @@ const Quiz_2_Problems = [
     text:"On a frictionless horizontal surface two blocks of masses 2.3 kg and 3 kg are connected by a spring of stiffness $k$ = 890 N m$^{-1}$ and negligible mass. Initially, the blocks are pushed together to compress the spring by a distance $d$ = 22 cm from its equilibrium length and the configuration is fixed by a cord. When the cord is cut, the blocks move in opposite directions. Calculate the speed of the second block. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(20).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
   { id:"P80", topic:"Conservation of Linear Momentum", answer:3.601, units:["m/s"],
-    text:"An object of mass 520 gram has an initial velocity of ($-$2.6 m s$^{-1}$) $\\mathbf{\\vec{i}}$ + (1.1 m s$^{-1}$) $\\mathbf{\\vec{j}}$. It collides with and sticks to another object of mass 880 gram moving with an initial velocity of (5.5 m s$^{-1}$) $\\mathbf{\\vec{i}}$ + (2.3 m s$^{-1}$) $\\mathbf{\\vec{j}}$ + (2.9 m s$^{-1}$) $\\mathbf{\\vec{k}}$ (here $\\mathbf{\\vec{i}}$, $\\mathbf{\\vec{j}}$, and $\\mathbf{\\vec{k}}$ are unit vectors along the $x$-, $y$-, and $z$-axis respectively). Find the magnitude of the speed of the composite object." },
+    text:"An object of mass 520 gram has an initial velocity of ($-$2.6 m s$^{-1}$) $\\mathbf{\\hat{i}}$ + (1.1 m s$^{-1}$) $\\mathbf{\\hat{j}}$. It collides with and sticks to another object of mass 880 gram moving with an initial velocity of (5.5 m s$^{-1}$) $\\mathbf{\\hat{i}}$ + (2.3 m s$^{-1}$) $\\mathbf{\\hat{j}}$ + (2.9 m s$^{-1}$) $\\mathbf{\\hat{k}}$ (here $\\mathbf{\\hat{i}}$, $\\mathbf{\\hat{j}}$, and $\\mathbf{\\hat{k}}$ are unit vectors along the $x$-, $y$-, and $z$-axis respectively). Find the magnitude of the speed of the composite object." },
 
   { id:"P81", topic:"Conservation of Linear Momentum", answer:13.035, units:["m"],
     text:"A block of mass 1 kg stays at rest on a horizontal surface with coefficient of kinetic friction 0.15. When an arrow of mass 260 g strikes the block with the speed 30 m s$^{-1}$ it gets stuck in the block. Find the distance to which the block with the arrow will slide after the strike till they come to rest. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },

@@ -25,6 +25,7 @@
 
 // WARNING! The version has to be bumped in three places: here, in version.json and in quiz-engine.js
 const CHANGELOG = [
+  { version: "11.1.0", note: "Big settings update!.", scope: 0 },
   { version: "11.0.1", note: "Live timer & enhanced result display.", scope: 0 },
   { version: "11.0.0", note: "PHYS 161 Quiz 2 Added.", scope: 1 },
   { version: "10.3.3", note: "Full redesign of math cashing (formatting fixed).", scope: 0 },

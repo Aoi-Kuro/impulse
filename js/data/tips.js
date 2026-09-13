@@ -1,12 +1,21 @@
-// ── Top bar tips data ────────────────────────────────────────────────────
-// Plain array of short strings, rotated through in order by
-// js/top-bar-tips.js. Add more any time — no other file needs to change.
 window.TOP_BAR_TIPS = [
   "You can filter problems by whether you've already solved them.",
-  "You'll be able to turn off this scrolling line in Settings soon.",
   "You can turn off the display of various elements (avatars, themes, manual buttons, splashes, etc.) in the settings.",
   "You can turn off the stopwatch visibility in Settings → Study.",
   "When an update is available and you're not taking a timed quiz, refresh the page to get the latest fixes and features. You won't lose any of your progress!",
   "Sign in to your account on another device to sync your progress!",
-  "Have any suggestions or want a new feature? Ask us on Telegram! Even if it's something very specific, we can add it as an optional setting. (If we have time, though!)"
+  "Have any suggestions or want a new feature? Ask us on Telegram! Even if it's something very specific, we can add it as an optional setting. (If we have time, though!)",
+  "New in Settings, Display: turn on Follow device theme to match your system's light or dark mode automatically.",
+  "New in Settings, Display: turn on Hide field lines by default to start every visit with them off.",
+  "New in Settings, Notifications: hide the update reminder, with an option to still update automatically once you're not mid-quiz.",
+  "New in Settings, Notifications: hide the try-new-theme or bug report reminders individually.",
+  "New in Settings, Study: turn on Reduce motion to cut down on animations across the app.",
+  "New in Settings, Study: reset your quiz filter automatically on every page load.",
+  "New in Settings, Study: auto-stop a Random N quiz after 50 minutes.",
+  "New in Settings, Study: go full screen automatically when a Random N quiz starts.",
+  "New in Settings, Study: hide each problem's topic label until your score is revealed.",
+  "New in Settings, Study: start main page with latest quiz selected instead of first.",
+  "New in Settings, Study: lock Solve Them All to always start ordered or always shuffled.",
+  "New in Settings, Study: reveal a wrong answer right away instead of tapping to see it.",
+  "New in Settings, Offline & Sync: download everything you need and go fully offline for 24 hours, perfect for studying while traveling."
 ];
