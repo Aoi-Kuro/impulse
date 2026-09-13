@@ -5,32 +5,28 @@
    shown in random order (never the same tip twice in a row) — see
    nextTip() below. Add more tips there — nothing here needs to change.
 
-   Width: every screen in this app uses its own content column
-   (main#quizContainer's 760px, .stats-wrap's 860px, .review-wrap's
-   760px, .forum-wrap's clamp(720px,60vw,1080px), .landing-box's 480px,
-   ...) rather than one shared value, so instead of hard-coding any one
-   of those, SCREEN_WIDTH_REFS below maps each top-level screen to the
-   element whose live rendered width the tip should copy. Resolved fresh
-   every time a tip is about to show (getBoundingClientRect — the actual
-   current box, not the CSS max-width, since padding/clamp/viewport all
-   affect the real number) and re-resolved on window resize or whenever
-   any of those screens' own .visible/.hidden class flips while a tip is
-   already up, so it tracks a screen change mid-tip instead of going
-   stale. Manual and Settings have no entry on purpose — see
-   HIDDEN_ON_SCREENS below, which blocks the tip outright there.
+   Width: the tip always fills the real open gap between the logo and the
+   icon row (getSafeBounds() below — logo's right edge to the icon row's
+   left edge, minus SAFE_GAP_PX of breathing room on each side), so it
+   uses all the space that's actually free rather than being capped to
+   whatever content column happens to render underneath it. SCREEN_WIDTH_REFS
+   / INVERTED_SCREENS still map each top-level screen to a `ref` element,
+   but only to confirm that screen has actually finished rendering
+   (isTipEligible()'s mid-transition guard) — the element's own width is no
+   longer read. Manual and Settings have no entry on purpose — see
+   HIDDEN_ON_SCREENS below, which blocks the tip outright there. Resolved
+   fresh every time a tip is about to show, and re-resolved on window
+   resize or whenever any tracked screen's own .visible/.hidden class flips
+   while a tip is already up, so it tracks a screen change or a window
+   resize mid-tip instead of going stale.
 
-   That matched width is then clamped by getSafeBounds() so the tip never
-   grows wide enough to actually overlap the logo on the left or the
-   settings/manual/palette/theme icons on the right — a screen whose
-   content column is wide (Stats' 860px) on a narrow-ish desktop window
-   is the case this matters for. The tip is positioned at the midpoint
-   of that logo↔icons gap (not the viewport's own midpoint — the logo
-   and icon row are different widths, so those two points aren't the
-   same) so it can use the gap's full width rather than being capped by
-   its narrower half, which is what a viewport-centered assumption did
-   before. If even the clamped width comes out non-positive (window too
-   narrow to fit anything safely), the tip just doesn't show that cycle
-   rather than rendering squished or overlapping.
+   The tip is positioned at the midpoint of that logo↔icons gap (not the
+   viewport's own midpoint — the logo and icon row are different widths,
+   so those two points aren't the same) so it can use the gap's full width
+   rather than being capped by its narrower half, which is what a
+   viewport-centered assumption did before. If the safe width comes out
+   non-positive (window too narrow to fit anything safely), the tip just
+   doesn't show that cycle rather than rendering squished or overlapping.
 
    Shown only when:
      - the viewport isn't mobile-sized (no safe gap to put it in there —
@@ -51,26 +47,28 @@
    Settings open, or its width reference collapses), in which case it
    fades out immediately instead of waiting.
 
-   Long tips: if the text doesn't fit the available width, it holds at
-   its starting position, then scrolls left at a constant speed until it
-   has moved completely past the left edge (nothing left showing) —
-   never reversing back into view — then snaps back to the start
-   instantly and holds again. Old ticker-display style, not a back-and-
-   forth marquee. Short tips that already fit just sit still.
+   Short tips that fit the available width just sit centered in the box.
+   Long tips that don't fit hold at the left edge, then scroll left at a
+   constant speed until they've moved completely past it (nothing left
+   showing) — never reversing back into view — then snap back to the
+   start instantly and hold again. Old ticker-display style, not a
+   back-and-forth marquee.
    ─────────────────────────────────────────────────────────────────── */
 
 (function () {
   'use strict';
 
-  const TRIGGER_INTERVAL_MS = 20000; // how often a tip attempts to show — debug value
-  const VISIBLE_MS          = 6000;  // how long a shown tip stays up before auto-fading
-  const HOLD_MS             = 1400;  // pause at the start of a long tip before it scrolls
+  const TRIGGER_INTERVAL_MS = 108000000; // how often a tip attempts to show — debug value
+  const VISIBLE_MS          = 15000;  // how long a shown tip stays up before auto-fading
+  const HOLD_MS             = 2000;  // pause at the start of a long tip before it scrolls
   const SCROLL_SPEED_PX_S   = 55;    // marquee speed once a tip overflows its box
   const MOBILE_QUERY        = '(max-width: 480px)';
 
-  // Screen id → CSS selector (relative to that screen) for the element
-  // whose width the tip should match. Checked in this order; first
-  // matching *visible* screen wins.
+  // Screen id → CSS selector (relative to that screen) for an element
+  // that only exists once that screen has actually finished rendering —
+  // used solely as an eligibility check (see isTipEligible()), not to
+  // size the tip. Checked in this order; first matching *visible* screen
+  // wins.
   const SCREEN_WIDTH_REFS = [
     { screen: 'statsScreen',   ref: '.stats-wrap' },
     { screen: 'reviewScreen',  ref: '.review-wrap' },
@@ -142,34 +140,39 @@
     return { maxWidth, center };
   }
 
-  // Current width (px) to match, or null if nothing eligible is showing
-  // right now (Manual/Settings open, or no known screen is active), or
-  // no room to show it without overlapping the logo/icons. `bounds` is the
-  // getSafeBounds() result the caller already fetched (it also needs
-  // `center` to position the tip, so it's computed once and passed in
-  // rather than resolveWidthPx calling it again itself).
-  function resolveWidthPx(bounds) {
-    if (HIDDEN_ON_SCREENS.some(isVisible)) return null;
-    let width = null;
+  // Whether a tip is eligible to show at all right now — Manual/Settings
+  // open, or no known screen active/rendered, both make it ineligible.
+  // SCREEN_WIDTH_REFS/INVERTED_SCREENS still name a `ref` element per
+  // screen here, but only to confirm that screen has actually finished
+  // rendering (mid-transition guard) — its width is no longer read. The
+  // tip's own width always comes from getSafeBounds() below, so it fills
+  // the real open gap next to the logo/icons rather than being capped to
+  // whatever content column happens to sit under it.
+  function isTipEligible() {
+    if (HIDDEN_ON_SCREENS.some(isVisible)) return false;
     for (const { screen, ref } of SCREEN_WIDTH_REFS) {
       if (isVisible(screen)) {
-        const el = document.querySelector('#' + screen + ' ' + ref);
-        width = el ? el.getBoundingClientRect().width : null;
-        break;
+        return !!document.querySelector('#' + screen + ' ' + ref);
       }
     }
-    if (width === null) {
-      for (const { screen, ref } of INVERTED_SCREENS) {
-        if (isShown(screen)) {
-          const el = document.querySelector('#' + screen + ' ' + ref);
-          width = el ? el.getBoundingClientRect().width : null;
-          break;
-        }
+    for (const { screen, ref } of INVERTED_SCREENS) {
+      if (isShown(screen)) {
+        return !!document.querySelector('#' + screen + ' ' + ref);
       }
     }
-    if (width === null || width <= 0) return null;
-    if (bounds !== null) width = Math.min(width, bounds.maxWidth);
-    return width > 0 ? width : null; // no room at all — don't show a squished tip
+    return false;
+  }
+
+  // Current width (px) for the tip, or null if nothing eligible is
+  // showing right now, or there's no room to show it without overlapping
+  // the logo/icons. `bounds` is the getSafeBounds() result the caller
+  // already fetched (it also needs `center` to position the tip, so it's
+  // computed once and passed in rather than resolveWidthPx calling it
+  // again itself).
+  function resolveWidthPx(bounds) {
+    if (!isTipEligible()) return null;
+    if (bounds === null) return null;
+    return bounds.maxWidth > 0 ? bounds.maxWidth : null; // no room at all — don't show a squished tip
   }
 
   // Picks a random tip, never repeating the one just shown back-to-back
@@ -192,15 +195,24 @@
     if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
   }
 
-  // Measures the just-rendered tip text and either leaves it still (fits)
-  // or drives the hold/scroll/snap-back loop described up top.
+  // Measures the just-rendered tip text and either centers it in place
+  // (fits) or drives the hold/scroll/snap-back loop described up top
+  // (overflows). justify-content is toggled to match: centered text needs
+  // the box centering it, but the scrolling case needs the text pinned to
+  // the box's left edge (justify-content: center there would just shift
+  // the whole hold/scroll/snap animation sideways instead of letting it
+  // start flush left).
   function runMarquee() {
     stopMarquee();
     if (!tipVisible) return;
     const boxW = tipEl.clientWidth;
     const textW = textEl.scrollWidth;
     textEl.style.transform = 'translateX(0)';
-    if (textW <= boxW) return; // fits — no scrolling needed
+    if (textW <= boxW) {
+      tipEl.style.justifyContent = 'center';
+      return; // fits — no scrolling needed
+    }
+    tipEl.style.justifyContent = 'flex-start';
 
     let phase = 'hold';
     let phaseStart = performance.now();

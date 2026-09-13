@@ -401,10 +401,174 @@ function _disarmGoOfflineConfirm(btn) {
   if (label) label.textContent = '\u{1F4E5} Go offline';
 }
 
+// ── Cache & storage actions ──
+// Three device-local escape hatches, rendered as ordinary settings rows
+// (renderCacheStorageSection below) with a small circular danger button
+// on the right in place of the usual switch — nuke the quiz-progress
+// cache, nuke the LaTeX render cache, or force a fresh service worker.
+// Each is a one-way, mildly disruptive action, so each gets its own
+// tap-to-confirm — but unlike _armGoOfflineConfirm/
+// _armSettingsResetConfirm above (module-level armed flag/timer, fine
+// when there's only one such button on a screen), all three of these
+// live on the same tab at once, so the armed/timer state is kept on the
+// button element itself. That way arming one can never silently disarm
+// or desync another.
+//
+// Arming swaps the icon for the literal word "Confirm" (the button grows
+// into a small pill to fit it — see .settings-danger-btn.confirming in
+// css/settings.css) rather than an icon-only countdown ring: a circle
+// filling in is easy to miss or misread on a first tap, where "what does
+// tapping this again actually do" needs to be unambiguous.
+const DANGER_CONFIRM_MS = 3500;
+
+function handleDangerBtnClick(btnId, onConfirm) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  if (btn._confirmArmed) {
+    _disarmDangerConfirm(btn);
+    onConfirm();
+    return;
+  }
+  _armDangerConfirm(btn);
+}
+
+function _armDangerConfirm(btn) {
+  btn._confirmArmed = true;
+  btn.classList.add('confirming');
+  btn.dataset.idleTitle = btn.title;
+  btn.title = 'Tap again to confirm';
+
+  clearTimeout(btn._confirmTimer);
+  btn._confirmTimer = setTimeout(() => _disarmDangerConfirm(btn), DANGER_CONFIRM_MS);
+}
+
+function _disarmDangerConfirm(btn) {
+  btn._confirmArmed = false;
+  clearTimeout(btn._confirmTimer);
+  btn._confirmTimer = null;
+  btn.classList.remove('confirming');
+  btn.title = btn.dataset.idleTitle || '';
+}
+
+// A) Reset all cache — wipes the local Random-6 attempt history
+// (clearLocalAttemptsCache, js/stats.js) and every locally-stored
+// Solve-All progress snapshot (clearLocalSolveAllProgress,
+// js/quiz-engine.js). Both are already exactly this: a local *cache* of
+// state a claimed forum identity syncs from the server (see stats.js's
+// own file header) — so if this device is signed in, the next sync just
+// pulls that data straight back down, same as it would for a brand new
+// device. A reload afterward is deliberate, same reasoning as
+// doResetAllSettings() in js/settings.js: several in-memory arrays
+// (solveAllChecked, the stats screen's own cached render, etc.) have no
+// single in-place path that reliably re-syncs with an emptied store.
+function performResetAllCache() {
+  if (typeof clearLocalAttemptsCache === 'function') clearLocalAttemptsCache();
+  if (typeof clearLocalSolveAllProgress === 'function') clearLocalSolveAllProgress();
+  location.reload();
+}
+
+// B) Reset all prerendered LaTeX equations — full wipe of the persistent
+// MathJax render cache (clearAllMathCache, js/math-cache.js), every quiz,
+// not just whichever set happens to be on screen (that lighter version is
+// the manual's own "🔁 Rerender Equations" button — js/quiz-engine.js's
+// rerenderSolveAllEquations). No reload needed: the cache is simply empty
+// afterward, and the next Solve-All open re-typesets and re-caches fresh.
+function performResetMathCache() {
+  const btn = document.getElementById('resetMathCacheBtn');
+  Promise.resolve(typeof clearAllMathCache === 'function' ? clearAllMathCache() : null)
+    .then(() => { if (btn) btn.title = btn.dataset.idleTitle = 'Cleared \u2014 equations will re-render next time you open Solve-All'; })
+    .catch(() => { if (btn) btn.title = btn.dataset.idleTitle = 'Clear failed \u2014 try again'; });
+}
+
+// C) Reinstall service worker — unregisters every SW registration for this
+// scope, clears every Cache Storage bucket EXCEPT OFFLINE_MODE_CACHE_NAME
+// (an active 24h Go-Offline download is a device's actual downloaded
+// study material, not stale worker debris — a reinstall shouldn't cost
+// someone their offline window), re-registers sw.js fresh, then reloads
+// so the new worker takes control immediately rather than only from the
+// next navigation.
+async function performReinstallServiceWorker() {
+  const btn = document.getElementById('reinstallSwBtn');
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if (typeof caches !== 'undefined') {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter(k => k !== OFFLINE_MODE_CACHE_NAME).map(k => caches.delete(k)));
+    }
+    if ('serviceWorker' in navigator) {
+      await navigator.serviceWorker.register('sw.js');
+    }
+  } catch (e) {
+    console.error('Service worker reinstall error:', e);
+  }
+  location.reload();
+}
+
+// Rendered as ordinary .settings-row entries (same shape as the Display
+// tab's toggle rows — renderSettingsDisplayTab above) instead of big
+// standalone buttons: label+description on the left, a small circular
+// danger button on the right where a toggle switch would normally sit.
+// title carries the literal $\mathrm{La\TeX}$ markup for MathJax to pick
+// up (see renderSettingsBody's renderMathIn call in js/settings.js);
+// ariaLabel is the same copy in plain text, since a screen reader has no
+// use for the raw LaTeX source.
+const CACHE_STORAGE_ROWS = [
+  {
+    id: 'resetCacheBtn',
+    icon: '\u21BB',
+    title: 'Reset all cache',
+    desc: 'Clears local attempt history and Solve-All progress on this device. Nothing is deleted from the server \u2014 if you\u2019re signed in, the next sync pulls it straight back down.',
+    ariaLabel: 'Reset all cache',
+    handler: 'performResetAllCache',
+  },
+  {
+    id: 'resetMathCacheBtn',
+    icon: '\u21BB',
+    title: 'Reset prerendered $\\mathrm{La\\TeX}$ equations',
+    desc: 'Clears every cached prerendered equation on this device. They re-render (and re-cache) the next time you open Solve-All.',
+    ariaLabel: 'Reset prerendered LaTeX equations',
+    handler: 'performResetMathCache',
+  },
+  {
+    id: 'reinstallSwBtn',
+    icon: '\u21BB',
+    title: 'Reinstall service worker',
+    desc: 'Unregisters and re-registers the app\u2019s service worker, then reloads. Won\u2019t interrupt an active offline-mode download.',
+    ariaLabel: 'Reinstall service worker',
+    handler: 'performReinstallServiceWorker',
+  },
+];
+
+function renderCacheStorageSection() {
+  const rows = CACHE_STORAGE_ROWS.map(r => `
+    <div class="settings-row settings-row-danger">
+      <div class="settings-row-label">
+        <div class="settings-row-title">${r.title}</div>
+        <div class="settings-row-desc">${r.desc}</div>
+      </div>
+      <button type="button" class="settings-danger-btn" id="${r.id}" aria-label="${r.ariaLabel}"
+              title="Tap, then tap again to confirm" onclick="handleDangerBtnClick('${r.id}', ${r.handler})">
+        <span class="settings-danger-confirm-label">Confirm?</span>
+        <span class="settings-danger-icon">${r.icon}</span>
+      </button>
+    </div>
+  `).join('');
+  return `
+    <div class="settings-cache-section">
+      <div class="settings-offline-heading">Cache &amp; storage</div>
+      <div class="settings-group">${rows}</div>
+    </div>
+  `;
+}
+
 // ── Rendering (called from renderSettingsBody() in js/settings.js) ──
 function renderSettingsOfflineTab() {
   checkOfflineModeExpiry(); // catch an already-lapsed window the instant this tab opens, not just on the next 5-min tick
   const state = offlineDownloadState;
+  const cacheSection = renderCacheStorageSection();
 
   if (state.status === 'downloading') {
     const pct = state.total ? Math.round((state.done / state.total) * 100) : 0;
@@ -415,7 +579,7 @@ function renderSettingsOfflineTab() {
         <div class="settings-offline-progress-track"><div class="settings-offline-progress-fill" style="width:${pct}%"></div></div>
         <div class="settings-offline-progress-label">${state.done} / ${state.total} files (${pct}%)</div>
       </div>
-    `;
+    ` + cacheSection;
   }
 
   if (state.status === 'error') {
@@ -427,7 +591,7 @@ function renderSettingsOfflineTab() {
           <span class="settings-offline-btn-label">\u21BB Try again</span>
         </button>
       </div>
-    `;
+    ` + cacheSection;
   }
 
   if (isOfflineModeActive()) {
@@ -442,7 +606,7 @@ function renderSettingsOfflineTab() {
           <span class="settings-offline-btn-label">Go back online now</span>
         </button>
       </div>
-    `;
+    ` + cacheSection;
   }
 
   return `
@@ -454,5 +618,5 @@ function renderSettingsOfflineTab() {
         <span class="settings-offline-btn-label">\u{1F4E5} Go offline</span>
       </button>
     </div>
-  `;
+  ` + cacheSection;
 }

@@ -4035,7 +4035,6 @@ function closeForumScreen(forceLanding) {
   if (!landing || !forum) return;
 
   stopForumLivePolling();
-  if (forumProblemOnlyMode) setForumProblemOnlyMode(false);
   exitForumSearch({ silent: true });
 
   // Polling is paused the whole time the forum screen is open, so anything
@@ -4048,6 +4047,16 @@ function closeForumScreen(forceLanding) {
     forum.classList.remove('visible', 'fading-out');
     forumScreenOpen = false;
     if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(true);
+    // Un-hides the scope-picker/filter bar and hides the collapsed problem-
+    // context panel — a real layout change, not just a class toggle. Done
+    // here, after the fade-out has finished and the screen is already
+    // hidden, rather than up front where it used to run: doing it before
+    // forum.classList.add('fading-out') meant this swap happened while the
+    // forum was still fully visible, so the filter bar reappearing (and
+    // the problem context panel vanishing) was plainly visible mid-fade —
+    // looked like the filter had "switched to Global" right in front of
+    // the person on their way out.
+    if (forumProblemOnlyMode) setForumProblemOnlyMode(false);
 
     const hostId = forumFabHostId;
     forumFabHostId = null;
@@ -4142,6 +4151,21 @@ initForumBodyHoverPreview();
 initForumPollingWatcher();
 initForumFabWatcher();
 renderLandingIdentity(getForumNickname());
+
+// The Stats screen (js/stats.js, tier 1) can be opened before this file
+// (tier 2) has finished loading. If that happens, its identity row
+// (renderSfpIdentity, inside loadStatsPanel) rendered against
+// getForumNickname() not existing yet — read as "not registered" — and
+// its live poll (pollStatsPanel) rendered against getForumClient() not
+// existing yet — a silent no-op, not an error. Both are one-shot calls,
+// so without this they'd stay stuck on the stale/empty state until the
+// screen is closed and reopened. Now that this file has actually
+// arrived, catch the panel up immediately if it's currently open.
+if (typeof _isStatsScreenOpen === 'function' && _isStatsScreenOpen()) {
+  if (typeof renderSfpIdentity === 'function') renderSfpIdentity(getForumNickname());
+  if (typeof pollStatsPanel === 'function') pollStatsPanel();
+  if (typeof startStatsPanelPolling === 'function') startStatsPanelPolling();
+}
 
 (function initForumListScrollWatcher() {
   window.addEventListener('scroll', onForumListScroll);

@@ -3,7 +3,7 @@
 // cross-device sync, by design) settings schema + migration; the settings
 // panel shell (gear button -> full-screen panel, same open/close fade
 // pattern as #manualScreen — see js/manual.js); and grouped tabs (Display /
-// Notifications / Study / Offline & Sync).
+// Notifications / Study / Sync & Storage).
 //
 // Phase 1: six Display-tab visual-decluttering toggles — floating avatar,
 // floating splashes, Manual button, theme-selector button, daylight
@@ -155,40 +155,52 @@ const SETTINGS_HOSTS = [
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'statsScreen',
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'reviewScreen',
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'forumScreen',
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'manualScreen',
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'choicePage',
     isVisible: el => !el.classList.contains('hidden'),
     hide:      el => el.classList.add('hidden'),
     show:      el => el.classList.remove('hidden', 'fading-out'),
+    scrollY: 0,
   },
 ];
 
 let settingsHostId = null;
+
+// Mirrors FORUM_FAB_HOSTS' own host.scrollY (js/forum.js) — see the same
+// comment on manualLandingScrollY (js/manual.js). Landing isn't in
+// SETTINGS_HOSTS (it's the fallback, not a host entry), so its own return
+// offset needs its own variable rather than living on a host object.
+let settingsLandingScrollY = 0;
 
 // ── Logical open/closed state + in-flight-animation guard ─────────────────
 // The panel's own `visible` CSS class only gets added/removed inside the
@@ -237,6 +249,13 @@ function openSettingsScreen() {
   const hostEl = hostEntry ? document.getElementById(hostEntry.id) : landing;
   settingsHostId = hostEntry ? hostEntry.id : null;
 
+  // Capture wherever the host page is currently scrolled to before hiding
+  // it, then start the Settings screen itself at the top — same convention
+  // as FORUM_FAB_HOSTS (js/forum.js) and the attempt-review sub-screen
+  // (js/stats.js), just applied to Settings too.
+  const scrollY = typeof captureScreenScroll === 'function' ? captureScreenScroll() : (window.scrollY || 0);
+  if (hostEntry) hostEntry.scrollY = scrollY; else settingsLandingScrollY = scrollY;
+
   // Defensive: strip any 'fading-out' a just-cancelled close attempt might
   // have left on the panel itself before this open's own animation starts.
   settings.classList.remove('fading-out');
@@ -250,6 +269,8 @@ function openSettingsScreen() {
       hostEl.classList.remove('fading-out');
     }
     settings.classList.add('visible');
+    if (typeof scrollScreenToTop === 'function') scrollScreenToTop();
+    else window.scrollTo(0, 0);
     // Fresh open every time: always land back on the Display tab, same
     // "reset filters on open" convention as openManualScreen/
     // openStatsScreen rather than carrying over the last-viewed tab.
@@ -294,12 +315,19 @@ function closeSettingsScreen(forceLanding) {
     if (hostId) {
       const host = SETTINGS_HOSTS.find(h => h.id === hostId);
       const hostEl = host && document.getElementById(hostId);
-      if (host && hostEl) { host.show(hostEl); return; }
+      if (host && hostEl) {
+        host.show(hostEl);
+        if (typeof restoreScreenScroll === 'function') restoreScreenScroll(host.scrollY);
+        else window.scrollTo(0, host.scrollY || 0);
+        return;
+      }
     }
 
     landing.classList.remove('hidden');
     if (typeof showNewSplash === 'function') showNewSplash();
     if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(true);
+    if (typeof restoreScreenScroll === 'function') restoreScreenScroll(settingsLandingScrollY);
+    else window.scrollTo(0, settingsLandingScrollY || 0);
   }, 280);
 }
 
@@ -394,7 +422,7 @@ const SETTINGS_TABS = [
   { id: 'display',       label: 'Display' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'study',         label: 'Study' },
-  { id: 'offline',       label: 'Offline & Sync' },
+  { id: 'offline',       label: 'Sync & Storage' },
 ];
 
 function switchSettingsTab(tabId) {
@@ -432,6 +460,12 @@ function renderSettingsBody() {
     body.innerHTML = renderSettingsStudyTab();
   } else if (settingsActiveTab === 'offline') {
     body.innerHTML = renderSettingsOfflineTab(); // js/offline-mode.js
+    // The "Reset prerendered LaTeX equations" button's own label has a
+    // literal $\mathrm{La\TeX}$ snippet in it (see renderCacheStorageSection
+    // in js/offline-mode.js) — needs an explicit typeset pass same as any
+    // other dynamically-inserted math, since MathJax only ever looks at
+    // elements it's told to.
+    if (typeof renderMathIn === 'function') renderMathIn(body);
   }
 }
 

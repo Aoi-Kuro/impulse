@@ -2380,7 +2380,18 @@ function fadeInScreen(el, duration) {
 // proceeds once a name is resolved (or immediately, if one's already
 // claimed on this device).
 function startSelected() {
-  if (typeof getForumNickname === 'function' && !getForumNickname()) {
+  // getForumNickname/openGettingStartedModal/openForumClaimModal all live
+  // in js/forum.js, which (see index.html's tier-2 loader) can still be
+  // downloading when this is first tapped. The old `typeof === 'function'`
+  // guard treated "not loaded yet" as "nothing to check", so a fast enough
+  // tap skipped the registration gate entirely. Fail safe instead: if the
+  // identity system isn't here yet, wait for it and retry rather than
+  // letting the quiz start unregistered.
+  if (typeof getForumNickname !== 'function') {
+    setTimeout(startSelected, 50);
+    return;
+  }
+  if (!getForumNickname()) {
     openGettingStartedModal(() => openForumClaimModal('create', '', () => startSelected()));
     return;
   }
@@ -2603,7 +2614,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '11.1.1';
+const CURRENT_VERSION = '11.1.2';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

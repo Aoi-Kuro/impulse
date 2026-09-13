@@ -79,24 +79,28 @@ const MANUAL_HOSTS = [
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'statsScreen',
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'reviewScreen',
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'forumScreen',
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     // Missing until now — SETTINGS_HOSTS (js/settings.js) already lists
@@ -112,12 +116,14 @@ const MANUAL_HOSTS = [
     isVisible: el => el.classList.contains('visible'),
     hide:      el => el.classList.remove('visible', 'fading-out'),
     show:      el => el.classList.add('visible'),
+    scrollY: 0,
   },
   {
     id: 'choicePage',
     isVisible: el => !el.classList.contains('hidden'),
     hide:      el => el.classList.add('hidden'),
     show:      el => el.classList.remove('hidden', 'fading-out'),
+    scrollY: 0,
   },
 ];
 
@@ -126,6 +132,15 @@ const MANUAL_HOSTS = [
 // landing screen showing underneath. closeManualScreen() reads this to
 // know whether to restore that screen or fall back to the landing screen.
 let manualHostId = null;
+
+// Mirrors FORUM_FAB_HOSTS' own host.scrollY (js/forum.js) — the host being
+// swapped out is a normal in-flow page, so hiding it leaves window.scrollY
+// wherever it was, which would otherwise land the Manual screen (or, on
+// close, the restored host) at whatever offset the *other* screen happened
+// to be scrolled to. Landing itself isn't in MANUAL_HOSTS (it's the
+// fallback, not a host entry), so its own return offset is tracked here
+// instead of on a host object.
+let manualLandingScrollY = 0;
 
 // There's no in-screen ✕ Close button anymore — the manual button doubles
 // as the close control, same as tapping the site logo (which routes through
@@ -158,6 +173,13 @@ async function openManualScreen() {
   const hostEl = hostEntry ? document.getElementById(hostEntry.id) : landing;
   manualHostId = hostEntry ? hostEntry.id : null;
 
+  // Capture wherever the host page is currently scrolled to before hiding
+  // it, then start the Manual screen itself at the top — same convention
+  // as FORUM_FAB_HOSTS (js/forum.js) and the attempt-review sub-screen
+  // (js/stats.js), just applied to Manual too.
+  const scrollY = typeof captureScreenScroll === 'function' ? captureScreenScroll() : (window.scrollY || 0);
+  if (hostEntry) hostEntry.scrollY = scrollY; else manualLandingScrollY = scrollY;
+
   hostEl.classList.add('fading-out');
   setTimeout(async () => {
     if (hostEntry) {
@@ -167,6 +189,8 @@ async function openManualScreen() {
       hostEl.classList.remove('fading-out');
     }
     manual.classList.add('visible');
+    if (typeof scrollScreenToTop === 'function') scrollScreenToTop();
+    else window.scrollTo(0, 0);
     // Fresh open every time: nothing expanded, nothing selected, right pane
     // empty — same "reset filters on open" call as openStatsScreen makes,
     // rather than carrying over whatever was left open from a previous visit.
@@ -214,13 +238,20 @@ function closeManualScreen(forceLanding) {
     if (hostId) {
       const host = MANUAL_HOSTS.find(h => h.id === hostId);
       const hostEl = host && document.getElementById(hostId);
-      if (host && hostEl) { host.show(hostEl); return; }
+      if (host && hostEl) {
+        host.show(hostEl);
+        if (typeof restoreScreenScroll === 'function') restoreScreenScroll(host.scrollY);
+        else window.scrollTo(0, host.scrollY || 0);
+        return;
+      }
     }
 
     // Original behavior: opened from the landing screen itself.
     landing.classList.remove('hidden');
     if (typeof showNewSplash === 'function') showNewSplash();
     if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(true);
+    if (typeof restoreScreenScroll === 'function') restoreScreenScroll(manualLandingScrollY);
+    else window.scrollTo(0, manualLandingScrollY || 0);
   }, 280);
 }
 

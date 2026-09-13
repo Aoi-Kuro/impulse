@@ -47,6 +47,17 @@
    (position: absolute; inset: 0) anchors to this button and not some
    further-out ancestor. */
 .settings-header-right .filter-reset-btn { position: relative; top: 0; right: 0; }
+/* .filter-reset-btn's own font-size/padding/border-radius (css/style.css)
+   are sized for its usual home inside .topic-selector-wrap, smaller (and
+   less rounded) than the Close button next to it here — same border-width
+   and font-family, so copying Close's font-size + padding + border-radius
+   gives this button the identical box height and corner rounding instead
+   of sitting shorter and squarer in the same row. */
+.settings-reset-all-btn {
+  font-size: 0.82rem;
+  padding: 0.38rem 0.75rem;
+  border-radius: calc(6px * var(--radius-mult));
+}
 .settings-title {
   font-family: var(--mono);
   font-size: 1.1rem;
@@ -388,6 +399,57 @@ html.settings-hide-topic-while-active #quizContainer:not(.results-shown) .proble
   border-color: var(--text);
   background: transparent;
 }
+
+/* ── Cache & storage rows (js/offline-mode.js's renderCacheStorageSection)
+   — same .settings-row/.settings-group shell as the Display tab's toggle
+   rows, with a small circular danger button standing in for the usual
+   switch. Red (--wrong) rather than accent-colored, same color
+   .filter-reset-btn already uses for its own destructive state. */
+.settings-cache-section { border-top: 1px solid var(--border); padding-top: 1rem; }
+.settings-danger-btn {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 50%;
+  border: 1.5px solid var(--wrong);
+  background: var(--bg);
+  color: var(--wrong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: all 0.18s ease, width 0.18s ease, border-radius 0.18s ease;
+}
+.settings-danger-btn:hover { background: var(--wrong); color: var(--chrome-light); }
+.settings-danger-icon { display: inline-flex; }
+
+/* Armed state (_armDangerConfirm, js/offline-mode.js): rather than a
+   countdown ring on an icon-only button — easy to miss what a second tap
+   actually confirms — the button grows into a small solid pill and swaps
+   its icon for the literal word "Confirm", unambiguous at a glance. Reverts
+   on its own after DANGER_CONFIRM_MS if not tapped again. */
+.settings-danger-confirm-label {
+  display: none;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.settings-danger-btn.confirming {
+  width: auto;
+  border-radius: calc(19px * var(--radius-mult));
+  padding: 0 0.9rem;
+  background: var(--wrong);
+  color: var(--chrome-light);
+  border-color: transparent;
+}
+.settings-danger-btn.confirming .settings-danger-icon { display: none; }
+.settings-danger-btn.confirming .settings-danger-confirm-label { display: inline; }
 
 /* Same tap-to-confirm ring idiom as .reset-confirm-ring (css/style.css) —
    armed by _armGoOfflineConfirm() (js/offline-mode.js): a single dash the

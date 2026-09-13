@@ -441,6 +441,25 @@ function deleteCachedMathHTML(problemId) {
   tx.onerror = () => console.error('Math cache delete error:', tx.error);
 }
 
+// Full wipe of the persistent render cache — every quiz, every problem —
+// unlike deleteCachedMathHTML/rerenderSolveAllEquations (js/quiz-engine.js),
+// which only ever touch whatever set is currently on screen. Reuses the
+// exact same clear _mathCacheClearAll() already does internally on a
+// schema mismatch (see initMathCache above); this just exposes it as an
+// on-demand action — Settings > Sync & Storage's "Reset all prerendered
+// LaTeX equations" button (js/offline-mode.js) — and re-writes the
+// current schemaVersion straight back afterward so the next reload's
+// initMathCache() doesn't mistake this deliberate reset for a schema
+// mismatch and log a confusing message about it; the resulting empty
+// cache is identical either way.
+async function clearAllMathCache() {
+  await initMathCache(); // no-op if already open/opened; ensures nothing else can repopulate _mathCacheMap out of order after this point
+  _mathCacheMap = new Map();
+  if (!_mathCacheDB) return;
+  await _mathCacheClearAll();
+  await _mathCachePut('meta', 'schemaVersion', MATH_CACHE_SCHEMA);
+}
+
 // Kick off loading in the background as soon as the page loads, so by the
 // time the person actually opens Solve-All, IndexedDB has usually already
 // responded.

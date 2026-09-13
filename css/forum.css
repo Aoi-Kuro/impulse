@@ -450,6 +450,13 @@
 }
 .forum-scope-select {
   flex: 1 1 160px;
+  /* Flex items default to min-width:auto, which for a <select> means the
+     browser won't shrink it below the width needed to display its widest
+     *option* (e.g. a long quiz name), even while a short one like
+     "🌐 Global" is selected. On narrow screens that pushed the box past
+     the edge of the composer instead of wrapping/shrinking with it. */
+  min-width: 0;
+  max-width: 100%;
   font-family: var(--mono);
   cursor: pointer;
 }

@@ -17,5 +17,5 @@ window.TOP_BAR_TIPS = [
   "New in Settings, Study: start main page with latest quiz selected instead of first.",
   "New in Settings, Study: lock Solve Them All to always start ordered or always shuffled.",
   "New in Settings, Study: reveal a wrong answer right away instead of tapping to see it.",
-  "New in Settings, Offline & Sync: download everything you need and go fully offline for 24 hours, perfect for studying while traveling."
+  "New in Settings, Sync & Storage: download everything you need and go fully offline for 24 hours, perfect for studying while traveling."
 ];

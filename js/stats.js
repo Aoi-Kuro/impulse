@@ -1047,6 +1047,12 @@ let _statsPanelPollTimer = null;
 async function loadStatsPanel() {
   const nickname = (typeof getForumNickname === 'function') ? getForumNickname() : '';
   renderSfpIdentity(nickname);
+  // Draw all three dials as placeholders immediately, rather than leaving
+  // them as blank/uninitialized <svg> tags (index.html gives them no
+  // fallback markup) until the first pollStatsPanel() below actually
+  // resolves — which can visibly lag behind the rest of the panel opening,
+  // especially before js/forum.js (tier 2) has even finished loading.
+  ['sfpDialParticipants', 'sfpDialVisits', 'sfpDialQuizzes'].forEach(id => renderTallyDial(id, null));
   await pollStatsPanel();
 }
 
@@ -1353,9 +1359,20 @@ function renderTallyDial(svgId, value) {
   const svg = document.getElementById(svgId);
   if (!svg) return;
 
+  // `value` is null/undefined when there's genuinely no data yet — the
+  // panel just opened and pollStatsPanel() hasn't resolved, or a poll is
+  // still in flight — as distinct from a real, confirmed count of zero.
+  // Rendered as a dash in every digit slot (matching the "—" placeholder
+  // already used for sfpNickname/sfpJoinedAt/sfpMyMessages/sfpMyQuizzes)
+  // instead of leaving the dial blank until the first successful poll.
+  const isPlaceholder = value === null || value === undefined;
   const n = Math.max(0, Math.floor(Number(value) || 0));
-  const digitCount = Math.max(4, String(n).length);
-  const padded = String(n).padStart(digitCount, '0');
+  const digitCount = isPlaceholder ? 4 : Math.max(4, String(n).length);
+  const padded = isPlaceholder ? '-'.repeat(digitCount) : String(n).padStart(digitCount, '0');
+  // Distinct sentinel so the very first real value (including a genuine
+  // "0000") still counts as a change from the placeholder and triggers
+  // the pulse/lever-press below.
+  const datasetValue = isPlaceholder ? `placeholder-${digitCount}` : padded;
 
   if (svg.dataset.built !== String(digitCount)) {
     const cx = 75;
@@ -1399,13 +1416,13 @@ function renderTallyDial(svgId, value) {
       <text x="0" y="${winY + winH / 2 + 6}" text-anchor="middle" class="sfp-tally-count">${tspans}</text>
     `;
     svg.dataset.built = String(digitCount);
-    svg.dataset.value = padded;
+    svg.dataset.value = datasetValue;
     return;
   }
 
   const countText = svg.querySelector('.sfp-tally-count');
-  if (countText && svg.dataset.value !== padded) {
-    svg.dataset.value = padded;
+  if (countText && svg.dataset.value !== datasetValue) {
+    svg.dataset.value = datasetValue;
     Array.from(countText.children).forEach((tspan, i) => { tspan.textContent = padded[i]; });
 
     countText.classList.remove('sfp-tally-count-pulse');
