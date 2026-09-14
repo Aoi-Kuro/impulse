@@ -134,6 +134,7 @@
 <link rel="stylesheet" href="css/forum.css">
 <link rel="stylesheet" href="css/manual.css">
 <link rel="stylesheet" href="css/settings.css">
+<link rel="stylesheet" href="css/solve-all-nav.css">
 
 <!-- ── MathJax (math rendering, STIX Two font) ── -->
 <script>
@@ -211,6 +212,15 @@
   <button class="banner-dismiss" onclick="dismissBugBanner()" title="Dismiss">✕</button>
 </div>
 
+<!-- ── Random N full-screen reminder (auto-hides after 10 seconds) ── -->
+<button type="button" id="fullscreen-hint-banner" aria-live="polite" hidden
+        aria-label="Open Settings, Study section, for full-screen behaviour"
+        onclick="openFullscreenHintSettings()">
+  <svg class="fullscreen-hint-ring" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><rect x="1.5" y="1.5" rx="7"></rect></svg>
+  <span class="banner-icon">⛶</span>
+  <span class="banner-text">You can turn off full-screen behaviour in <strong>Settings → Study</strong>.</span>
+</button>
+
 <!-- ── Theme nudge banner ── -->
 <div id="theme-nudge-banner" role="status" aria-live="polite">
   <span class="banner-icon">🎨</span>
@@ -283,6 +293,23 @@
      so hidden from assistive tech like .top-bar-backdrop above. -->
 <div class="top-bar-tip" id="topBarTip" aria-hidden="true">
   <span class="top-bar-tip-text" id="topBarTipText"></span>
+</div>
+
+<!-- Top bar quiz status: live clock + battery, shown in the same top-bar
+     gap as the tip above, only during a Random N attempt taken in
+     fullscreen (see js/top-bar-quiz-status.js). Yields to the tip
+     the instant one wants to show (that file listens for the
+     'topbartip:show'/'topbartip:hide' events top-bar-tips.js dispatches)
+     rather than the two ever overlapping. Decorative + ephemeral, so
+     hidden from assistive tech like .top-bar-tip above. -->
+<div class="top-bar-quiz-status" id="topBarQuizStatus" aria-hidden="true">
+  <span class="tbqs-time" id="tbqsTime"><span id="tbqsH">12</span><span class="tbqs-colon" id="tbqsColon">:</span><span id="tbqsM">00</span></span>
+  <span class="tbqs-sep">|</span>
+  <span class="tbqs-battery" id="tbqsBattery">
+    <span class="tbqs-batt-icon" id="tbqsBattIcon"><span class="tbqs-batt-fill" id="tbqsBattFill"></span></span>
+    <span class="tbqs-batt-pct" id="tbqsBattPct"></span>
+    <span class="tbqs-batt-charging" id="tbqsBattCharging"> (charging)</span>
+  </span>
 </div>
 
 <!-- Theme toggle -->
@@ -1270,6 +1297,8 @@
       'js/fig-attribution.js',
       'js/top-bar-scroll.js',
       'js/top-bar-tips.js',
+      'js/top-bar-quiz-status.js',
+      'js/solve-all-nav.js',
       'js/changelog.js',
       'js/manual.js',
       'js/settings.js',

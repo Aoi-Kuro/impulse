@@ -569,6 +569,11 @@ function renderSettingsOfflineTab() {
   checkOfflineModeExpiry(); // catch an already-lapsed window the instant this tab opens, not just on the next 5-min tick
   const state = offlineDownloadState;
   const cacheSection = renderCacheStorageSection();
+  // Defined in js/settings.js (the file that owns the settings schema/
+  // storage itself) — appended last here so Backup is always the final
+  // section on the final tab, i.e. the last section of the Settings screen
+  // as a whole, regardless of which of the four states below is showing.
+  const backupSection = (typeof renderSettingsBackupSection === 'function') ? renderSettingsBackupSection() : '';
 
   if (state.status === 'downloading') {
     const pct = state.total ? Math.round((state.done / state.total) * 100) : 0;
@@ -579,7 +584,7 @@ function renderSettingsOfflineTab() {
         <div class="settings-offline-progress-track"><div class="settings-offline-progress-fill" style="width:${pct}%"></div></div>
         <div class="settings-offline-progress-label">${state.done} / ${state.total} files (${pct}%)</div>
       </div>
-    ` + cacheSection;
+    ` + cacheSection + backupSection;
   }
 
   if (state.status === 'error') {
@@ -591,7 +596,7 @@ function renderSettingsOfflineTab() {
           <span class="settings-offline-btn-label">\u21BB Try again</span>
         </button>
       </div>
-    ` + cacheSection;
+    ` + cacheSection + backupSection;
   }
 
   if (isOfflineModeActive()) {
@@ -606,7 +611,7 @@ function renderSettingsOfflineTab() {
           <span class="settings-offline-btn-label">Go back online now</span>
         </button>
       </div>
-    ` + cacheSection;
+    ` + cacheSection + backupSection;
   }
 
   return `
@@ -618,5 +623,5 @@ function renderSettingsOfflineTab() {
         <span class="settings-offline-btn-label">\u{1F4E5} Go offline</span>
       </button>
     </div>
-  ` + cacheSection;
+  ` + cacheSection + backupSection;
 }

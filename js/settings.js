@@ -64,7 +64,8 @@ const SETTINGS_DEFAULTS = {
     reduceMotion: false,
     resetFilterOnLoad: false,
     autoStopAt50Min: false,
-    fullscreenRandomN: false,
+    fullscreenRandomN: true,
+    hideFullscreenReminder: false,
     hideTopicWhileActive: false,
     selectLatestQuizByDefault: false,
     cumulativeDefaultOn: false,
@@ -73,6 +74,13 @@ const SETTINGS_DEFAULTS = {
     // used automatically once the order-picker modal is skipped.
     solveAllLockedOrder: 'ordered',
     revealWrongInstantly: false,
+    // The left/right progress rail shown beside Solve-All on wide screens
+    // (js/solve-all-nav.js). On by default — it's been the only behavior
+    // until now, so this just makes it optional going forward.
+    showSolveAllNavRail: true,
+    // The floating solved-count badge, bottom-right, during Solve-All
+    // (#stickyScore). Was always on; now optional, still on by default.
+    showStickyScore: true,
   },
   offline: {
     // ms epoch when the current "Go offline" 24h window expires — null
@@ -232,11 +240,19 @@ function toggleSettingsScreen() {
   }
 }
 
-function openSettingsScreen() {
+function openSettingsScreen(initialTab = 'display', focusRowKey = null) {
   const landing  = document.getElementById('landingScreen');
   const settings = document.getElementById('settingsScreen');
   if (!landing || !settings || settingsIsOpen) return;
   settingsIsOpen = true;
+  const requestedTab = ['display', 'notifications', 'study', 'offline'].includes(initialTab) ? initialTab : 'display';
+  // #saNavRail/#stickyScore are position:fixed and independent of whichever
+  // screen is showing, so they render on top of #settingsScreen unless we
+  // hide them explicitly — see the html.settings-screen-open rule in
+  // css/settings.css. Toggled immediately (not inside the fade timeout
+  // below) so there's no frame where they're still visible over the
+  // incoming panel.
+  document.documentElement.classList.add('settings-screen-open');
   if (settingsAnimTimer) { clearTimeout(settingsAnimTimer); settingsAnimTimer = null; }
 
   if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(false);
@@ -271,12 +287,35 @@ function openSettingsScreen() {
     settings.classList.add('visible');
     if (typeof scrollScreenToTop === 'function') scrollScreenToTop();
     else window.scrollTo(0, 0);
-    // Fresh open every time: always land back on the Display tab, same
-    // "reset filters on open" convention as openManualScreen/
-    // openStatsScreen rather than carrying over the last-viewed tab.
-    settingsActiveTab = 'display';
+    // Normal opens still land on Display. Deep links (such as the
+    // full-screen reminder) can request a specific tab without changing
+    // that default for the gear button.
+    settingsActiveTab = requestedTab;
     renderSettingsScreen();
+    if (focusRowKey) _scrollSettingsRowIntoView(focusRowKey);
   }, 280);
+}
+
+function _scrollSettingsRowIntoView(rowKey) {
+  if (!rowKey) return;
+  requestAnimationFrame(() => {
+    const row = document.querySelector(`[data-row-key="${rowKey}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+  });
+}
+
+// Used by the Random N full-screen hint: the whole banner is a shortcut
+// straight to the relevant Study setting, including when Settings is
+// already open on a different tab.
+function openSettingsStudySection(rowKey = 'fullscreenRandomN') {
+  if (settingsIsOpen) {
+    settingsActiveTab = 'study';
+    renderSettingsScreen();
+    _scrollSettingsRowIntoView(rowKey);
+    return;
+  }
+  openSettingsScreen('study', rowKey);
 }
 
 // `forceLanding` is true only when goToMainMenu() (quiz-engine.js) closes
@@ -287,6 +326,10 @@ function closeSettingsScreen(forceLanding) {
   const settings = document.getElementById('settingsScreen');
   if (!landing || !settings || !settingsIsOpen) return;
   settingsIsOpen = false;
+  // Counterpart to the class added in openSettingsScreen — see that
+  // comment. Removed up front, same reasoning: no stale hidden frame once
+  // Settings starts closing.
+  document.documentElement.classList.remove('settings-screen-open');
   if (settingsAnimTimer) { clearTimeout(settingsAnimTimer); settingsAnimTimer = null; }
 
   settings.classList.add('fading-out');
@@ -417,6 +460,164 @@ function doResetAllSettings() {
   location.reload(true);
 }
 
+// ── Export / Import settings backup ─────────────────────────────────────
+// Lets the whole settings store move to another device/browser, or be
+// restored after a reinstall or a cleared site data. Exported as flat
+// "tab.key" codes (e.g. "display.showAvatar") rather than the nested
+// {tab:{key}} shape settingsCache actually uses — that flat code is each
+// setting's stable identity in a backup file, independent of which tab it
+// happens to live under in SETTINGS_DEFAULTS today. That's what makes an
+// old backup safe to import after later phases change things:
+//  - a setting added since the backup was made simply isn't in the file,
+//    so it's left alone (same per-key merge migrateSettings() already does
+//    for a freshly-loaded old save — importing doesn't wipe the store, it
+//    only overwrites the keys actually present in the file);
+//  - a setting removed since the backup was made has no matching code
+//    anymore, so it's silently skipped rather than resurrected;
+//  - a setting that moves to a different tab in a future phase still
+//    matches by its code as long as the code itself (tab.key at the time
+//    it was first introduced) isn't reused for something else — same
+//    convention as never reassigning an old localStorage key to a new
+//    meaning.
+// Only a setting's key itself getting renamed breaks the match — no worse
+// than what a rename would already do to migrateSettings().
+const SETTINGS_BACKUP_APP_ID = 'flux-settings-backup';
+
+// Tabs deliberately left out of every export/import: not real portable
+// preferences, just runtime state tied to *this* device's own cache/
+// download, which a backup file can't carry along with the number.
+// offline.until says whether sw.js should currently be treating the
+// offline-mode file cache as present — importing that timestamp from
+// another device (or an old backup on this one) without the matching
+// download actually existing risks the app believing it's offline-ready,
+// and sw.js blocking every request, when nothing was actually fetched.
+const SETTINGS_BACKUP_EXCLUDED_TABS = ['offline'];
+
+function _settingsBackupValidCodes() {
+  const codes = {};
+  for (const tab of Object.keys(SETTINGS_DEFAULTS)) {
+    if (SETTINGS_BACKUP_EXCLUDED_TABS.indexOf(tab) !== -1) continue;
+    for (const key of Object.keys(SETTINGS_DEFAULTS[tab])) codes[tab + '.' + key] = true;
+  }
+  return codes;
+}
+
+function buildSettingsBackupPayload() {
+  const s = loadSettings();
+  const flat = {};
+  for (const code of Object.keys(_settingsBackupValidCodes())) {
+    const dot = code.indexOf('.');
+    const tab = code.slice(0, dot), key = code.slice(dot + 1);
+    flat[code] = s[tab] ? s[tab][key] : SETTINGS_DEFAULTS[tab][key];
+  }
+  return {
+    app: SETTINGS_BACKUP_APP_ID,
+    schemaVersion: SETTINGS_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    settings: flat,
+  };
+}
+
+function exportSettingsBackup() {
+  try {
+    const payload = buildSettingsBackupPayload();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `flux-settings-backup-${payload.exportedAt.slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    console.error('Settings export failed:', e);
+    alert("Sorry \u2014 that export didn't work. Please try again.");
+  }
+}
+
+function triggerImportSettingsBackup() {
+  const input = document.getElementById('settingsImportFileInput');
+  if (input) input.click();
+}
+
+// Validates and previews the whole import (which codes match, which are
+// unrecognized) before writing anything, so a cancelled confirm() below
+// leaves settingsCache/localStorage completely untouched — the write only
+// happens after the person confirms.
+function handleSettingsImportFileSelected(event) {
+  const input = event.target;
+  const file = input.files && input.files[0];
+  input.value = ''; // reset so re-picking the same file still fires 'change' next time
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(reader.result);
+    } catch (e) {
+      alert("That file isn't a valid settings backup (couldn't be read as JSON).");
+      return;
+    }
+    if (!data || typeof data.settings !== 'object' || !data.settings) {
+      alert("That file isn't a valid settings backup.");
+      return;
+    }
+
+    const validCodes = _settingsBackupValidCodes();
+    const toApply = [];
+    let skipped = 0;
+    for (const code of Object.keys(data.settings)) {
+      if (!validCodes[code]) { skipped++; continue; }
+      const dot = code.indexOf('.');
+      toApply.push([code.slice(0, dot), code.slice(dot + 1), data.settings[code]]);
+    }
+
+    if (toApply.length === 0) {
+      alert("That backup didn't contain any settings this version recognizes.");
+      return;
+    }
+
+    const skippedNote = skipped ? ` (${skipped} unrecognized entr${skipped === 1 ? 'y' : 'ies'} skipped)` : '';
+    const ok = confirm(`Import ${toApply.length} setting${toApply.length === 1 ? '' : 's'}${skippedNote}? This overwrites your current settings and reloads the page.`);
+    if (!ok) return;
+
+    toApply.forEach(([tab, key, value]) => setSetting(tab, key, value));
+    // Same full-reload approach as doResetAllSettings() above, and for the
+    // same reason: several settings only ever get applied once at boot
+    // (index.html's anti-flicker inline script, changelog.js's field-lines
+    // default, etc.), so a reload is the one path that's guaranteed to
+    // re-apply every imported value consistently, not just the ones this
+    // file happens to also re-apply live.
+    location.reload();
+  };
+  reader.onerror = () => {
+    alert("Sorry \u2014 that file couldn't be read. Please try again.");
+  };
+  reader.readAsText(file);
+}
+
+// ── Rendering (called from renderSettingsOfflineTab() in js/offline-mode.js,
+// appended after its own Cache & storage section — see that file — so this
+// is always the very last section of the Settings screen.) ──
+function renderSettingsBackupSection() {
+  return `
+    <div class="settings-backup-section">
+      <div class="settings-offline-heading">Backup</div>
+      <div class="settings-offline-desc">Save every setting on this device to a file, or restore one saved earlier \u2014 including on another device, or after clearing site data. A setting added since an old backup was made just keeps its default; one removed since is skipped.</div>
+      <div class="settings-backup-btn-row">
+        <button type="button" class="settings-offline-btn settings-offline-btn-secondary" onclick="exportSettingsBackup()" title="Download all settings as a file">
+          <span class="settings-offline-btn-label">\u2B07\uFE0F Export settings</span>
+        </button>
+        <button type="button" class="settings-offline-btn settings-offline-btn-secondary" onclick="triggerImportSettingsBackup()" title="Restore settings from a file">
+          <span class="settings-offline-btn-label">\u2B06\uFE0F Import settings</span>
+        </button>
+      </div>
+      <input type="file" id="settingsImportFileInput" accept="application/json,.json" style="display:none" onchange="handleSettingsImportFileSelected(event)">
+    </div>
+  `;
+}
 
 const SETTINGS_TABS = [
   { id: 'display',       label: 'Display' },
@@ -688,14 +889,15 @@ function syncNotificationSubBlock(parentKey, parentOn) {
 
 // Study tab: a general row (Reduce motion), then two visibly-labeled
 // sections — Random Quiz and Solve Them All — since most of these settings
-// only make sense for one mode or the other. Two parent+sub pairs here
-// follow the Notifications tab's "sub blocked unless parent is on" shape
-// (lockSolveAllOrder -> its ordered/shuffled choice), while
-// autoStopAt50Min/hideTopicWhileActive/etc. are plain standalone toggles.
+// only make sense for one mode or the other. Parent+sub groups here follow
+// the Notifications tab's "sub blocked unless parent is on" shape
+// (fullscreenRandomN -> its reminder preference, and lockSolveAllOrder ->
+// its ordered/shuffled choice), while the remaining rows are standalone toggles.
 function renderSettingsStudyTab() {
   const showLiveTimerOn = getSetting('study', 'showLiveTimer') !== false;
   const lockOrderOn     = getSetting('study', 'lockSolveAllOrder') === true;
   const lockedOrder     = getSetting('study', 'solveAllLockedOrder') === 'unordered' ? 'unordered' : 'ordered';
+  const navRailOn       = getSetting('study', 'showSolveAllNavRail') !== false;
 
   return `
     <div class="settings-row">
@@ -748,16 +950,29 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
-    <div class="settings-row">
-      <div class="settings-row-label">
-        <div class="settings-row-title">Full screen for Random N</div>
-        <div class="settings-row-desc">Enters full screen the moment a Random N attempt starts, and leaves it again the instant your score is revealed.</div>
+    <div class="settings-group">
+      <div class="settings-row" data-row-key="fullscreenRandomN">
+        <div class="settings-row-label">
+          <div class="settings-row-title">Full screen for Random N</div>
+          <div class="settings-row-desc">Enters full screen the moment a Random N attempt starts, and leaves it again the instant your score is revealed.</div>
+        </div>
+        <label class="settings-switch">
+          <input type="checkbox" ${getSetting('study', 'fullscreenRandomN') === true ? 'checked' : ''}
+                 onchange="setSetting('study', 'fullscreenRandomN', this.checked); syncFullscreenHintSubBlock(this.checked); if (typeof syncFullscreenHintPreference === 'function') syncFullscreenHintPreference();">
+          <span class="settings-switch-track"></span>
+        </label>
       </div>
-      <label class="settings-switch">
-        <input type="checkbox" ${getSetting('study', 'fullscreenRandomN') === true ? 'checked' : ''}
-               onchange="setSetting('study', 'fullscreenRandomN', this.checked);">
-        <span class="settings-switch-track"></span>
-      </label>
+      <div class="settings-row settings-row-sub${getSetting('study', 'fullscreenRandomN') === true ? '' : ' settings-row-blocked'}" data-row-key="hideFullscreenReminder">
+        <div class="settings-row-label">
+          <div class="settings-row-title">Don’t show full-screen reminder</div>
+          <div class="settings-row-desc">Hides the 10-second hint that appears at the bottom when a Random N quiz enters full screen.</div>
+        </div>
+        <label class="settings-switch">
+          <input type="checkbox" ${getSetting('study', 'hideFullscreenReminder') === true ? 'checked' : ''} ${getSetting('study', 'fullscreenRandomN') === true ? '' : 'disabled'}
+                 onchange="setSetting('study', 'hideFullscreenReminder', this.checked); if (typeof syncFullscreenHintPreference === 'function') syncFullscreenHintPreference();">
+          <span class="settings-switch-track"></span>
+        </label>
+      </div>
     </div>
 
     <div class="settings-row">
@@ -824,6 +1039,30 @@ function renderSettingsStudyTab() {
       </div>
     </div>
 
+    <div class="settings-row" data-row-key="showSolveAllNavRail">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Line progress</div>
+        <div class="settings-row-desc">Shows the progress rail beside Solve Them All on wide screens — problem ticks, a "you are here" segment, and a pointer that tracks scroll.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${navRailOn ? 'checked' : ''}
+               onchange="setSetting('study', 'showSolveAllNavRail', this.checked); applyStudySettings();">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Show progress window</div>
+        <div class="settings-row-desc">The floating solved-count badge, bottom-right, while Solve Them All is open.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'showStickyScore') !== false ? 'checked' : ''}
+               onchange="setSetting('study', 'showStickyScore', this.checked); applyStudySettings();">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
     <div class="settings-row">
       <div class="settings-row-label">
         <div class="settings-row-title">Reveal wrong answer instantly</div>
@@ -845,6 +1084,14 @@ function renderSettingsStudyTab() {
 // only ever gets blocked/unblocked here, never forced to a different
 // choice, so this just toggles the dimmed look and the two buttons'
 // disabled state.
+function syncFullscreenHintSubBlock(fullscreenOn) {
+  const row = document.querySelector('[data-row-key="hideFullscreenReminder"]');
+  if (!row) return;
+  row.classList.toggle('settings-row-blocked', !fullscreenOn);
+  const input = row.querySelector('input[type="checkbox"]');
+  if (input) input.disabled = !fullscreenOn;
+}
+
 function syncSolveAllOrderBlock(lockOrderOn) {
   const row = document.querySelector('[data-row-key="solveAllOrder"]');
   if (!row) return;
@@ -865,12 +1112,15 @@ function syncSolveAllOrderActive(order) {
 }
 
 // Applies the Study-tab settings that need an <html> class (reduce motion,
-// hide-topic-while-active) — same mechanism as applyDisplaySettings/
+// hide-topic-while-active, the Solve-All nav rail's show/hide, the sticky
+// score badge's show/hide) — same mechanism as applyDisplaySettings/
 // applyNotificationSettings above. Called once at load and again from each
 // relevant row's onchange.
 function applyStudySettings() {
   document.documentElement.classList.toggle('settings-reduce-motion', getSetting('study', 'reduceMotion') === true);
   document.documentElement.classList.toggle('settings-hide-topic-while-active', getSetting('study', 'hideTopicWhileActive') === true);
+  document.documentElement.classList.toggle('settings-hide-sa-nav-rail', getSetting('study', 'showSolveAllNavRail') === false);
+  document.documentElement.classList.toggle('settings-hide-sticky-score', getSetting('study', 'showStickyScore') === false);
 }
 
 // Settings > Study > "Reset filter on page load" — clears every quiz's
@@ -997,6 +1247,8 @@ function applyNotificationSettings() {
 
   // ── Badges (problem buttons + forum button) — Go silent only ──
   document.documentElement.classList.toggle('settings-silent-badges', effectiveSilent);
+  document.documentElement.classList.toggle('settings-hide-fullscreen-hint', effectiveSilent);
+  if (typeof syncFullscreenHintPreference === 'function') syncFullscreenHintPreference();
 
   // ── Push notifications mirror ──
   writeNotifMuteFlag(effectiveSilent);

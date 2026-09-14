@@ -4,7 +4,7 @@
 // settings.js (loaded later, via the tier-2 sequential loader) exists.
 // Same "read the raw localStorage shape early" convention already used by
 // index.html's own anti-flicker inline script; kept minimal on purpose —
-// this only ever needs to peek at two keys, once, at boot.
+// this only ever needs to peek at a few Study keys before settings.js is available.
 function _readStudySettingRaw(key, defaultValue) {
   try {
     const raw = JSON.parse(localStorage.getItem('flux_settings') || 'null');
@@ -746,6 +746,10 @@ function setLiveQuizTimerDisplayEnabled(enabled) {
 function startLiveQuizTimer() {
   stopLiveQuizTimer(); // defensive: never leave a second interval/timer running if this somehow gets called twice in a row
   _quizTimerActive = true;
+  // Semantic attempt lifecycle for lightweight UI that must exist only in
+  // Random N mode (e.g. top-bar clock/battery). This is deliberately not
+  // tied to whether the optional floating timer is visually enabled.
+  window.dispatchEvent(new CustomEvent('quiztimer:activechange', { detail: { active: true } }));
   if (typeof getSetting === 'function' && getSetting('study', 'showLiveTimer') === false) return;
   // Also callable directly from the Study-tab toggle's onchange (settings.js)
   // when it's flipped back on mid-session — _beginLiveQuizTimerDisplay()'s
@@ -757,6 +761,9 @@ function startLiveQuizTimer() {
 function stopLiveQuizTimer() {
   const wasActive = _quizTimerActive;
   _quizTimerActive = false;
+  if (wasActive) {
+    window.dispatchEvent(new CustomEvent('quiztimer:activechange', { detail: { active: false } }));
+  }
   _clearLiveQuizTimerDisplay();
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   // Only fire this when the call represents an attempt that was genuinely
@@ -2437,7 +2444,10 @@ function startSelected() {
       // sufficiently direct user gesture, or if the person already denied
       // it once — either way, failing silently just means staying in the
       // normal window instead, never a broken quiz.
-      if (typeof getSetting === 'function' && getSetting('study', 'fullscreenRandomN') === true) {
+      const fullscreenRandomNOn = (typeof getSetting === 'function')
+        ? getSetting('study', 'fullscreenRandomN') === true
+        : _readStudySettingRaw('fullscreenRandomN', true);
+      if (fullscreenRandomNOn) {
         try {
           const req = document.documentElement.requestFullscreen();
           if (req && typeof req.catch === 'function') req.catch(() => {});
@@ -2500,6 +2510,20 @@ function exitAppOrChoiceToLanding() {
   const appPage   = document.getElementById('appPage');
   const choice    = document.getElementById('choicePage');
   const landing   = document.getElementById('landingScreen');
+
+  // Settings > Study > "Full screen for Random N" enters fullscreen the
+  // moment an attempt starts (see the requestFullscreen() call above) and
+  // checkAll() leaves it again once scores are revealed — but tapping the
+  // site logo to bail out *before* finishing skips checkAll() entirely, so
+  // without this the browser stayed stuck in fullscreen after landing back
+  // on the main menu. This is the one shared "go home" path both the direct
+  // logo tap and the Forum's forceLanding route funnel through, so it's
+  // covered here rather than duplicated at each call site — same reasoning
+  // as the Attempt Review cleanup just below. Only acts if fullscreen is
+  // actually active right now, same guard as checkAll()'s own exit.
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
 
   // "All the way home" needs to also leave the Attempt Review screen behind,
   // and it's not covered by anything above: openAttemptReview() (stats.js)
@@ -2614,7 +2638,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '11.1.2';
+const CURRENT_VERSION = '11.2.0';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;
@@ -2683,6 +2707,211 @@ function dismissUpdate() {
   document.getElementById('update-banner').classList.remove('visible');
   BannerManager.release('update');
 }
+
+// ─── Random N full-screen reminder ───────────────────────────────────────────
+// Shares BannerManager with update/bug/theme so it never overlaps them. It
+// stays visible for 10 seconds of actual on-screen time; if the update banner
+// preempts it, both the timeout and the receding outline pause and resume when
+// this banner gets its turn again.
+const FULLSCREEN_HINT_DURATION = 10 * 1000;
+const FULLSCREEN_HINT_FADE_MS = 300;
+let _fullscreenHintRemaining = FULLSCREEN_HINT_DURATION;
+let _fullscreenHintTimer = null;
+let _fullscreenHintFadeTimer = null;
+let _fullscreenHintFadeEndHandler = null;
+let _fullscreenHintFading = false;
+let _fullscreenHintVisibleAt = 0;
+let _fullscreenHintRequested = false;
+let _fullscreenHintShownThisFullscreen = false;
+let _fullscreenHintWasFullscreen = !!document.fullscreenElement;
+
+function _studySettingNow(key, defaultValue) {
+  return (typeof getSetting === 'function')
+    ? getSetting('study', key)
+    : _readStudySettingRaw(key, defaultValue);
+}
+
+function _fullscreenHintEligible() {
+  if (!document.fullscreenElement) return false;
+  if (typeof isQuizTimerActive !== 'function' || !isQuizTimerActive()) return false;
+  if (_studySettingNow('fullscreenRandomN', true) !== true) return false;
+  if (_studySettingNow('hideFullscreenReminder', false) === true) return false;
+  if (typeof getSetting === 'function' && getSetting('notifications', 'goSilent') === true) return false;
+  return true;
+}
+
+function _drawFullscreenHintRing(durationMs) {
+  const banner = document.getElementById('fullscreen-hint-banner');
+  const ring = banner && banner.querySelector('.fullscreen-hint-ring');
+  const rect = ring && ring.querySelector('rect');
+  if (!banner || !ring || !rect) return;
+
+  const w = banner.offsetWidth, h = banner.offsetHeight;
+  const strokeW = 1.5;
+  const inset = strokeW / 2;
+  const radius = parseFloat(getComputedStyle(banner).borderTopLeftRadius) || 0;
+  ring.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  rect.setAttribute('x', inset);
+  rect.setAttribute('y', inset);
+  rect.setAttribute('width', Math.max(0, w - inset * 2));
+  rect.setAttribute('height', Math.max(0, h - inset * 2));
+  rect.setAttribute('rx', Math.max(0, radius - inset));
+
+  const len = rect.getTotalLength();
+  const elapsedFraction = Math.max(0, Math.min(1, 1 - durationMs / FULLSCREEN_HINT_DURATION));
+  rect.style.transition = 'none';
+  rect.style.strokeDasharray = len;
+  rect.style.strokeDashoffset = len * elapsedFraction;
+  void rect.getBoundingClientRect();
+  rect.style.transition = `stroke-dashoffset ${Math.max(0, durationMs)}ms linear`;
+  requestAnimationFrame(() => { rect.style.strokeDashoffset = len; });
+}
+
+function _pauseFullscreenHint() {
+  if (!_fullscreenHintVisibleAt) return;
+  const elapsed = performance.now() - _fullscreenHintVisibleAt;
+  _fullscreenHintRemaining = Math.max(0, _fullscreenHintRemaining - elapsed);
+  _fullscreenHintVisibleAt = 0;
+  clearTimeout(_fullscreenHintTimer);
+  _fullscreenHintTimer = null;
+}
+
+function _clearFullscreenHintFadeWait() {
+  clearTimeout(_fullscreenHintFadeTimer);
+  _fullscreenHintFadeTimer = null;
+  const banner = document.getElementById('fullscreen-hint-banner');
+  if (banner && _fullscreenHintFadeEndHandler) {
+    banner.removeEventListener('animationend', _fullscreenHintFadeEndHandler);
+  }
+  _fullscreenHintFadeEndHandler = null;
+}
+
+function _hideFullscreenHintVisual() {
+  _pauseFullscreenHint();
+  const banner = document.getElementById('fullscreen-hint-banner');
+  if (banner) { banner.classList.remove('visible', 'hiding'); banner.hidden = true; }
+}
+
+function _completeFullscreenHintFade() {
+  if (!_fullscreenHintFading) return;
+  _clearFullscreenHintFadeWait();
+  _fullscreenHintFading = false;
+  _fullscreenHintVisibleAt = 0;
+  _fullscreenHintRemaining = FULLSCREEN_HINT_DURATION;
+  _fullscreenHintRequested = false;
+  const banner = document.getElementById('fullscreen-hint-banner');
+  if (banner) { banner.classList.remove('visible', 'hiding'); banner.hidden = true; }
+
+  // cancel(), rather than release(), also removes this hint if an update
+  // banner happened to preempt it during the short fade-out animation.
+  if (window.BannerManager && typeof BannerManager.cancel === 'function') BannerManager.cancel('fullscreen-hint');
+  else if (window.BannerManager) BannerManager.release('fullscreen-hint');
+}
+
+function _fadeOutFullscreenHint() {
+  if (_fullscreenHintFading) return;
+  _pauseFullscreenHint();
+  _fullscreenHintFading = true;
+  const banner = document.getElementById('fullscreen-hint-banner');
+  if (!banner || !banner.classList.contains('visible')) {
+    _completeFullscreenHintFade();
+    return;
+  }
+
+  banner.classList.add('hiding');
+  _fullscreenHintFadeEndHandler = (event) => {
+    if (event.target === banner) _completeFullscreenHintFade();
+  };
+  banner.addEventListener('animationend', _fullscreenHintFadeEndHandler);
+  // Fallback for browsers/reduced-motion combinations that skip animationend.
+  _fullscreenHintFadeTimer = setTimeout(_completeFullscreenHintFade, FULLSCREEN_HINT_FADE_MS + 80);
+}
+
+function _showFullscreenHintVisual() {
+  // If another banner preempted us during our fade, do not let the queue
+  // resurrect a hint the user already dismissed (or whose 10s expired).
+  if (_fullscreenHintFading) {
+    _completeFullscreenHintFade();
+    return;
+  }
+  if (!_fullscreenHintEligible()) {
+    _cancelFullscreenHint();
+    return;
+  }
+  const banner = document.getElementById('fullscreen-hint-banner');
+  if (!banner) {
+    _cancelFullscreenHint();
+    return;
+  }
+  _clearFullscreenHintFadeWait();
+  banner.hidden = false;
+  banner.classList.remove('hiding');
+  banner.classList.add('visible');
+  _fullscreenHintVisibleAt = performance.now();
+  _drawFullscreenHintRing(_fullscreenHintRemaining);
+  clearTimeout(_fullscreenHintTimer);
+  _fullscreenHintTimer = setTimeout(_fadeOutFullscreenHint, _fullscreenHintRemaining);
+}
+
+function _cancelFullscreenHint() {
+  clearTimeout(_fullscreenHintTimer);
+  _fullscreenHintTimer = null;
+  _clearFullscreenHintFadeWait();
+  _fullscreenHintFading = false;
+  _fullscreenHintVisibleAt = 0;
+  _fullscreenHintRemaining = FULLSCREEN_HINT_DURATION;
+  _fullscreenHintRequested = false;
+  const banner = document.getElementById('fullscreen-hint-banner');
+  if (banner) { banner.classList.remove('visible', 'hiding'); banner.hidden = true; }
+  if (window.BannerManager && typeof BannerManager.cancel === 'function') BannerManager.cancel('fullscreen-hint');
+  else if (window.BannerManager) BannerManager.release('fullscreen-hint');
+}
+
+// The entire hint is clickable/tappable. Start fading immediately, then route
+// directly to the Study tab and the full-screen setting instead of making the
+// user hunt through Settings.
+function openFullscreenHintSettings() {
+  _fadeOutFullscreenHint();
+  if (typeof openSettingsStudySection === 'function') {
+    openSettingsStudySection('fullscreenRandomN');
+  } else if (typeof openSettingsScreen === 'function') {
+    openSettingsScreen('study', 'fullscreenRandomN');
+  }
+}
+
+function _maybeShowFullscreenHint() {
+  if (_fullscreenHintShownThisFullscreen || _fullscreenHintRequested || !_fullscreenHintEligible()) return;
+  _fullscreenHintShownThisFullscreen = true;
+  _fullscreenHintRequested = true;
+  _fullscreenHintRemaining = FULLSCREEN_HINT_DURATION;
+  BannerManager.request('fullscreen-hint');
+}
+
+// Called by the two Settings > Study switches so changing either preference
+// takes effect immediately without requiring a new quiz or fullscreen cycle.
+function syncFullscreenHintPreference() {
+  if (_fullscreenHintEligible()) _maybeShowFullscreenHint();
+  else _cancelFullscreenHint();
+}
+
+BannerManager.register('fullscreen-hint', _showFullscreenHintVisual, _hideFullscreenHintVisual);
+
+document.addEventListener('fullscreenchange', () => {
+  const nowFullscreen = !!document.fullscreenElement;
+  if (nowFullscreen && !_fullscreenHintWasFullscreen) {
+    _fullscreenHintShownThisFullscreen = false;
+    _maybeShowFullscreenHint();
+  } else if (!nowFullscreen) {
+    _cancelFullscreenHint();
+    _fullscreenHintShownThisFullscreen = false;
+  }
+  _fullscreenHintWasFullscreen = nowFullscreen;
+});
+
+window.addEventListener('quiztimer:activechange', (event) => {
+  if (event && event.detail && event.detail.active) _maybeShowFullscreenHint();
+  else _cancelFullscreenHint();
+});
 
 // ─── Bug report nudge banner ("Report on Telegram") ───────────────────────────
 // Shows once a day, after ~10 minutes of active use — not on a repeating timer.

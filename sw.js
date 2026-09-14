@@ -31,7 +31,7 @@
 // no `document`, so it can't read the data-course attribute the way every
 // other file here does. This is a manual swap item at release time —
 // change the 'phys162' prefix by hand alongside the data-course attribute.
-const CACHE_NAME = 'phys161-offline-v5';
+const CACHE_NAME = 'phys161-offline-v7';
 
 // ── Phase 4: full offline mode (js/offline-mode.js) ──
 // OFFLINE_MODE_CACHE_NAME must match that file's own copy of the same

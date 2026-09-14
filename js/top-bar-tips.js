@@ -257,6 +257,12 @@
     textEl.textContent = tip;
     tipVisible = true;
     tipEl.classList.add('visible');
+    // Tells js/top-bar-quiz-status.js (if that file is active right now)
+    // to fade its clock/battery out for as long as this tip is up — the
+    // two share the same top-bar gap and are never meant to overlap. This
+    // file has no reference to that one and doesn't need it; a plain
+    // window event keeps them decoupled.
+    window.dispatchEvent(new CustomEvent('topbartip:show'));
     // Wait a frame so layout has settled before measuring scrollWidth.
     requestAnimationFrame(() => requestAnimationFrame(runMarquee));
     clearTimeout(hideTimer);
@@ -269,6 +275,9 @@
     stopMarquee();
     clearTimeout(hideTimer);
     hideTimer = null;
+    // Counterpart to the 'topbartip:show' dispatch in showTip() — lets the
+    // clock/battery fade back in now that the gap is free again.
+    window.dispatchEvent(new CustomEvent('topbartip:hide'));
   }
 
   // Called on resize and on any tracked screen's class flip while a tip

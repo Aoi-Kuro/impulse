@@ -1,0 +1,217 @@
+/* ── Solve-All side navigator ──────────────────────────────────────────────
+   Progress rail, built/shown by js/solve-all-nav.js. Desktop only:
+   #solveAllContainer is centered at max-width 760px (see css/style.css), so
+   this needs a viewport wide enough to have real gutter beside it without
+   crowding the content — hence display:none below the breakpoint rather
+   than just hiding visually, so it never reserves layout space or receives
+   clicks on narrower/mobile screens.
+
+   That breakpoint (1480px below) is NOT arbitrary — it's derived from the
+   rail's own fixed screen-edge position and must be recomputed if either
+   changes:
+     containerLeftEdge(vw) = (vw - 760) / 2          // 760 = container max-width
+     railRightEdge         = inset-inline-end + width // both from #saNavRail below
+     breakpoint             = 760 + 2 * (railRightEdge + desiredGap)
+   With the current 200px inset-inline-end + 130px width (railRightEdge =
+   330px) and a 30px gap, that's 760 + 2*(330+30) = 1480px. Below that width
+   #solveAllContainer's actual left edge sits to the *left* of the rail's
+   right edge, so the rail overlaps the problem cards instead of sitting in
+   the gutter beside them — it only clears the content once the viewport is
+   this wide, not merely once #saNavRail is display:block. If you change
+   inset-inline-end, width, or the container's max-width, recompute this
+   number rather than picking one that merely "looks fine" on one screen. 
+
+   Side: always the left edge of the viewport now (there used to be a
+   Settings > Study > Solve Them All > "Line progress" > Position toggle for
+   this; it's been removed, and the rail is left-only going forward). Every
+   offset below is still written with the *logical* inset-inline-start/end
+   properties rather than physical left/right, and #saNavRail's own
+   `direction: rtl` is what makes inline-end resolve to the physical left —
+   so the whole rail (outer position, line, ticks, labels, pointer, arrow)
+   moves as one unit from that single property, and nothing here needs a
+   separate "left version" of each rule. Latin letters/digits (the "P20"
+   labels) always display left-to-right regardless of direction, so text
+   itself never mirrors — only positioning does.
+
+   Distance from the problems to the line: this rail is position:fixed
+   against the *viewport*, not measured against #solveAllContainer's
+   actual edge, so there's no single "gap" variable — it's the combination
+   of two offsets below. To bring the line closer to the problems, start
+   with .sa-nav-track::after's `inset-inline-start` (currently 24px) —
+   that's the line's own offset from the rail's content-facing edge, the
+   most direct lever. If you want it closer still once that hits 0, reduce
+   #saNavRail's `inset-inline-end` (currently 28px) and/or its `width`
+   (currently 130px), which move the rail's content-facing edge itself
+   closer to center. Ticks/marks/labels/pointer are all offset relative to
+   the same edge, so they'll follow the line automatically — no need to
+   touch them individually. */
+
+#saNavRail {
+  display: none;
+}
+
+@media (min-width: 1480px) {
+  #saNavRail {
+    display: block;
+    position: fixed;
+    top: 14vh;
+    bottom: 12vh;
+    inset-inline-end: 200px; /* <-- see "distance" comment above for the 2nd lever */
+    width: 130px;
+    z-index: 750; /* below #stickyScore/modals (800+), above ordinary page content */
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease;
+    direction: rtl; /* makes inset-inline-end below resolve to the left edge — see header comment */
+  }
+  #saNavRail.is-ready {
+    opacity: 1;
+  }
+
+  .sa-nav-track {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* The line itself — deliberately not fully opaque; it's a faint spine for
+     the tick marks to hang off, not something meant to draw the eye on its
+     own (the highlight segment below is what draws the eye). */
+  .sa-nav-track::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    inset-inline-start: 24px; /* <-- see "distance" comment above: the main lever */
+    width: 2px;
+    background: var(--muted);
+    opacity: 0.32;
+    border-radius: calc(2px * var(--radius-mult));
+    pointer-events: none;
+  }
+
+  /* Wide invisible strip over the line + tick marks so clicking near (not
+     just exactly on) the 2px line still registers — the visual line stays
+     thin, the hitbox doesn't. */
+  .sa-nav-hitzone {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    inset-inline-start: 8px;
+    width: 36px;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  /* "You are here" — the track segment between the two tick marks bracketing
+     the current scroll position. Repositioned (not re-created) as the user
+     scrolls, so moving into a new interval reads as a smooth slide-and-fade
+     rather than a jump cut. */
+  .sa-nav-highlight {
+    position: absolute;
+    inset-inline-start: 23.5px;
+    width: 3px;
+    background: var(--accent);
+    opacity: 0.85;
+    border-radius: calc(2px * var(--radius-mult));
+    box-shadow: 0 0 7px rgba(var(--accent-rgb), 0.55);
+    pointer-events: none;
+    transition: top 0.3s ease, height 0.3s ease, opacity 0.3s ease;
+  }
+
+  .sa-nav-ticks {
+    position: absolute;
+    inset: 0;
+  }
+
+  .sa-nav-tick {
+    position: absolute;
+    inset-inline: 0;
+    height: 28px; /* generous click/tap hitbox around each tick, well past the visible 2px mark */
+    transform: translateY(-50%);
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .sa-nav-tick-mark {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: 18px;
+    width: 12px;
+    height: 2px;
+    transform: translateY(-50%);
+    background: var(--muted);
+    opacity: 0.42;
+    border-radius: calc(2px * var(--radius-mult));
+    transition: background-color 0.28s ease, opacity 0.28s ease, width 0.28s ease;
+  }
+
+  /* Font bumped up a notch from the original 0.62rem — the P-number labels
+     were reading a little too small next to the tick marks. */
+  .sa-nav-tick-label {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: 38px;
+    transform: translateY(-50%);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    opacity: 0.42;
+    white-space: nowrap;
+    transition: color 0.28s ease, opacity 0.28s ease, inset-inline-start 0.28s ease;
+  }
+
+  .sa-nav-tick:hover .sa-nav-tick-mark,
+  .sa-nav-tick:hover .sa-nav-tick-label {
+    opacity: 0.75;
+  }
+
+  /* The two ticks bracketing the current position — fades smoothly up from
+     the dim resting state (above) as the highlighted interval changes.
+     The label nudges 2px further from the mark (was a transform: translateX,
+     switched to an inset-inline-start bump so it mirrors correctly with the
+     rest of the rail under this rail's `direction: rtl` — transforms don't
+     know about logical direction, this does). */
+  .sa-nav-tick.is-active .sa-nav-tick-mark {
+    opacity: 1;
+    width: 16px;
+    background: var(--accent);
+    box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.6);
+  }
+  .sa-nav-tick.is-active .sa-nav-tick-label {
+    opacity: 1;
+    color: var(--accent);
+    inset-inline-start: 40px;
+  }
+
+  /* Small arrow riding just inside the line, pointing at it, tracking
+     scroll position continuously (not snapped to ticks) via its own `top`. */
+  .sa-nav-pointer {
+    position: absolute;
+    inset-inline-start: 3px;
+    top: 0%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    transition: top 0.1s linear;
+  }
+  .sa-nav-pointer-arrow {
+    display: block;
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-inline-start: 7px solid var(--accent2);
+    filter: drop-shadow(0 0 4px rgba(var(--accent2-rgb), 0.65));
+  }
+}
+
+@media (min-width: 1480px) and (prefers-reduced-motion: reduce) {
+  #saNavRail,
+  .sa-nav-highlight,
+  .sa-nav-tick-mark,
+  .sa-nav-tick-label,
+  .sa-nav-pointer {
+    transition: none;
+  }
+}

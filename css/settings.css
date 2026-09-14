@@ -260,6 +260,7 @@ html.settings-hide-top-bar-tip .top-bar-tip { display: none !important; }
 html.settings-hide-update-banner #update-banner { display: none; }
 html.settings-hide-theme-banner #theme-nudge-banner { display: none; }
 html.settings-hide-bug-banner #bug-report-banner { display: none; }
+html.settings-hide-fullscreen-hint #fullscreen-hint-banner { display: none; }
 
 /* Go silent's badge targets all set their display via inline style
    (badge.style.display = 'flex'/'none' in forum.js) rather than a class —
@@ -342,6 +343,34 @@ html.settings-reduce-motion *::after {
    scores are shown — see their own comments in js/quiz-engine.js. */
 html.settings-hide-topic-while-active #quizContainer:not(.results-shown) .problem-topic {
   display: none;
+}
+
+/* Line progress rail (css/solve-all-nav.css owns its layout; this just
+   toggles it, same as every other Study-tab effect here). !important since
+   #saNavRail already carries its own `display: block` inside a media query
+   — see that file's header comment for why the id-plus-class selector here
+   would win anyway, but !important removes any doubt. */
+html.settings-hide-sa-nav-rail #saNavRail { display: none !important; }
+
+/* Floating progress window (#stickyScore, css/style.css) during Solve Them
+   All — was always shown whenever Solve-All was open; now optional. Targets
+   .visible specifically since that's the class that actually flips display
+   on (see css/style.css), so this has to win over that rule regardless of
+   which stylesheet loads second. */
+html.settings-hide-sticky-score #stickyScore.visible { display: none !important; }
+
+/* Both #saNavRail and #stickyScore are position:fixed and independent of
+   whichever screen is currently showing, so they kept rendering on top of
+   #settingsScreen — that screen has no `position` of its own, so its
+   z-index never actually takes effect against fixed-position siblings.
+   Simplest fix: hide both outright for as long as Settings is open, rather
+   than trying to out-z-index elements that don't participate in stacking.
+   `settings-screen-open` is toggled on <html> by openSettingsScreen/
+   closeSettingsScreen (js/settings.js), not tied to any user setting. Needs
+   !important over #stickyScore.visible's own `display: block`. */
+html.settings-screen-open #saNavRail,
+html.settings-screen-open #stickyScore.visible {
+  display: none !important;
 }
 
 /* ── Offline & Sync tab (js/offline-mode.js renders the content, this just
@@ -495,4 +524,25 @@ html.settings-hide-topic-while-active #quizContainer:not(.results-shown) .proble
   font-family: var(--mono);
   font-size: 0.78rem;
   color: var(--muted);
+}
+
+/* ── Backup section (js/settings.js's renderSettingsBackupSection, appended
+   after Cache & storage in js/offline-mode.js) — same bordered-block
+   convention as .settings-cache-section above, and the same
+   .settings-offline-* heading/desc/button classes as the rest of this tab,
+   with the two buttons sitting side by side rather than stacked. */
+.settings-backup-section {
+  padding-top: 0rem;
+  margin-top: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.settings-backup-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.settings-backup-btn-row .settings-offline-btn {
+  align-self: auto;
 }

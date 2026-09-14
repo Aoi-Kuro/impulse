@@ -14,6 +14,7 @@
 //   BannerManager.register(id, showFn, hideFn);  // once, at setup
 //   BannerManager.request(id);                   // "I'd like to show now"
 //   BannerManager.release(id);                   // "I'm done / dismissed"
+//   BannerManager.cancel(id);                    // remove whether active or queued
 window.BannerManager = (function () {
   const PREEMPT = 'update'; // the only id that jumps the queue
 
@@ -54,5 +55,20 @@ window.BannerManager = (function () {
     if (next) request(next);
   }
 
-  return { register, request, release };
+  // Removes a banner even if it is still waiting in line. This is useful
+  // for state-bound notices (for example a full-screen-only hint) that
+  // must never surface later after the state that requested them has ended.
+  function cancel(id) {
+    for (let i = waiting.length - 1; i >= 0; i--) {
+      if (waiting[i] === id) waiting.splice(i, 1);
+    }
+    if (activeId !== id) return;
+    const hider = hiders[id];
+    if (hider) hider();
+    activeId = null;
+    const next = waiting.shift();
+    if (next) request(next);
+  }
+
+  return { register, request, release, cancel };
 })();

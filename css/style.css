@@ -415,6 +415,167 @@
     .top-bar-tip { display: none; }
   }
 
+  /* ── Top bar quiz status (clock + battery) ──────────────────────────────
+     Sits in the same logo↔icons gap as .top-bar-tip above, centered the
+     same way (js/top-bar-quiz-status.js sets `left` inline to that gap's
+     actual midpoint, mirroring top-bar-tips.js's getSafeBounds() — the two
+     files don't share code, but the calculation is identical since it's
+     the same gap). Unlike the tip, showing this isn't tied to
+     body.is-scrolled: it's meant to stay visible for as long as it's
+     eligible, not just once the bar has visually distinguished itself.
+     Its own JS is what decides *whether* to show it (Random N active
+     AND actually in fullscreen right now — not Solve Them All/Mistakes,
+     not windowed — plus not mobile, plus room to fit) — this rule just
+     handles the opacity transition once that decision is `.visible`,
+     plus the *temporary* fade-out while a tip is up (`.tip-showing`),
+     same idea as .top-bar-tip.visible but inverted: the two never show
+     at once. */
+  .top-bar-quiz-status {
+    position: fixed;
+    top: env(safe-area-inset-top, 0px);
+    left: 50%;
+    transform: translateX(-50%);
+    height: var(--top-bar-h);
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    white-space: nowrap;
+    z-index: 1001;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  .top-bar-quiz-status.visible:not(.tip-showing) { opacity: 1; }
+
+  /* With battery data available, the separator is the immutable center
+     anchor. The clock is pinned to its left and battery/charging state to
+     its right, so changing battery text can never move the `|` or clock.
+     Clock-only mode keeps the original centered flex layout. */
+  .top-bar-quiz-status.has-battery {
+    width: 0;
+    transform: none;
+    gap: 0;
+  }
+
+  .tbqs-time {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+  .top-bar-quiz-status.has-battery .tbqs-time {
+    position: absolute;
+    top: 50%;
+    right: 0.55rem;
+    transform: translateY(-50%);
+  }
+  /* Blinks off/on once a second (toggled from JS, not a CSS animation, so
+     it stays perfectly in step with the minute actually changing) — a
+     quick opacity fade rather than a hard cut. */
+  .tbqs-colon {
+    display: inline-block;
+    transition: opacity 0.15s ease;
+  }
+  .tbqs-colon.dim { opacity: 0.15; }
+
+  .tbqs-battery {
+    display: none; /* only js/top-bar-quiz-status.js's own .has-battery class turns this on — most laptops/desktops have no Battery Status API at all */
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .top-bar-quiz-status.has-battery .tbqs-battery {
+    display: flex;
+    position: absolute;
+    top: 50%;
+    left: 0.55rem;
+    transform: translateY(-50%);
+  }
+
+  .tbqs-sep {
+    display: none;
+    color: var(--muted);
+    opacity: 0.4;
+    font-size: 0.8rem;
+  }
+  .top-bar-quiz-status.has-battery .tbqs-sep {
+    display: block;
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translate(-50%, -50%);
+  }
+
+  /* Plain CSS battery outline (no image asset) — a rounded rect plus a
+     small terminal nub, same visual language as a phone status bar. The
+     fill bar inside (.tbqs-batt-fill) is the only piece JS actually
+     resizes/recolors; the outline itself never changes. */
+  .tbqs-batt-icon {
+    position: relative;
+    display: inline-block;
+    width: 22px;
+    height: 11px;
+    border: 1.4px solid var(--muted);
+    border-radius: 2px;
+    box-sizing: border-box;
+  }
+  .tbqs-batt-icon::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: -3px;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 4px;
+    background: var(--muted);
+    border-radius: 0 1px 1px 0;
+  }
+  .tbqs-batt-fill {
+    position: absolute;
+    top: 1.5px;
+    bottom: 1.5px;
+    left: 1.5px;
+    border-radius: 1px;
+    background: var(--muted);
+    transition: width 0.3s ease, background-color 0.3s ease;
+  }
+  /* Charge-level colors — same three-tier language as the score breakdown
+     chips elsewhere (--correct/--partial/--wrong), so "battery critical"
+     reads the same as "answer wrong" instead of introducing a fourth
+     color meaning. Only applies while discharging; a charging battery
+     stays --correct regardless of level (it's on its way up, not down). */
+  .tbqs-batt-fill.batt-low     { background: var(--partial); }
+  .tbqs-batt-fill.batt-critical{ background: var(--wrong); }
+  .tbqs-batt-fill.batt-charging{ background: var(--correct); }
+
+
+  .tbqs-batt-charging {
+    display: none;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .tbqs-batt-charging.visible { display: inline; }
+
+  .tbqs-batt-pct {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  @media (max-width: 480px) {
+    .top-bar-quiz-status { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .top-bar-quiz-status,
+    .tbqs-colon,
+    .tbqs-batt-fill {
+      transition: none;
+    }
+  }
+
   /* ── Theme toggle switch ── */
   /* Same safe-area reasoning as .site-logo-link just above, mirrored onto
      the right/top edge instead of left/top. */
@@ -570,6 +731,59 @@
   }
   #bug-report-banner .banner-dismiss:hover { color: var(--text); }
 
+  /* ── Random N full-screen reminder ── */
+  #fullscreen-hint-banner {
+    display: none;
+    position: fixed;
+    bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9998;
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--surface);
+    border: 1px solid transparent;
+    border-radius: calc(8px * var(--radius-mult));
+    padding: 0.65rem 1.1rem;
+    box-shadow: 0 4px 24px color-mix(in srgb, var(--shadow) calc(0.45 * 100%), transparent);
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--text);
+    text-align: left;
+    align-items: center;
+    gap: 0.9rem;
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    animation: banner-slide-in 0.35s cubic-bezier(.4,0,.2,1);
+  }
+  #fullscreen-hint-banner.visible { display: flex; }
+  #fullscreen-hint-banner.hiding {
+    animation: banner-slide-out 0.3s cubic-bezier(.4,0,.2,1) forwards;
+    pointer-events: none;
+  }
+  #fullscreen-hint-banner:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  #fullscreen-hint-banner .banner-icon { font-size: 1rem; color: var(--accent); }
+  #fullscreen-hint-banner .banner-text { color: var(--muted); }
+  #fullscreen-hint-banner .banner-text strong { color: var(--text); }
+  .fullscreen-hint-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .fullscreen-hint-ring rect {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+
   /* ── Theme nudge banner ── */
   #theme-nudge-banner {
     display: none;
@@ -625,6 +839,7 @@
     }
     #update-banner,
     #bug-report-banner,
+    #fullscreen-hint-banner,
     #theme-nudge-banner {
       left: 0.6rem;
       right: 0.6rem;
@@ -636,11 +851,13 @@
       align-items: center;
       animation-name: banner-slide-in-mobile;
     }
-    #bug-report-banner.hiding {
+    #bug-report-banner.hiding,
+    #fullscreen-hint-banner.hiding {
       animation: banner-slide-out-mobile 0.3s cubic-bezier(.4,0,.2,1) forwards;
     }
     #update-banner .banner-text,
     #bug-report-banner .banner-text,
+    #fullscreen-hint-banner .banner-text,
     #theme-nudge-banner .banner-text {
       flex: 1 1 auto;
       min-width: 0;
