@@ -115,6 +115,31 @@ function decomposeUnitToken(sym) {
   return { base: sym, scale: 1 }; // no recognized prefix — treat as-is (old behavior)
 }
 
+// Named SI-derived units, expressed in base units. parseUnitToMap() expands
+// each of these into base units, so equivalent spellings all reduce to the
+// same canonical map: "Wb" == "V s" == "T m^2" == "kg m^2 s^-2 A^-1", and
+// "N s" == "kg m/s", "V/m" == "N/C", "W s" == "J", and so on.
+// Every entry here is a *coherent* SI unit (conversion factor exactly 1), so
+// expanding one never changes the numeric scale — only SI prefixes do, and
+// those are still peeled off first by decomposeUnitToken().
+// Base units (kg, m, s, A) and everything not listed here (g, L, in, days,
+// hectares, h, rad, ...) stay opaque symbols, exactly as before.
+// (The map key is "Ohm"; that's the symbol this course's unit boxes accept.)
+const DERIVED_UNITS = {
+  N:   { kg: 1, m: 1, s: -2 },
+  J:   { kg: 1, m: 2, s: -2 },
+  W:   { kg: 1, m: 2, s: -3 },
+  Pa:  { kg: 1, m: -1, s: -2 },
+  Hz:  { s: -1 },
+  C:   { A: 1, s: 1 },
+  V:   { kg: 1, m: 2, s: -3, A: -1 },
+  Ohm: { kg: 1, m: 2, s: -3, A: -2 },
+  F:   { kg: -1, m: -2, s: 4, A: 2 },
+  T:   { kg: 1, s: -2, A: -1 },
+  Wb:  { kg: 1, m: 2, s: -2, A: -1 },
+  H:   { kg: 1, m: 2, s: -2, A: -2 },
+};
+
 // Some unit strings (accepted answers, or things a user pastes/types) use real
 // Unicode superscript characters, e.g. "cm²" or "s⁻¹", instead of "cm^2" /
 // "s^-1". Normalize those to caret notation up front so the rest of the
@@ -150,7 +175,14 @@ function parseUnitToMap(raw) {
       const exp = m[2] !== undefined ? parseInt(m[2], 10) : 1;
       const { base, scale: pfxScale } = decomposeUnitToken(m[1]);
       const signedExp = sign * exp;
-      map.set(base, (map.get(base) || 0) + signedExp);
+      const expansion = DERIVED_UNITS[base];
+      if (expansion) {
+        // Named derived unit (N, J, Wb, ...): fold in its base-unit
+        // dimensions so any equivalent combination compares equal.
+        for (const b in expansion) map.set(b, (map.get(b) || 0) + expansion[b] * signedExp);
+      } else {
+        map.set(base, (map.get(base) || 0) + signedExp);
+      }
       scale *= Math.pow(pfxScale, signedExp);
     }
     return true;
@@ -2638,7 +2670,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '11.2.0';
+const CURRENT_VERSION = '11.2.2';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;
