@@ -229,6 +229,29 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// -- Update-triggered precache purge -------------------------------------
+// respondDefault()'s isPrecached branch below is cache-first with a
+// background revalidate -- great for speed, but it structurally means a
+// changed file (style.css, course-config.js, banner-manager.js, themes.js,
+// the MathJax bundle) never shows up on the SAME reload that fetches it:
+// reload #1 serves the stale cached copy instantly while quietly re-fetching
+// in the background, and only reload #2 actually serves what just landed in
+// the cache. quiz-engine.js's checkForUpdate() already knows the instant a
+// real content update exists (version.json vs CURRENT_VERSION) -- when it
+// does, it messages this listener to wipe CACHE_NAME before the page
+// reloads, so that one reload's fetches all miss cache and go straight to
+// the network, repopulating it fresh. Everyday browsing (no version
+// mismatch) never sends this message, so the normal cache-first path above
+// is completely unaffected.
+self.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'purge-update-cache') return;
+  event.waitUntil(
+    caches.delete(CACHE_NAME).then(() => {
+      if (event.ports && event.ports[0]) event.ports[0].postMessage({ ok: true });
+    })
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   event.respondWith(routeFetch(event));
 });

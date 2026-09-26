@@ -2670,7 +2670,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '11.2.2';
+const CURRENT_VERSION = '11.2.3';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;
@@ -2701,14 +2701,15 @@ BannerManager.register('update', () => {
 // again the instant a quiz attempt ends (see stopLiveQuizTimer above) so a
 // pending update doesn't sit around for up to another 5-minute poll once
 // it's finally safe to apply.
-function maybeForceUpdateOutsideQuiz() {
+async function maybeForceUpdateOutsideQuiz() {
   if (!_updatePending) return;
   if (typeof getSetting !== 'function') return;
   const hidden = getSetting('notifications', 'hideUpdateReminder') === true;
   const forceOutside = getSetting('notifications', 'forceRefreshOutsideQuiz') === true;
   if (!hidden || !forceOutside) return;
   if (isQuizTimerActive()) return; // never interrupt a live timed attempt
-  location.reload(true);
+  await purgeUpdateCacheAndWait();
+  location.reload();
 }
 
 async function checkForUpdate() {
@@ -2720,6 +2721,12 @@ async function checkForUpdate() {
     const latest = (data.version || '').trim();
     if (latest && latest !== CURRENT_VERSION) {
       _updatePending = true;
+      // Fire-and-forget: gets a head start on the reload button/auto-reload
+      // below (both also await this themselves, so it's safe either way) —
+      // by the time either actually fires, the purge has usually already
+      // completed instead of adding its ~instant caches.delete() latency to
+      // the critical path of the click itself.
+      purgeUpdateCacheAndWait();
       document.getElementById('banner-new-version').textContent = latest;
       if (typeof getSetting === 'function' && getSetting('notifications', 'hideUpdateReminder') === true) {
         // Reminder hidden: never occupy BannerManager's queue for it — just
@@ -2732,6 +2739,37 @@ async function checkForUpdate() {
   } catch (_) {
     // Network error or JSON parse failure — fail silently
   }
+}
+
+// Wipes sw.js's CACHE_NAME (see that file's matching listener) so the very
+// next reload's fetches for style.css/course-config.js/banner-manager.js/
+// themes.js/the MathJax bundle miss cache and hit the network fresh, instead
+// of stale-while-revalidate needing a second reload to actually show up.
+// Only ever called from an actual version-mismatch path below — ordinary
+// browsing never touches this, so the normal cache-first speed is untouched
+// outside of an update. Resolves either way (network error, no controller
+// yet, or the SW just not answering in time) so a reload is never blocked.
+function purgeUpdateCacheAndWait() {
+  return new Promise((resolve) => {
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) { resolve(); return; }
+    const channel = new MessageChannel();
+    const timeout = setTimeout(resolve, 2000); // don't let an unresponsive SW hang the reload
+    channel.port1.onmessage = () => { clearTimeout(timeout); resolve(); };
+    try {
+      navigator.serviceWorker.controller.postMessage({ type: 'purge-update-cache' }, [channel.port2]);
+    } catch (_) {
+      clearTimeout(timeout);
+      resolve();
+    }
+  });
+}
+
+// Called by the update banner's Reload button. Purges first (idempotent —
+// safe even if checkForUpdate() below already fired it) so this single
+// reload actually shows the update, not just schedules it for next time.
+async function reloadForUpdate() {
+  await purgeUpdateCacheAndWait();
+  location.reload();
 }
 
 function dismissUpdate() {

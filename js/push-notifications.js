@@ -65,11 +65,13 @@ async function subscribeToPush() {
       action: 'subscribe',
       device_id: getForumDeviceId(),
       device_secret: (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null,
+      device_token: (typeof getDeviceToken === 'function') ? (getDeviceToken() || undefined) : undefined,
       endpoint: json.endpoint,
       keys: json.keys,
     }),
   });
   const data = await res.json().catch(() => null);
+  if (typeof applyDeviceToken === 'function') applyDeviceToken(data);
   if (!res.ok || !data || data.ok === false) {
     console.error('Push subscribe save failed:', data && data.error);
     return 'unsubscribed';
@@ -91,7 +93,13 @@ async function unsubscribeFromPush() {
         'apikey': SUPABASE_PUBLISHABLE_KEY,
         'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ action: 'unsubscribe', device_id: getForumDeviceId(), device_secret: (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null, endpoint }),
+      body: JSON.stringify({
+        action: 'unsubscribe',
+        device_id: getForumDeviceId(),
+        device_secret: (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null,
+        device_token: (typeof getDeviceToken === 'function') ? (getDeviceToken() || undefined) : undefined,
+        endpoint,
+      }),
     });
   } catch (e) { console.warn('Push unsubscribe (server side) failed:', e); }
   return 'unsubscribed';

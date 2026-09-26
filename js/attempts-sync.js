@@ -234,6 +234,7 @@ async function syncAttempts() {
 
   const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
   const deviceSecret = (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null;
+  const deviceToken = (typeof getDeviceToken === 'function') ? getDeviceToken() : null;
   if (!deviceId || typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_PUBLISHABLE_KEY === 'undefined') return;
 
   _attemptsSyncing = true;
@@ -283,10 +284,11 @@ async function syncAttempts() {
         'apikey': SUPABASE_PUBLISHABLE_KEY,
         'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, attempts: pending }),
+      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, attempts: pending }),
       signal: AbortSignal.timeout(10000),
     });
     const data = await res.json().catch(() => null);
+    if (typeof applyDeviceToken === 'function') applyDeviceToken(data);
     if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || 'sync_failed');
 
     // The server's list is now authoritative — rebuild the local cache from
@@ -397,6 +399,7 @@ startAttemptsSyncPolling();
 async function deleteAttemptOnServer(hash) {
   const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
   const deviceSecret = (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null;
+  const deviceToken = (typeof getDeviceToken === 'function') ? getDeviceToken() : null;
   if (!deviceId || typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_PUBLISHABLE_KEY === 'undefined') return false;
   _pendingDeleteHashes.add(hash);
   try {
@@ -407,9 +410,10 @@ async function deleteAttemptOnServer(hash) {
         'apikey': SUPABASE_PUBLISHABLE_KEY,
         'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, attempt_hash: hash }),
+      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, attempt_hash: hash }),
     });
     const data = await res.json().catch(() => null);
+    if (typeof applyDeviceToken === 'function') applyDeviceToken(data);
     return !!(res.ok && data && data.ok);
   } catch (e) {
     console.error('Server-side attempt delete error:', e);

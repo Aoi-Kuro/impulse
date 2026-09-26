@@ -7,6 +7,7 @@ interface PostMessagePayload {
   author_name: string;
   device_id: string;
   device_secret?: string;
+  device_token?: string;
   body: string;
   scope: "global" | "problem";
   problem_key?: string | null;
@@ -39,7 +40,61 @@ function randomHex(byteLen: number): string {
   return Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown): Promise<boolean> {
+// -- Device-verification token (skips the device_secrets DB round-trip) ----
+// verifyOrRegisterDevice() below used to hit `device_secrets` on every call,
+// even seconds after the same device had already proven ownership -- the
+// #1 source of Log Ingestion/Query volume (device_secrets + identity_devices
+// made up 55% of all request logs in a 26-min sample, 2026-09-25). After a
+// successful DB-backed verification we now also issue a short-lived signed
+// token; a client holding a still-valid token skips the DB check next time.
+// identity_devices is deliberately NOT covered by this -- that lookup stays
+// live everywhere, since claim/drop-nickname can reassign device_id to a
+// different identity at any moment and a cached identity would go stale.
+// Security note: this token is not a weaker credential than device_secret
+// itself -- both live in the same client-side (localStorage) trust
+// boundary. It only bounds *how long* a proof of ownership is honored for,
+// the same way a session cookie bounds a login.
+const DEVICE_TOKEN_SECRET = Deno.env.get("DEVICE_TOKEN_SECRET");
+const DEVICE_TOKEN_TTL_SECONDS = 12 * 60 * 60;
+
+async function hmacHex(payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(DEVICE_TOKEN_SECRET!),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function issueDeviceToken(deviceId: string): Promise<{ token: string; expiresAt: number } | null> {
+  if (!DEVICE_TOKEN_SECRET) return null; // secret not set yet -- fails open to DB-only mode
+  const expiresAt = Math.floor(Date.now() / 1000) + DEVICE_TOKEN_TTL_SECONDS;
+  const payload = `${deviceId}:${expiresAt}`;
+  const token = btoa(payload) + "." + await hmacHex(payload);
+  return { token, expiresAt };
+}
+
+async function verifyDeviceToken(deviceId: string, token: unknown): Promise<boolean> {
+  if (!DEVICE_TOKEN_SECRET || typeof token !== "string" || !token.includes(".")) return false;
+  const [encoded, sig] = token.split(".");
+  let payload: string;
+  try { payload = atob(encoded); } catch { return false; }
+  const [tokenDeviceId, expiresAtStr] = payload.split(":");
+  if (tokenDeviceId !== deviceId) return false;
+  const expiresAt = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAt) || Date.now() / 1000 > expiresAt) return false;
+  const expected = await hmacHex(payload);
+  if (expected.length !== sig.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  return diff === 0;
+}
+
+async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown, token?: unknown): Promise<boolean> {
+  if (await verifyDeviceToken(deviceId, token)) return true;
   if (!DEVICE_SECRET_PEPPER || typeof secret !== "string" || secret.length < 16 || secret.length > 200) {
     return false;
   }
@@ -782,9 +837,10 @@ export default {
     if (device_id.toLowerCase() === GEMINI_BOT_DEVICE_ID.toLowerCase()) {
       return Response.json({ ok: false, error: "This device id is reserved." }, { status: 400 });
     }
-    if (!(await verifyOrRegisterDevice(admin, device_id, device_secret))) {
+    if (!(await verifyOrRegisterDevice(admin, device_id, device_secret, payload?.device_token))) {
       return Response.json({ ok: false, error: "device_auth_failed" }, { status: 403 });
     }
+    const deviceToken = await issueDeviceToken(device_id);
 
     // ── Ban check (escalating bans from red flags, see flag-message.ts) ────
     // Checked before any other content validation/work, since a banned
@@ -1043,6 +1099,10 @@ export default {
       sendMentionPushNotifications(admin, inserted, myIdentityId, replyToParentIdentityId),
     ]));
 
-    return Response.json({ ok: true, message: inserted });
+    return Response.json({
+      ok: true,
+      message: inserted,
+      ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+    });
   }),
 };

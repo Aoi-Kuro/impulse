@@ -98,6 +98,7 @@
     CHAINREACTION:  () => isDate(12, 2),  // First controlled nuclear chain reaction, 1942
     WRIGHTFLIGHT:   () => isDate(12, 17), // Wright brothers' first flight, 1903
     JWST:           () => isDate(12, 25), // James Webb Space Telescope launch, 2021
+    CUSTOM:             () => isDate(9, 26)
   };
 
   function eligible () {

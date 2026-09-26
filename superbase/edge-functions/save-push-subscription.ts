@@ -6,6 +6,7 @@ interface SubscribePayload {
   action: "subscribe" | "unsubscribe";
   device_id: string;
   device_secret?: string;
+  device_token?: string;
   endpoint?: string;
   keys?: { p256dh: string; auth: string };
 }
@@ -29,7 +30,61 @@ function randomHex(byteLen: number): string {
   return Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown): Promise<boolean> {
+// -- Device-verification token (skips the device_secrets DB round-trip) ----
+// verifyOrRegisterDevice() below used to hit `device_secrets` on every call,
+// even seconds after the same device had already proven ownership -- the
+// #1 source of Log Ingestion/Query volume (device_secrets + identity_devices
+// made up 55% of all request logs in a 26-min sample, 2026-09-25). After a
+// successful DB-backed verification we now also issue a short-lived signed
+// token; a client holding a still-valid token skips the DB check next time.
+// identity_devices is deliberately NOT covered by this -- that lookup stays
+// live everywhere, since claim/drop-nickname can reassign device_id to a
+// different identity at any moment and a cached identity would go stale.
+// Security note: this token is not a weaker credential than device_secret
+// itself -- both live in the same client-side (localStorage) trust
+// boundary. It only bounds *how long* a proof of ownership is honored for,
+// the same way a session cookie bounds a login.
+const DEVICE_TOKEN_SECRET = Deno.env.get("DEVICE_TOKEN_SECRET");
+const DEVICE_TOKEN_TTL_SECONDS = 12 * 60 * 60;
+
+async function hmacHex(payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(DEVICE_TOKEN_SECRET!),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function issueDeviceToken(deviceId: string): Promise<{ token: string; expiresAt: number } | null> {
+  if (!DEVICE_TOKEN_SECRET) return null; // secret not set yet -- fails open to DB-only mode
+  const expiresAt = Math.floor(Date.now() / 1000) + DEVICE_TOKEN_TTL_SECONDS;
+  const payload = `${deviceId}:${expiresAt}`;
+  const token = btoa(payload) + "." + await hmacHex(payload);
+  return { token, expiresAt };
+}
+
+async function verifyDeviceToken(deviceId: string, token: unknown): Promise<boolean> {
+  if (!DEVICE_TOKEN_SECRET || typeof token !== "string" || !token.includes(".")) return false;
+  const [encoded, sig] = token.split(".");
+  let payload: string;
+  try { payload = atob(encoded); } catch { return false; }
+  const [tokenDeviceId, expiresAtStr] = payload.split(":");
+  if (tokenDeviceId !== deviceId) return false;
+  const expiresAt = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAt) || Date.now() / 1000 > expiresAt) return false;
+  const expected = await hmacHex(payload);
+  if (expected.length !== sig.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  return diff === 0;
+}
+
+async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown, token?: unknown): Promise<boolean> {
+  if (await verifyDeviceToken(deviceId, token)) return true;
   if (!DEVICE_SECRET_PEPPER || typeof secret !== "string" || secret.length < 16 || secret.length > 200) {
     return false;
   }
@@ -57,7 +112,7 @@ async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown
 export default {
   fetch: withSupabase({ auth: "publishable" }, async (req, ctx) => {
     const payload: SubscribePayload = await req.json();
-    const { action, device_id, device_secret, endpoint, keys } = payload ?? {};
+    const { action, device_id, device_secret, device_token, endpoint, keys } = payload ?? {};
 
     // ctx.supabaseAdmin bypasses RLS — push_subscriptions has zero client
     // policies (see migration 014), so this is the only client that can
@@ -67,9 +122,10 @@ export default {
     if (typeof device_id !== "string" || !/^[0-9a-f-]{36}$/i.test(device_id)) {
       return Response.json({ ok: false, error: "Invalid device id." }, { status: 400 });
     }
-    if (!(await verifyOrRegisterDevice(admin, device_id, device_secret))) {
+    if (!(await verifyOrRegisterDevice(admin, device_id, device_secret, device_token))) {
       return Response.json({ ok: false, error: "device_auth_failed" }, { status: 403 });
     }
+    const deviceToken = await issueDeviceToken(device_id);
     if (typeof endpoint !== "string" || !endpoint.startsWith("https://")) {
       return Response.json({ ok: false, error: "Invalid subscription endpoint." }, { status: 400 });
     }
@@ -87,7 +143,10 @@ export default {
         console.error("Push unsubscribe error:", error);
         return Response.json({ ok: false, error: "Couldn't remove subscription." }, { status: 500 });
       }
-      return Response.json({ ok: true });
+      return Response.json({
+        ok: true,
+        ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+      });
     }
 
     if (action !== "subscribe") {
@@ -124,6 +183,9 @@ export default {
       console.error("Push subscribe error:", upsertErr);
       return Response.json({ ok: false, error: "Couldn't save subscription." }, { status: 500 });
     }
-    return Response.json({ ok: true });
+    return Response.json({
+      ok: true,
+      ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+    });
   }),
 };

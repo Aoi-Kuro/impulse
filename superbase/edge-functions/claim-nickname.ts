@@ -108,7 +108,8 @@ const DEVICE_SECRET_PEPPER = Deno.env.get('DEVICE_SECRET_PEPPER');
 // true iff the request is allowed to proceed as this device_id. Reuses
 // sha256Hex/randomHex above rather than redefining them — same hashing
 // shape as hashPin(), just a different pepper and table.
-async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown): Promise<boolean> {
+async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown, token?: unknown): Promise<boolean> {
+  if (await verifyDeviceToken(deviceId, token)) return true;
   if (!DEVICE_SECRET_PEPPER || typeof secret !== 'string' || secret.length < 16 || secret.length > 200) {
     return false;
   }
@@ -167,6 +168,59 @@ function randomHex(byteLen: number): string {
   const arr = new Uint8Array(byteLen);
   crypto.getRandomValues(arr);
   return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// -- Device-verification token (skips the device_secrets DB round-trip) ----
+// verifyOrRegisterDevice() below used to hit `device_secrets` on every call,
+// even seconds after the same device had already proven ownership -- the
+// #1 source of Log Ingestion/Query volume (device_secrets + identity_devices
+// made up 55% of all request logs in a 26-min sample, 2026-09-25). After a
+// successful DB-backed verification we now also issue a short-lived signed
+// token; a client holding a still-valid token skips the DB check next time.
+// identity_devices is deliberately NOT covered by this -- that lookup stays
+// live everywhere, since claim/drop-nickname can reassign device_id to a
+// different identity at any moment and a cached identity would go stale.
+// Security note: this token is not a weaker credential than device_secret
+// itself -- both live in the same client-side (localStorage) trust
+// boundary. It only bounds *how long* a proof of ownership is honored for,
+// the same way a session cookie bounds a login.
+const DEVICE_TOKEN_SECRET = Deno.env.get('DEVICE_TOKEN_SECRET');
+const DEVICE_TOKEN_TTL_SECONDS = 12 * 60 * 60;
+
+async function hmacHex(payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(DEVICE_TOKEN_SECRET!),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function issueDeviceToken(deviceId: string): Promise<{ token: string; expiresAt: number } | null> {
+  if (!DEVICE_TOKEN_SECRET) return null; // secret not set yet -- fails open to DB-only mode
+  const expiresAt = Math.floor(Date.now() / 1000) + DEVICE_TOKEN_TTL_SECONDS;
+  const payload = `${deviceId}:${expiresAt}`;
+  const token = btoa(payload) + '.' + await hmacHex(payload);
+  return { token, expiresAt };
+}
+
+async function verifyDeviceToken(deviceId: string, token: unknown): Promise<boolean> {
+  if (!DEVICE_TOKEN_SECRET || typeof token !== 'string' || !token.includes('.')) return false;
+  const [encoded, sig] = token.split('.');
+  let payload: string;
+  try { payload = atob(encoded); } catch { return false; }
+  const [tokenDeviceId, expiresAtStr] = payload.split(':');
+  if (tokenDeviceId !== deviceId) return false;
+  const expiresAt = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAt) || Date.now() / 1000 > expiresAt) return false;
+  const expected = await hmacHex(payload);
+  if (expected.length !== sig.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  return diff === 0;
 }
 
 function randomPin(): string {
@@ -376,9 +430,10 @@ export default {
     if (deviceId === GEMINI_BOT_DEVICE_ID) {
       return Response.json({ ok: false, error: 'reserved_device_id' }, { status: 403 });
     }
-    if (!(await verifyOrRegisterDevice(ctx.supabaseAdmin, deviceId, payload?.device_secret))) {
+    if (!(await verifyOrRegisterDevice(ctx.supabaseAdmin, deviceId, payload?.device_secret, payload?.device_token))) {
       return Response.json({ ok: false, error: 'device_auth_failed' }, { status: 403 });
     }
+    const deviceToken = await issueDeviceToken(deviceId);
     if (!NICKNAME_RE.test(rawNickname)) {
       return Response.json({ ok: false, error: 'invalid_nickname' }, { status: 400 });
     }
@@ -416,7 +471,12 @@ export default {
 
     // ── Case 4: no-op — already yours ───────────────────────────────────────
     if (mineIdentity && target && mineIdentity.id === target.id) {
-      return Response.json({ ok: true, nickname: target.nickname, unchanged: true });
+      return Response.json({
+        ok: true,
+        nickname: target.nickname,
+        unchanged: true,
+        ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+      });
     }
 
     // ── Case 2: link/switch this device onto an existing identity ─────────
@@ -447,7 +507,12 @@ export default {
       // Clear the lock state on success (mirrors the old restore behavior).
       await db.from('identities').update({ failed_attempts: 0, locked_until: null }).eq('id', target.id);
 
-      return Response.json({ ok: true, nickname: target.nickname, linked: true });
+      return Response.json({
+        ok: true,
+        nickname: target.nickname,
+        linked: true,
+        ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+      });
     }
 
     // ── Case 3: rename — this device owns an identity, new name is free ───
@@ -496,7 +561,13 @@ export default {
       // up across every message, everywhere, right now.
       const mentionsRewritten = await rewriteMentionsAfterRename(db, mineIdentity.nickname_lower, rawNickname);
 
-      return Response.json({ ok: true, nickname: rawNickname, renamed: true, mentions_rewritten: mentionsRewritten });
+      return Response.json({
+        ok: true,
+        nickname: rawNickname,
+        renamed: true,
+        mentions_rewritten: mentionsRewritten,
+        ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+      });
     }
 
     // ── Case 1: brand new claim ─────────────────────────────────────────────
@@ -537,6 +608,12 @@ export default {
       return Response.json({ ok: false, error: 'server_error' }, { status: 500 });
     }
 
-    return Response.json({ ok: true, nickname: rawNickname, pin: newPin, created: true });
+    return Response.json({
+      ok: true,
+      nickname: rawNickname,
+      pin: newPin,
+      created: true,
+      ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+    });
   }),
 };

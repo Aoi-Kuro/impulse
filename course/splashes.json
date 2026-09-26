@@ -34,6 +34,8 @@
   ["Stay curious.", ""],
   ["There are 157 splashes available!.", ""],
 
+
+  ["These splashes were written for PHYS 162! If you have courage, you can write a few for PHYS 161!", ""],
   ["Good morning! Time to start!", "M"],
   ["It's already late, maybe some sleep?", "N"],
   ["Did you eat your lunch? Don't stay hungry!", "D"],
@@ -168,5 +170,6 @@
   ["Today in 1969, the first-ever ARPANET message was sent. Hello, internet!", "ARPANET", 1],
   ["Today in 1942, we achieved the first controlled nuclear chain reaction.", "CHAINREACTION", 1],
   ["Today in 1903, Wilbur and Orville Wright made the first successful powered flight.", "WRIGHTFLIGHT", 1],
-  ["Today in 2021, the James Webb Space Telescope launched!", "JWST", 1]
+  ["Today in 2021, the James Webb Space Telescope launched!", "JWST", 1],
+  ["The day before the exam week, this is so thrilling!", "CUSTOM", 1]
 ]

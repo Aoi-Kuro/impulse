@@ -451,6 +451,45 @@ function getForumDeviceSecret() {
   }
   return secret;
 }
+
+// Short-lived device-verification token cache. device_secret above still
+// gets sent on every write-path call (it's the real credential and the
+// server always accepts it as a fallback) — this just lets the server skip
+// its device_secrets DB lookup when a still-valid token from a previous
+// call is present, which was the single biggest source of Supabase Log
+// Ingestion/Query volume (device_secrets + identity_devices checks were
+// 55% of all request logs in a 2026-09-25 sample). Every write-path
+// response includes a fresh { device_token, device_token_expires_at } pair
+// on success — callers should pass the result of applyDeviceToken(json) on
+// every response they receive, so the cache stays current automatically.
+const FORUM_DEVICE_TOKEN_KEY = STORAGE_PREFIX + '_forum_device_token';
+function getDeviceToken() {
+  let cached;
+  try {
+    cached = JSON.parse(localStorage.getItem(FORUM_DEVICE_TOKEN_KEY) || 'null');
+  } catch {
+    return null;
+  }
+  if (!cached || typeof cached.t !== 'string' || typeof cached.exp !== 'number') return null;
+  // 30s safety margin so a token doesn't expire mid-flight to the server.
+  if (Date.now() / 1000 > cached.exp - 30) return null;
+  return cached.t;
+}
+function setDeviceToken(token, expiresAt) {
+  if (typeof token !== 'string' || typeof expiresAt !== 'number') return;
+  localStorage.setItem(FORUM_DEVICE_TOKEN_KEY, JSON.stringify({ t: token, exp: expiresAt }));
+}
+// Call with the parsed JSON body of any write-path response (post-message,
+// edit-message, sync-quiz-attempts, sync-solve-all, claim/drop-nickname,
+// flag-message, save-push-subscription). No-ops if the fields aren't
+// present, so it's always safe to call unconditionally.
+function applyDeviceToken(responseJson) {
+  if (responseJson && responseJson.device_token && responseJson.device_token_expires_at) {
+    setDeviceToken(responseJson.device_token, responseJson.device_token_expires_at);
+  }
+  return responseJson;
+}
+
 function getForumSavedName() {
   return localStorage.getItem(FORUM_NAME_KEY) || '';
 }
@@ -494,9 +533,16 @@ async function callForumClaimNickname(nickname, pin) {
       'apikey': SUPABASE_PUBLISHABLE_KEY,
       'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
     },
-    body: JSON.stringify({ device_id: getForumDeviceId(), device_secret: getForumDeviceSecret(), nickname, pin: pin || undefined }),
+    body: JSON.stringify({
+      device_id: getForumDeviceId(),
+      device_secret: getForumDeviceSecret(),
+      device_token: getDeviceToken() || undefined,
+      nickname,
+      pin: pin || undefined,
+    }),
   });
   const data = await res.json().catch(() => null);
+  applyDeviceToken(data);
   return { ok: res.ok, status: res.status, data };
 }
 
@@ -1013,6 +1059,7 @@ async function submitForumMessage(opts = {}) {
         author_name: getForumIdentityName() || name,
         device_id: getForumDeviceId(),
         device_secret: getForumDeviceSecret(),
+        device_token: getDeviceToken() || undefined,
         body,
         scope,
         problem_key,
@@ -1022,6 +1069,7 @@ async function submitForumMessage(opts = {}) {
     });
 
     const data = await res.json().catch(() => null);
+    applyDeviceToken(data);
 
     if (!res.ok || !data || data.ok === false) {
       forumRevertOptimisticSend(tempId, body);
@@ -1415,9 +1463,15 @@ async function submitForumExitDevice() {
         'apikey': SUPABASE_PUBLISHABLE_KEY,
         'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ device_id: getForumDeviceId(), device_secret: getForumDeviceSecret(), action: 'exit' }),
+      body: JSON.stringify({
+        device_id: getForumDeviceId(),
+        device_secret: getForumDeviceSecret(),
+        device_token: getDeviceToken() || undefined,
+        action: 'exit',
+      }),
     });
     const data = await res.json().catch(() => null);
+    applyDeviceToken(data);
 
     if (data && data.ok) {
       const oldNickname = getForumNickname();
@@ -1538,7 +1592,12 @@ async function submitForumEditMessage() {
   // Only send the pieces that actually changed — a topic-only edit
   // shouldn't send `body` at all (see edit-message.ts: sending `body`
   // always re-runs moderation, even if it happens to equal the old text).
-  const payload = { device_id: getForumDeviceId(), device_secret: getForumDeviceSecret(), message_id: forumEditMessageId };
+  const payload = {
+    device_id: getForumDeviceId(),
+    device_secret: getForumDeviceSecret(),
+    device_token: getDeviceToken() || undefined,
+    message_id: forumEditMessageId,
+  };
   if (newBody !== forumEditOrigBody) payload.body = newBody;
   if (forumEditQuiz === 'global') {
     payload.scope = 'global';
@@ -1561,6 +1620,7 @@ async function submitForumEditMessage() {
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => null);
+    applyDeviceToken(data);
 
     if (data && data.ok) {
       closeForumEditMessageModal();
@@ -2687,9 +2747,15 @@ async function flagForumMessage(messageId, btnEl) {
         'apikey': SUPABASE_PUBLISHABLE_KEY,
         'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ message_id: messageId, device_id: getForumDeviceId(), device_secret: getForumDeviceSecret() }),
+      body: JSON.stringify({
+        message_id: messageId,
+        device_id: getForumDeviceId(),
+        device_secret: getForumDeviceSecret(),
+        device_token: getDeviceToken() || undefined,
+      }),
     });
     const data = await res.json().catch(() => null);
+    applyDeviceToken(data);
 
     if (data && data.ok && data.result === 'kept') {
       btnEl.classList.add('forum-flag-btn-kept');
