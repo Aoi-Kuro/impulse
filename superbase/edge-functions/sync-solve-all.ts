@@ -101,6 +101,53 @@ async function verifyDeviceToken(deviceId: string, token: unknown): Promise<bool
   return diff === 0;
 }
 
+// -- Identity-resolution token (skips the identity_devices DB round-trip) --
+// identity_devices resolves device_id -> identity_id (which claimed
+// nickname, if any, currently owns this device). It's deliberately NOT
+// covered by the long-lived device token above -- device_id can be
+// reassigned to a different identity mid-session (exit, then claim a new
+// nickname on the same device), and a stale cache here would misattribute
+// posts/edits/syncs to the identity that just left. Instead it gets its own
+// much shorter-lived token (see IDENTITY_TOKEN_TTL_SECONDS below): short
+// enough that a stolen/leaked token's usefulness expires in under five
+// minutes, and drop-nickname (the one action that actually invalidates this)
+// tells the client to delete its copy immediately rather than wait it out --
+// see js/forum.js's storage-event listener for the other open-tabs half of
+// that.
+const IDENTITY_TOKEN_TTL_SECONDS = 300;
+
+async function issueIdentityToken(deviceId: string, identityId: string | null): Promise<{ token: string; expiresAt: number } | null> {
+  if (!DEVICE_TOKEN_SECRET) return null;
+  const expiresAt = Math.floor(Date.now() / 1000) + IDENTITY_TOKEN_TTL_SECONDS;
+  const payload = `${deviceId}:${identityId ?? ""}:${expiresAt}`;
+  const token = btoa(payload) + "." + await hmacHex(payload);
+  return { token, expiresAt };
+}
+
+// Returns { ok: false } on any invalid/expired/mismatched token -- caller
+// falls back to the normal identity_devices DB lookup exactly as before.
+// Returns { ok: true, identityId: null } for a device confirmed NOT linked
+// to any identity (a lurker), so that case is cached too, not just the
+// linked case.
+async function verifyIdentityToken(deviceId: string, token: unknown): Promise<{ ok: true; identityId: string | null } | { ok: false }> {
+  if (!DEVICE_TOKEN_SECRET || typeof token !== "string" || !token.includes(".")) return { ok: false };
+  const [encoded, sig] = token.split(".");
+  let payload: string;
+  try { payload = atob(encoded); } catch { return { ok: false }; }
+  const parts = payload.split(":");
+  if (parts.length !== 3) return { ok: false };
+  const [tokenDeviceId, identityIdPart, expiresAtStr] = parts;
+  if (tokenDeviceId !== deviceId) return { ok: false };
+  const expiresAt = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAt) || Date.now() / 1000 > expiresAt) return { ok: false };
+  const expected = await hmacHex(payload);
+  if (expected.length !== sig.length) return { ok: false };
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  if (diff !== 0) return { ok: false };
+  return { ok: true, identityId: identityIdPart === "" ? null : identityIdPart };
+}
+
 async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown, token?: unknown): Promise<boolean> {
   if (await verifyDeviceToken(deviceId, token)) return true;
   if (!DEVICE_SECRET_PEPPER || typeof secret !== "string" || secret.length < 16 || secret.length > 200) {
@@ -130,7 +177,7 @@ async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown
 export default {
   fetch: withSupabase({ auth: "publishable" }, async (req, ctx) => {
     const payload = await req.json();
-    const { device_id, quiz_num, cumulative, action, data, device_secret, device_token } = payload ?? {};
+    const { device_id, quiz_num, cumulative, action, data, device_secret, device_token, identity_token } = payload ?? {};
 
     if (typeof device_id !== "string" || !/^[0-9a-f-]{36}$/i.test(device_id)) {
       return Response.json({ ok: false, error: "Invalid device id." }, { status: 400 });
@@ -150,25 +197,32 @@ export default {
     }
     const deviceToken = await issueDeviceToken(device_id);
 
-    const { data: link, error: linkErr } = await admin
-      .from("identity_devices")
-      .select("identity_id")
-      .eq("device_id", device_id)
-      .maybeSingle();
-
-    if (linkErr) {
-      console.error("Identity link lookup error:", linkErr);
-      return Response.json({ ok: false, error: "Couldn't verify your identity, try again." }, { status: 500 });
+    let identityId: string | null = null;
+    const identityCheck = await verifyIdentityToken(device_id, identity_token);
+    if (identityCheck.ok) {
+      identityId = identityCheck.identityId;
+    } else {
+      const { data: link, error: linkErr } = await admin
+        .from("identity_devices")
+        .select("identity_id")
+        .eq("device_id", device_id)
+        .maybeSingle();
+      if (linkErr) {
+        console.error("Identity link lookup error:", linkErr);
+        return Response.json({ ok: false, error: "Couldn't verify your identity, try again." }, { status: 500 });
+      }
+      identityId = link ? link.identity_id : null;
     }
-    if (!link) {
+    if (!identityId) {
       return Response.json({ ok: false, error: "no_identity", message: "Claim a name first." }, { status: 403 });
     }
+    const identityToken = await issueIdentityToken(device_id, identityId);
 
     if (action === "pull") {
       const { data: row, error } = await admin
         .from("solve_all_progress")
         .select("data")
-        .eq("identity_id", link.identity_id)
+        .eq("identity_id", identityId)
         .eq("quiz_num", quiz_num)
         .eq("cumulative", cum)
         .maybeSingle();
@@ -180,8 +234,9 @@ export default {
         ok: true,
         found: !!row,
         data: row ? row.data : null,
-        identity_id: link.identity_id,
+        identity_id: identityId,
         ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+        ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
       });
     }
 
@@ -193,7 +248,7 @@ export default {
         .from("solve_all_progress")
         .upsert(
           {
-            identity_id: link.identity_id,
+            identity_id: identityId,
             quiz_num,
             cumulative: cum,
             data,
@@ -212,8 +267,9 @@ export default {
       }
       return Response.json({
         ok: true,
-        identity_id: link.identity_id,
+        identity_id: identityId,
         ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+        ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
       });
     }
 
@@ -222,7 +278,7 @@ export default {
       .from("solve_all_progress")
       .upsert(
         {
-          identity_id: link.identity_id,
+          identity_id: identityId,
           quiz_num,
           cumulative: cum,
           data: null,
@@ -237,8 +293,9 @@ export default {
     }
     return Response.json({
       ok: true,
-      identity_id: link.identity_id,
+      identity_id: identityId,
       ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+      ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
     });
   }),
 };

@@ -235,6 +235,7 @@ async function syncAttempts() {
   const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
   const deviceSecret = (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null;
   const deviceToken = (typeof getDeviceToken === 'function') ? getDeviceToken() : null;
+  const identityToken = (typeof getIdentityToken === 'function') ? getIdentityToken() : null;
   if (!deviceId || typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_PUBLISHABLE_KEY === 'undefined') return;
 
   _attemptsSyncing = true;
@@ -284,7 +285,7 @@ async function syncAttempts() {
         'apikey': SUPABASE_PUBLISHABLE_KEY,
         'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, attempts: pending }),
+      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, identity_token: identityToken || undefined, attempts: pending }),
       signal: AbortSignal.timeout(10000),
     });
     const data = await res.json().catch(() => null);
@@ -400,6 +401,7 @@ async function deleteAttemptOnServer(hash) {
   const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
   const deviceSecret = (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null;
   const deviceToken = (typeof getDeviceToken === 'function') ? getDeviceToken() : null;
+  const identityToken = (typeof getIdentityToken === 'function') ? getIdentityToken() : null;
   if (!deviceId || typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_PUBLISHABLE_KEY === 'undefined') return false;
   _pendingDeleteHashes.add(hash);
   try {
@@ -410,7 +412,7 @@ async function deleteAttemptOnServer(hash) {
         'apikey': SUPABASE_PUBLISHABLE_KEY,
         'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, attempt_hash: hash }),
+      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, identity_token: identityToken || undefined, attempt_hash: hash }),
     });
     const data = await res.json().catch(() => null);
     if (typeof applyDeviceToken === 'function') applyDeviceToken(data);

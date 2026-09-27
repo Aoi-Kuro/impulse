@@ -138,6 +138,53 @@ async function verifyDeviceToken(deviceId: string, token: unknown): Promise<bool
   return diff === 0;
 }
 
+// -- Identity-resolution token (skips the identity_devices DB round-trip) --
+// identity_devices resolves device_id -> identity_id (which claimed
+// nickname, if any, currently owns this device). It's deliberately NOT
+// covered by the long-lived device token above -- device_id can be
+// reassigned to a different identity mid-session (exit, then claim a new
+// nickname on the same device), and a stale cache here would misattribute
+// posts/edits/syncs to the identity that just left. Instead it gets its own
+// much shorter-lived token (see IDENTITY_TOKEN_TTL_SECONDS below): short
+// enough that a stolen/leaked token's usefulness expires in under five
+// minutes, and drop-nickname (the one action that actually invalidates this)
+// tells the client to delete its copy immediately rather than wait it out --
+// see js/forum.js's storage-event listener for the other open-tabs half of
+// that.
+const IDENTITY_TOKEN_TTL_SECONDS = 300;
+
+async function issueIdentityToken(deviceId: string, identityId: string | null): Promise<{ token: string; expiresAt: number } | null> {
+  if (!DEVICE_TOKEN_SECRET) return null;
+  const expiresAt = Math.floor(Date.now() / 1000) + IDENTITY_TOKEN_TTL_SECONDS;
+  const payload = `${deviceId}:${identityId ?? ''}:${expiresAt}`;
+  const token = btoa(payload) + '.' + await hmacHex(payload);
+  return { token, expiresAt };
+}
+
+// Returns { ok: false } on any invalid/expired/mismatched token -- caller
+// falls back to the normal identity_devices DB lookup exactly as before.
+// Returns { ok: true, identityId: null } for a device confirmed NOT linked
+// to any identity (a lurker), so that case is cached too, not just the
+// linked case.
+async function verifyIdentityToken(deviceId: string, token: unknown): Promise<{ ok: true; identityId: string | null } | { ok: false }> {
+  if (!DEVICE_TOKEN_SECRET || typeof token !== 'string' || !token.includes('.')) return { ok: false };
+  const [encoded, sig] = token.split('.');
+  let payload: string;
+  try { payload = atob(encoded); } catch { return { ok: false }; }
+  const parts = payload.split(':');
+  if (parts.length !== 3) return { ok: false };
+  const [tokenDeviceId, identityIdPart, expiresAtStr] = parts;
+  if (tokenDeviceId !== deviceId) return { ok: false };
+  const expiresAt = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAt) || Date.now() / 1000 > expiresAt) return { ok: false };
+  const expected = await hmacHex(payload);
+  if (expected.length !== sig.length) return { ok: false };
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  if (diff !== 0) return { ok: false };
+  return { ok: true, identityId: identityIdPart === '' ? null : identityIdPart };
+}
+
 async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown, token?: unknown): Promise<boolean> {
   if (await verifyDeviceToken(deviceId, token)) return true;
   if (!DEVICE_SECRET_PEPPER || typeof secret !== 'string' || secret.length < 16 || secret.length > 200) {
@@ -225,6 +272,26 @@ export default {
       return Response.json({ ok: false, error: 'device_auth_failed' }, { status: 403 });
     }
     const deviceToken = await issueDeviceToken(deviceId);
+
+    // Resolved once here so the ownership check below (a live
+    // identity_devices lookup, deliberately not the message's own frozen
+    // identity_id — see that block's own comment on why) can reuse it
+    // instead of always hitting the DB.
+    let identityId: string | null = null;
+    const identityCheck = await verifyIdentityToken(deviceId, payload?.identity_token);
+    if (identityCheck.ok) {
+      identityId = identityCheck.identityId;
+    } else {
+      const { data: link, error: linkErr } = await ctx.supabaseAdmin
+        .from('identity_devices').select('identity_id').eq('device_id', deviceId).maybeSingle();
+      if (linkErr) {
+        console.error('edit-message: identity lookup error', linkErr);
+        return Response.json({ ok: false, error: 'server_error' }, { status: 500 });
+      }
+      identityId = link ? link.identity_id : null;
+    }
+    const identityToken = await issueIdentityToken(deviceId, identityId);
+
     if (!Number.isInteger(messageId) || messageId <= 0) {
       return Response.json({ ok: false, error: 'invalid_message_id' }, { status: 400 });
     }
@@ -282,13 +349,7 @@ export default {
     // rename, only the identities row's nickname/avatar_svg do.
     let isOwner: boolean;
     if (msg.identity_id) {
-      const { data: reqLink, error: reqErr } = await db
-        .from('identity_devices').select('identity_id').eq('device_id', deviceId).maybeSingle();
-      if (reqErr) {
-        console.error('edit-message: identity lookup error', reqErr);
-        return Response.json({ ok: false, error: 'server_error' }, { status: 500 });
-      }
-      isOwner = !!(reqLink && reqLink.identity_id === msg.identity_id);
+      isOwner = identityId === msg.identity_id;
     } else {
       // Anonymous/free-text message — posted before this device_id ever
       // claimed a nickname, so there's no identity to check against. Only
@@ -339,6 +400,7 @@ export default {
         ok: true,
         unchanged: true,
         ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+        ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
       });
     }
 
@@ -353,6 +415,7 @@ export default {
       edited: true,
       reopened_for_review: bodyActuallyChanged,
       ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+      ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
     });
   }),
 };

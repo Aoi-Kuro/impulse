@@ -66,6 +66,7 @@ async function subscribeToPush() {
       device_id: getForumDeviceId(),
       device_secret: (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null,
       device_token: (typeof getDeviceToken === 'function') ? (getDeviceToken() || undefined) : undefined,
+      identity_token: (typeof getIdentityToken === 'function') ? (getIdentityToken() || undefined) : undefined,
       endpoint: json.endpoint,
       keys: json.keys,
     }),
@@ -98,6 +99,7 @@ async function unsubscribeFromPush() {
         device_id: getForumDeviceId(),
         device_secret: (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null,
         device_token: (typeof getDeviceToken === 'function') ? (getDeviceToken() || undefined) : undefined,
+      identity_token: (typeof getIdentityToken === 'function') ? (getIdentityToken() || undefined) : undefined,
         endpoint,
       }),
     });

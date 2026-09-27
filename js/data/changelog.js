@@ -25,7 +25,8 @@
 
 // WARNING! The version has to be bumped in three places: here, in version.json and in quiz-engine.js
 const CHANGELOG = [
-  { version: "11.2.3", note: "Fixed double-refresh update bug + BD logic update.", scope: 0 },
+  { version: "11.2.4", note: "DB identity tokens added (just database related changes).", scope: 0 },
+  { version: "11.2.3", note: "Fixed double-refresh update bug, DB device secret logic update.", scope: 0 },
   { version: "11.2.2", note: "Mobile app icon updated.", scope: 0 },
   { version: "11.2.1", note: "Units now reduce to base dimensions, so equivalents match.", scope: 0 },
   { version: "11.2.0", note: "Export/import settings as a backup file.", scope: 0 },

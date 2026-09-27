@@ -483,12 +483,69 @@ function setDeviceToken(token, expiresAt) {
 // edit-message, sync-quiz-attempts, sync-solve-all, claim/drop-nickname,
 // flag-message, save-push-subscription). No-ops if the fields aren't
 // present, so it's always safe to call unconditionally.
+// Same idea as the device token above, but for device_id -> identity_id
+// resolution (identity_devices), and deliberately much shorter-lived: an
+// identity can be reassigned to a different device mid-session (exit, then
+// claim a new nickname), so a stale cache here risks attributing a post/
+// edit/sync to the WRONG identity, not just extra log volume. Two things
+// bound that risk: the short TTL matching the server's own
+// IDENTITY_TOKEN_TTL_SECONDS, and drop-nickname's exit sending
+// clear_identity_token so this tab (and, via the storage listener below,
+// every other open tab) drops the cached value immediately rather than
+// waiting out the TTL.
+const FORUM_IDENTITY_TOKEN_KEY = STORAGE_PREFIX + '_forum_identity_token';
+function getIdentityToken() {
+  let cached;
+  try {
+    cached = JSON.parse(localStorage.getItem(FORUM_IDENTITY_TOKEN_KEY) || 'null');
+  } catch {
+    return null;
+  }
+  if (!cached || typeof cached.t !== 'string' || typeof cached.exp !== 'number') return null;
+  if (Date.now() / 1000 > cached.exp - 10) return null; // smaller margin — TTL itself is only ~5min
+  return cached.t;
+}
+function setIdentityToken(token, expiresAt) {
+  if (typeof token !== 'string' || typeof expiresAt !== 'number') return;
+  localStorage.setItem(FORUM_IDENTITY_TOKEN_KEY, JSON.stringify({ t: token, exp: expiresAt }));
+}
+function clearIdentityToken() {
+  localStorage.removeItem(FORUM_IDENTITY_TOKEN_KEY);
+}
+
+// Call with the parsed JSON body of any write-path response (post-message,
+// edit-message, sync-quiz-attempts, sync-solve-all, claim/drop-nickname,
+// flag-message, save-push-subscription). No-ops if the fields aren't
+// present, so it's always safe to call unconditionally.
 function applyDeviceToken(responseJson) {
   if (responseJson && responseJson.device_token && responseJson.device_token_expires_at) {
     setDeviceToken(responseJson.device_token, responseJson.device_token_expires_at);
   }
+  if (responseJson && responseJson.identity_token && responseJson.identity_token_expires_at) {
+    setIdentityToken(responseJson.identity_token, responseJson.identity_token_expires_at);
+  } else if (responseJson && responseJson.clear_identity_token) {
+    clearIdentityToken();
+  }
   return responseJson;
 }
+
+// Cross-tab half of the exit-clears-the-cache guarantee above. localStorage
+// is one shared store per origin, so the moment ANY tab's exit clears
+// FORUM_IDENTITY_TOKEN_KEY, every OTHER already-open tab gets a native
+// 'storage' event for it (the tab that made the change does not — that's
+// standard browser behavior, not something this code has to arrange). The
+// underlying auth is already correct at that point (every call reads the
+// key fresh from localStorage, never a cached JS variable) — this reload is
+// purely so a reopened/background tab's displayed nickname/avatar/forum
+// state doesn't keep showing an identity that already exited elsewhere.
+// Deferred, not skipped, if a quiz timer is live in this tab — same
+// courtesy js/quiz-engine.js's own update-reload logic already uses.
+window.addEventListener('storage', (event) => {
+  if (event.key !== FORUM_IDENTITY_TOKEN_KEY || event.newValue !== null) return;
+  const timerActive = (typeof isQuizTimerActive === 'function') && isQuizTimerActive();
+  if (timerActive) return; // this tab will just re-resolve identity fresh on its next call instead
+  location.reload();
+});
 
 function getForumSavedName() {
   return localStorage.getItem(FORUM_NAME_KEY) || '';
@@ -537,6 +594,7 @@ async function callForumClaimNickname(nickname, pin) {
       device_id: getForumDeviceId(),
       device_secret: getForumDeviceSecret(),
       device_token: getDeviceToken() || undefined,
+      identity_token: getIdentityToken() || undefined,
       nickname,
       pin: pin || undefined,
     }),
@@ -1060,6 +1118,7 @@ async function submitForumMessage(opts = {}) {
         device_id: getForumDeviceId(),
         device_secret: getForumDeviceSecret(),
         device_token: getDeviceToken() || undefined,
+      identity_token: getIdentityToken() || undefined,
         body,
         scope,
         problem_key,
@@ -1467,6 +1526,7 @@ async function submitForumExitDevice() {
         device_id: getForumDeviceId(),
         device_secret: getForumDeviceSecret(),
         device_token: getDeviceToken() || undefined,
+      identity_token: getIdentityToken() || undefined,
         action: 'exit',
       }),
     });
@@ -1596,6 +1656,7 @@ async function submitForumEditMessage() {
     device_id: getForumDeviceId(),
     device_secret: getForumDeviceSecret(),
     device_token: getDeviceToken() || undefined,
+      identity_token: getIdentityToken() || undefined,
     message_id: forumEditMessageId,
   };
   if (newBody !== forumEditOrigBody) payload.body = newBody;
@@ -2752,6 +2813,7 @@ async function flagForumMessage(messageId, btnEl) {
         device_id: getForumDeviceId(),
         device_secret: getForumDeviceSecret(),
         device_token: getDeviceToken() || undefined,
+      identity_token: getIdentityToken() || undefined,
       }),
     });
     const data = await res.json().catch(() => null);

@@ -214,12 +214,13 @@ async function pullSolveAllProgress(quizNum, cumulative) {
   const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
   const deviceSecret = (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null;
   const deviceToken = (typeof getDeviceToken === 'function') ? getDeviceToken() : null;
+  const identityToken = (typeof getIdentityToken === 'function') ? getIdentityToken() : null;
   if (!deviceId) return null;
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-solve-all`, {
       method: 'POST',
       headers: _saHeaders(),
-      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, quiz_num: quizNum, cumulative: !!cumulative, action: 'pull' }),
+      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, identity_token: identityToken || undefined, quiz_num: quizNum, cumulative: !!cumulative, action: 'pull' }),
       signal: AbortSignal.timeout(10000),
     });
     const json = await res.json().catch(() => null);
@@ -238,12 +239,13 @@ async function pushSolveAllProgress(quizNum, cumulative, snapshot) {
   const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
   const deviceSecret = (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null;
   const deviceToken = (typeof getDeviceToken === 'function') ? getDeviceToken() : null;
+  const identityToken = (typeof getIdentityToken === 'function') ? getIdentityToken() : null;
   if (!deviceId) { _setSolveAllSyncDot('gray'); return false; }
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-solve-all`, {
       method: 'POST',
       headers: _saHeaders(),
-      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, quiz_num: quizNum, cumulative: !!cumulative, action: 'push', data: snapshot }),
+      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, identity_token: identityToken || undefined, quiz_num: quizNum, cumulative: !!cumulative, action: 'push', data: snapshot }),
       signal: AbortSignal.timeout(10000), // a hung request would otherwise leave this session's dot on stale "syncing" far longer than it should — see js/attempts-sync.js's syncAttempts for the fuller reasoning
     });
     const json = await res.json().catch(() => null);
@@ -264,12 +266,13 @@ async function resetSolveAllProgressOnServer(quizNum, cumulative) {
   const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
   const deviceSecret = (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null;
   const deviceToken = (typeof getDeviceToken === 'function') ? getDeviceToken() : null;
+  const identityToken = (typeof getIdentityToken === 'function') ? getIdentityToken() : null;
   if (!deviceId) { _saPendingReset.delete(key); return false; }
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-solve-all`, {
       method: 'POST',
       headers: _saHeaders(),
-      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, quiz_num: quizNum, cumulative: !!cumulative, action: 'reset' }),
+      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, identity_token: identityToken || undefined, quiz_num: quizNum, cumulative: !!cumulative, action: 'reset' }),
       signal: AbortSignal.timeout(10000),
     });
     const json = await res.json().catch(() => null);

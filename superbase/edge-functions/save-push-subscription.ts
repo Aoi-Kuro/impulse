@@ -7,6 +7,7 @@ interface SubscribePayload {
   device_id: string;
   device_secret?: string;
   device_token?: string;
+  identity_token?: string;
   endpoint?: string;
   keys?: { p256dh: string; auth: string };
 }
@@ -83,6 +84,53 @@ async function verifyDeviceToken(deviceId: string, token: unknown): Promise<bool
   return diff === 0;
 }
 
+// -- Identity-resolution token (skips the identity_devices DB round-trip) --
+// identity_devices resolves device_id -> identity_id (which claimed
+// nickname, if any, currently owns this device). It's deliberately NOT
+// covered by the long-lived device token above -- device_id can be
+// reassigned to a different identity mid-session (exit, then claim a new
+// nickname on the same device), and a stale cache here would misattribute
+// posts/edits/syncs to the identity that just left. Instead it gets its own
+// much shorter-lived token (see IDENTITY_TOKEN_TTL_SECONDS below): short
+// enough that a stolen/leaked token's usefulness expires in under five
+// minutes, and drop-nickname (the one action that actually invalidates this)
+// tells the client to delete its copy immediately rather than wait it out --
+// see js/forum.js's storage-event listener for the other open-tabs half of
+// that.
+const IDENTITY_TOKEN_TTL_SECONDS = 300;
+
+async function issueIdentityToken(deviceId: string, identityId: string | null): Promise<{ token: string; expiresAt: number } | null> {
+  if (!DEVICE_TOKEN_SECRET) return null;
+  const expiresAt = Math.floor(Date.now() / 1000) + IDENTITY_TOKEN_TTL_SECONDS;
+  const payload = `${deviceId}:${identityId ?? ""}:${expiresAt}`;
+  const token = btoa(payload) + "." + await hmacHex(payload);
+  return { token, expiresAt };
+}
+
+// Returns { ok: false } on any invalid/expired/mismatched token -- caller
+// falls back to the normal identity_devices DB lookup exactly as before.
+// Returns { ok: true, identityId: null } for a device confirmed NOT linked
+// to any identity (a lurker), so that case is cached too, not just the
+// linked case.
+async function verifyIdentityToken(deviceId: string, token: unknown): Promise<{ ok: true; identityId: string | null } | { ok: false }> {
+  if (!DEVICE_TOKEN_SECRET || typeof token !== "string" || !token.includes(".")) return { ok: false };
+  const [encoded, sig] = token.split(".");
+  let payload: string;
+  try { payload = atob(encoded); } catch { return { ok: false }; }
+  const parts = payload.split(":");
+  if (parts.length !== 3) return { ok: false };
+  const [tokenDeviceId, identityIdPart, expiresAtStr] = parts;
+  if (tokenDeviceId !== deviceId) return { ok: false };
+  const expiresAt = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAt) || Date.now() / 1000 > expiresAt) return { ok: false };
+  const expected = await hmacHex(payload);
+  if (expected.length !== sig.length) return { ok: false };
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  if (diff !== 0) return { ok: false };
+  return { ok: true, identityId: identityIdPart === "" ? null : identityIdPart };
+}
+
 async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown, token?: unknown): Promise<boolean> {
   if (await verifyDeviceToken(deviceId, token)) return true;
   if (!DEVICE_SECRET_PEPPER || typeof secret !== "string" || secret.length < 16 || secret.length > 200) {
@@ -112,7 +160,7 @@ async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown
 export default {
   fetch: withSupabase({ auth: "publishable" }, async (req, ctx) => {
     const payload: SubscribePayload = await req.json();
-    const { action, device_id, device_secret, device_token, endpoint, keys } = payload ?? {};
+    const { action, device_id, device_secret, device_token, identity_token, endpoint, keys } = payload ?? {};
 
     // ctx.supabaseAdmin bypasses RLS — push_subscriptions has zero client
     // policies (see migration 014), so this is the only client that can
@@ -161,17 +209,25 @@ export default {
     // always follows whichever identity is actually claimed on this device
     // right now, and updates automatically the next time this endpoint
     // re-subscribes under a different claim.
-    const { data: link, error: linkErr } = await admin
-      .from("identity_devices")
-      .select("identity_id")
-      .eq("device_id", device_id)
-      .maybeSingle();
-    if (linkErr) console.error("Identity link lookup error (push subscribe):", linkErr);
+    let identityId: string | null = null;
+    const identityCheck = await verifyIdentityToken(device_id, identity_token);
+    if (identityCheck.ok) {
+      identityId = identityCheck.identityId;
+    } else {
+      const { data: link, error: linkErr } = await admin
+        .from("identity_devices")
+        .select("identity_id")
+        .eq("device_id", device_id)
+        .maybeSingle();
+      if (linkErr) console.error("Identity link lookup error (push subscribe):", linkErr);
+      identityId = link?.identity_id ?? null;
+    }
+    const identityToken = await issueIdentityToken(device_id, identityId);
 
     const { error: upsertErr } = await admin.from("push_subscriptions").upsert(
       {
         device_id,
-        identity_id: link?.identity_id ?? null,
+        identity_id: identityId,
         endpoint,
         p256dh: keys.p256dh,
         auth: keys.auth,
@@ -186,6 +242,7 @@ export default {
     return Response.json({
       ok: true,
       ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+      ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
     });
   }),
 };

@@ -8,6 +8,7 @@ interface PostMessagePayload {
   device_id: string;
   device_secret?: string;
   device_token?: string;
+  identity_token?: string;
   body: string;
   scope: "global" | "problem";
   problem_key?: string | null;
@@ -91,6 +92,53 @@ async function verifyDeviceToken(deviceId: string, token: unknown): Promise<bool
   let diff = 0;
   for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
   return diff === 0;
+}
+
+// -- Identity-resolution token (skips the identity_devices DB round-trip) --
+// identity_devices resolves device_id -> identity_id (which claimed
+// nickname, if any, currently owns this device). It's deliberately NOT
+// covered by the long-lived device token above -- device_id can be
+// reassigned to a different identity mid-session (exit, then claim a new
+// nickname on the same device), and a stale cache here would misattribute
+// posts/edits/syncs to the identity that just left. Instead it gets its own
+// much shorter-lived token (see IDENTITY_TOKEN_TTL_SECONDS below): short
+// enough that a stolen/leaked token's usefulness expires in under five
+// minutes, and drop-nickname (the one action that actually invalidates this)
+// tells the client to delete its copy immediately rather than wait it out --
+// see js/forum.js's storage-event listener for the other open-tabs half of
+// that.
+const IDENTITY_TOKEN_TTL_SECONDS = 300;
+
+async function issueIdentityToken(deviceId: string, identityId: string | null): Promise<{ token: string; expiresAt: number } | null> {
+  if (!DEVICE_TOKEN_SECRET) return null;
+  const expiresAt = Math.floor(Date.now() / 1000) + IDENTITY_TOKEN_TTL_SECONDS;
+  const payload = `${deviceId}:${identityId ?? ""}:${expiresAt}`;
+  const token = btoa(payload) + "." + await hmacHex(payload);
+  return { token, expiresAt };
+}
+
+// Returns { ok: false } on any invalid/expired/mismatched token -- caller
+// falls back to the normal identity_devices DB lookup exactly as before.
+// Returns { ok: true, identityId: null } for a device confirmed NOT linked
+// to any identity (a lurker), so that case is cached too, not just the
+// linked case.
+async function verifyIdentityToken(deviceId: string, token: unknown): Promise<{ ok: true; identityId: string | null } | { ok: false }> {
+  if (!DEVICE_TOKEN_SECRET || typeof token !== "string" || !token.includes(".")) return { ok: false };
+  const [encoded, sig] = token.split(".");
+  let payload: string;
+  try { payload = atob(encoded); } catch { return { ok: false }; }
+  const parts = payload.split(":");
+  if (parts.length !== 3) return { ok: false };
+  const [tokenDeviceId, identityIdPart, expiresAtStr] = parts;
+  if (tokenDeviceId !== deviceId) return { ok: false };
+  const expiresAt = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAt) || Date.now() / 1000 > expiresAt) return { ok: false };
+  const expected = await hmacHex(payload);
+  if (expected.length !== sig.length) return { ok: false };
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  if (diff !== 0) return { ok: false };
+  return { ok: true, identityId: identityIdPart === "" ? null : identityIdPart };
 }
 
 async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown, token?: unknown): Promise<boolean> {
@@ -842,6 +890,30 @@ export default {
     }
     const deviceToken = await issueDeviceToken(device_id);
 
+    // Resolves identity_id once for the whole request — used below for both
+    // the ban check and the nickname-enforcement block further down.
+    // Previously these were two separate identity_devices queries for the
+    // same device_id; now it's at most one, and often zero once the
+    // identity token is warm (see verifyIdentityToken's own comment for why
+    // this is cached with a much shorter TTL than the device token above).
+    let identityId: string | null = null;
+    const identityCheck = await verifyIdentityToken(device_id, payload?.identity_token);
+    if (identityCheck.ok) {
+      identityId = identityCheck.identityId;
+    } else {
+      const { data: link, error: linkErr } = await admin
+        .from("identity_devices")
+        .select("identity_id")
+        .eq("device_id", device_id)
+        .maybeSingle();
+      if (linkErr) {
+        console.error("Identity link lookup error:", linkErr);
+        return Response.json({ ok: false, error: "Couldn't verify your identity, try again." }, { status: 500 });
+      }
+      identityId = link ? link.identity_id : null;
+    }
+    const identityToken = await issueIdentityToken(device_id, identityId);
+
     // ── Ban check (escalating bans from red flags, see flag-message.ts) ────
     // Checked before any other content validation/work, since a banned
     // device shouldn't get moderation/LaTeX-assist calls spent on it. Checks
@@ -863,18 +935,11 @@ export default {
       banUntil = banRow.banned_until;
     }
 
-    const { data: banLink, error: banLinkErr } = await admin
-      .from("identity_devices")
-      .select("identity_id")
-      .eq("device_id", device_id)
-      .maybeSingle();
-    if (banLinkErr) {
-      console.error("Ban check (identity link) error:", banLinkErr);
-    } else if (banLink?.identity_id) {
+    if (identityId) {
       const { data: identityBanRow, error: identityBanErr } = await admin
         .from("identity_bans")
         .select("banned_until")
-        .eq("identity_id", banLink.identity_id)
+        .eq("identity_id", identityId)
         .maybeSingle();
       if (identityBanErr) {
         console.error("Ban check (identity) error:", identityBanErr);
@@ -966,23 +1031,12 @@ export default {
     // identity through identity_devices, which is what lets multiple
     // devices share one identity without any of them losing this
     // enforcement. See edge-functions/claim-nickname.ts.
-    const { data: myLink, error: myLinkErr } = await admin
-      .from("identity_devices")
-      .select("identity_id")
-      .eq("device_id", device_id)
-      .maybeSingle();
-
-    if (myLinkErr) {
-      console.error("Identity link lookup error:", myLinkErr);
-      return Response.json({ ok: false, error: "Couldn't verify your identity, try again." }, { status: 500 });
-    }
-
-    if (myLink) {
-      myIdentityId = myLink.identity_id;
+    if (identityId) {
+      myIdentityId = identityId;
       const { data: myIdentity, error: myIdentityErr } = await admin
         .from("identities")
         .select("nickname")
-        .eq("id", myLink.identity_id)
+        .eq("id", identityId)
         .maybeSingle();
       if (myIdentityErr) {
         console.error("Identity lookup error:", myIdentityErr);
@@ -1103,6 +1157,7 @@ export default {
       ok: true,
       message: inserted,
       ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+      ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
     });
   }),
 };
