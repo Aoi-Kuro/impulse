@@ -945,6 +945,49 @@ function forumRevertOptimisticSend(tempId, originalBody) {
 // any) for whatever name the server settled on, and — for a reply — the
 // parent it was answering (captured client-side before the send, since
 // the response doesn't echo it back).
+// Turns an optimistic row into the confirmed row WITHOUT a visible re-render.
+// The old code did pendingRow.replaceWith(renderForumMessage(finalMsg)), which
+// (a) replayed the 0.3s fade/slide-in entrance on a row that was already
+// showing, and (b) rebuilt the body/quote from scratch, so any LaTeX flashed
+// back to raw "$...$" until MathJax caught up again. Here the new row is
+// built without the entrance animation, and the pending row's already-
+// typeset body / reply quote / avatar nodes are moved into it whenever the
+// content is unchanged (the server rewrote the body only when LaTeX
+// shorthand was converted — that case still gets a fresh body).
+function forumUpgradePendingRow(pendingRow, finalMsg) {
+  const fresh = renderForumMessage(finalMsg, { noEnter: true });
+
+  if (pendingRow.dataset.msgBody === finalMsg.body && !forumHasLatexShorthand(finalMsg.body)) {
+    const oldBody = pendingRow.querySelector('.forum-message-body');
+    const newBody = fresh.querySelector('.forum-message-body');
+    if (oldBody && newBody) newBody.replaceWith(oldBody);
+  }
+
+  const oldQuote = pendingRow.querySelector('.forum-reply-quote');
+  const newQuote = fresh.querySelector('.forum-reply-quote');
+  if (oldQuote && newQuote) newQuote.replaceWith(oldQuote);
+
+  if (pendingRow.dataset.msgAvatarSvg === (finalMsg.avatar_svg || '')) {
+    const oldAvatar = pendingRow.firstElementChild;
+    const newAvatar = fresh.firstElementChild;
+    if (oldAvatar && newAvatar) newAvatar.replaceWith(oldAvatar);
+  }
+
+  pendingRow.replaceWith(fresh);
+}
+
+// The optimistic row (if any) that a just-fetched server message is the
+// confirmed version of — used by forumLiveTick so a poll that lands before
+// our own send response doesn't insert a duplicate next to the pending row.
+function forumFindPendingRowFor(list, msg) {
+  if (msg.device_id !== getForumDeviceId()) return null;
+  const rows = list.querySelectorAll('[data-msg-id^="pending-"]');
+  for (const row of rows) {
+    if (row.dataset.msgBody === msg.body && row.dataset.msgAuthorName === msg.author_name) return row;
+  }
+  return null;
+}
+
 function forumResolveOptimisticSend(tempId, serverMessage, replySnapshot) {
   const finalMsg = {
     ...serverMessage,
@@ -969,7 +1012,7 @@ function forumResolveOptimisticSend(tempId, serverMessage, replySnapshot) {
       // drop the placeholder, there's nothing left to insert.
       if (pendingRow) pendingRow.remove();
     } else if (pendingRow) {
-      pendingRow.replaceWith(renderForumMessage(finalMsg));
+      forumUpgradePendingRow(pendingRow, finalMsg);
     }
   }
 
@@ -3084,8 +3127,13 @@ function renderForumMessage(msg, opts = {}) {
   // transition before. The class is stripped once the animation finishes so
   // later DOM reinsertion of this same reused node (renderForumMessageList
   // replaces list.innerHTML on every refresh) never risks replaying it.
-  row.classList.add('forum-message-enter');
-  row.addEventListener('animationend', () => row.classList.remove('forum-message-enter'), { once: true });
+  // opts.noEnter: set by forumUpgradePendingRow() — that row replaces one
+  // already on screen, so replaying the entrance animation there is exactly
+  // the flicker seen when a sent message gets confirmed.
+  if (!opts.noEnter) {
+    row.classList.add('forum-message-enter');
+    row.addEventListener('animationend', () => row.classList.remove('forum-message-enter'), { once: true });
+  }
 
   return row;
 }
@@ -3169,6 +3217,18 @@ async function loadForumInitial() {
 
   const { data, error } = await fetchForumMessages();
 
+  // Stale-response guard. openForumForProblem() opens the forum (one load,
+  // unfiltered) and then applies the problem filter (a second, overlapping
+  // load). On a slow connection — i.e. mostly phones — the first response can
+  // land AFTER the second and paint the whole unfiltered forum over the
+  // filtered view. A response only gets to render if the filter it was
+  // fetched for is still the active one; either way it's still valid data for
+  // its own cache key, so keep that.
+  if (forumCacheKey() !== cacheKey) {
+    if (!error && data) forumMessageCache[cacheKey] = data;
+    return;
+  }
+
   if (error) {
     // Only clobber the view with an error if we had nothing cached to show.
     if (!cached || cached.length === 0) {
@@ -3218,7 +3278,15 @@ async function loadForumOlder() {
   const loadMoreBtn = document.getElementById('forumLoadMoreBtn');
   if (loadMoreBtn) { loadMoreBtn.disabled = true; loadMoreBtn.textContent = 'Loading…'; }
 
+  const reqKey = forumCacheKey();
   const { data, error } = await fetchForumMessages(forumOldestLoadedId);
+
+  // Filter changed mid-flight: these rows belong to the previous filter.
+  if (forumCacheKey() !== reqKey) {
+    forumLoadingMore = false;
+    if (loadMoreBtn) { loadMoreBtn.disabled = false; loadMoreBtn.textContent = 'Load older messages'; }
+    return;
+  }
 
   if (!error && data.length > 0) {
     forumVisibleData(data).forEach(msg => list.appendChild(renderForumMessage(msg)));
@@ -3733,6 +3801,12 @@ function toggleForumProblemContext() {
 // logic rather than duplicating it; the extra timeout just applies the
 // filter after that flow's own reset-to-"All" settles.
 function openForumForProblem(quizNum, problemId) {
+  // Pre-set so the load openForumFromFab() kicks off is already for this
+  // problem, instead of first fetching the whole forum. (The fallback
+  // openForumScreen() path still resets to "All" — the timeout below
+  // re-applies it either way.)
+  forumFilter = 'q' + quizNum;
+  forumFilterProblemId = problemId;
   openForumFromFab();
   setTimeout(() => {
     forumFilter = 'q' + quizNum;
@@ -3858,10 +3932,14 @@ async function forumLiveTick() {
 
   checkForumBanStatus(); // fire-and-forget, keeps the ban banner/countdown fresh
 
+  const reqKey = forumCacheKey();
   const { data, error } = await fetchForumMessages(); // first page of the currently-active filter
   if (error || !data || data.length === 0) return;
+  // Filter switched while this was in flight — this page belongs to the old
+  // filter, so caching/rendering it now would mix it into the new one.
+  if (forumCacheKey() !== reqKey) return;
 
-  const cacheKey = forumCacheKey();
+  const cacheKey = reqKey;
   const priorCache = forumMessageCache[cacheKey] || [];
   const cachedTop = priorCache[0];
   const knownTopId = cachedTop ? cachedTop.id : 0;
@@ -3923,7 +4001,14 @@ async function forumLiveTick() {
   const prevScrollY      = window.scrollY;
 
   const frag = document.createDocumentFragment();
-  freshMsgs.forEach(msg => frag.appendChild(renderForumMessage(msg)));
+  freshMsgs.forEach(msg => {
+    // Our own just-sent message arriving via the poll before the send
+    // response does: adopt the pending row in place instead of inserting a
+    // second copy beside it.
+    const pendingRow = forumFindPendingRowFor(list, msg);
+    if (pendingRow) forumUpgradePendingRow(pendingRow, msg);
+    else frag.appendChild(renderForumMessage(msg));
+  });
   list.insertBefore(frag, list.firstChild);
 
   if (nearTop) {

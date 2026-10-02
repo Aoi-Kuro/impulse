@@ -215,3 +215,21 @@
     transition: none;
   }
 }
+
+
+/* ── Hide the rail while the forum is open ──────────────────────────────────
+   #forumScreen opens over #appPage without ever clearing #solveAllMode's
+   "active" class, and the rail lives on <body> (not inside #appPage), so
+   nothing else hides it — it was staying visible beside the forum. Pure CSS
+   so it works for every way of opening/closing the forum, and it comes back
+   by itself once #forumScreen loses .visible/.fading-out. #appPage.fading-out
+   is included so the rail leaves together with the page it belongs to when
+   the forum opens over it. visibility:hidden (not just opacity) because the
+   rail's hit zone can still take clicks at opacity:0. */
+body:has(#forumScreen.visible) #saNavRail,
+body:has(#forumScreen.fading-out) #saNavRail,
+body:has(#appPage.fading-out) #saNavRail {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}

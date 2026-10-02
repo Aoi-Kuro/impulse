@@ -628,22 +628,72 @@ async function fetchProblemImage(imageUrl: string): Promise<{ mimeType: string; 
 // value however suits them.
 const GEMINI_MODEL_COOLDOWN_KEY = "gemini_post_message_model_disabled_until";
 
-// Checks app_variables to see whether gemini-3.6-flash is still in its 24h
-// post-daily-quota timeout. Fails open to the primary model on any DB
-// error — worst case we waste one request re-discovering the quota is
-// still exhausted, same as if this table didn't exist at all.
-async function resolveGeminiModel(admin: any): Promise<string> {
+// Second cooldown key: short (10 min) pause after the PRIMARY model answered
+// with a transient 5xx (503 "high demand" etc). Same table/mechanism as the
+// daily-quota key above, just a much shorter window, so a Google-side
+// overload doesn't make every @gemini reply wait 3-6s to rediscover it.
+const GEMINI_OVERLOAD_KEY = "gemini_post_message_overloaded_until";
+const OVERLOAD_COOLDOWN_MS = 10 * 60 * 1000;
+const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Checks app_variables (both cooldown keys, one query) to see whether the
+// primary model is currently paused — either 24h after a daily-quota 429, or
+// 10 min after a transient 5xx. Returns the model to try first plus, when
+// that's the fallback, why (used for the swap warning in the logs). Fails open
+// to the primary model on any DB error.
+async function resolveGeminiModel(admin: any): Promise<{ model: string; reason: string | null }> {
   try {
     const { data, error } = await admin
       .from("app_variables")
-      .select("value")
-      .eq("key", GEMINI_MODEL_COOLDOWN_KEY)
-      .maybeSingle();
-    if (error || !data?.value) return GEMINI_MODEL_PRIMARY;
-    return new Date(data.value as string).getTime() > Date.now() ? GEMINI_MODEL_FALLBACK : GEMINI_MODEL_PRIMARY;
+      .select("key, value")
+      .in("key", [GEMINI_MODEL_COOLDOWN_KEY, GEMINI_OVERLOAD_KEY]);
+    if (error || !data) return { model: GEMINI_MODEL_PRIMARY, reason: null };
+    const now = Date.now();
+    const active = (key: string) =>
+      data.some((r: any) => r.key === key && r.value && new Date(r.value as string).getTime() > now);
+    if (active(GEMINI_MODEL_COOLDOWN_KEY)) return { model: GEMINI_MODEL_FALLBACK, reason: "daily_quota" };
+    if (active(GEMINI_OVERLOAD_KEY)) return { model: GEMINI_MODEL_FALLBACK, reason: "overloaded" };
+    return { model: GEMINI_MODEL_PRIMARY, reason: null };
   } catch (err) {
     console.error("resolveGeminiModel: lookup failed, defaulting to primary", err);
-    return GEMINI_MODEL_PRIMARY;
+    return { model: GEMINI_MODEL_PRIMARY, reason: null };
+  }
+}
+
+// Pauses the primary model for OVERLOAD_COOLDOWN_MS after a transient 5xx.
+// After that, resolveGeminiModel() offers the primary again automatically.
+async function setOverloadCooldown(admin: any): Promise<void> {
+  try {
+    await admin.from("app_variables").upsert({
+      key: GEMINI_OVERLOAD_KEY,
+      value: new Date(Date.now() + OVERLOAD_COOLDOWN_MS).toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("setOverloadCooldown failed (will just retry the primary next time):", err);
+  }
+}
+
+// ── Debug log (table: gemini_debug_log, migration 007) ──────────────────────
+// One row per notable step of an @gemini attempt, so a silent failure can be
+// read straight from the Table Editor. Best-effort: never throws, never
+// blocks the reply. outcome values: triggered | retry_5xx | fallback_5xx |
+// api_error | empty_reply | no_reply_sentinel | mod_error | mod_flagged |
+// insert_error | posted | exception | unavailable_notice_posted |
+// notice_insert_error
+async function gLog(admin: any, messageId: number | null, outcome: string, extra: Record<string, unknown> = {}) {
+  try {
+    const { raw, ...rest } = extra as any;
+    const { error } = await admin.from("gemini_debug_log").insert({
+      message_id: messageId,
+      outcome,
+      ...rest,
+      raw: raw ? String(raw).slice(0, 4000) : null,
+    });
+    if (error) console.error("gLog insert error:", error);
+  } catch (err) {
+    console.error("gLog failed:", err);
   }
 }
 
@@ -681,21 +731,29 @@ async function isDailyQuotaExhausted(res: Response): Promise<boolean> {
   }
 }
 
+// 20s timeout per attempt; a network error/timeout is returned as a synthetic
+// 504 so it flows through the same retry/fallback path as a real 5xx.
 async function callGeminiOnce(model: string, systemInstruction: string, parts: Record<string, unknown>[]): Promise<Response> {
-  return await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        contents: [{ role: "user", parts }],
-      }),
-    }
-  );
+  try {
+    return await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents: [{ role: "user", parts }],
+        }),
+        signal: AbortSignal.timeout(20000),
+      }
+    );
+  } catch (err) {
+    console.error("callGeminiOnce network/timeout:", err);
+    return new Response(String(err), { status: 504 });
+  }
 }
 
 async function callGemini(
@@ -705,8 +763,9 @@ async function callGemini(
   contextMessages: { author_name: string; body: string }[],
   problemText: string | null,
   repliedTo: { author_name: string; body: string } | null,
-  problemImage: { mimeType: string; data: string } | null
-): Promise<string | null> {
+  problemImage: { mimeType: string; data: string } | null,
+  msgId: number
+): Promise<{ text: string | null; unavailable: boolean }> {
   const contextBlock = contextMessages.length
     ? contextMessages.map(m => `${m.author_name}: ${m.body}`).join("\n")
     : "(no earlier messages in this thread)";
@@ -728,31 +787,99 @@ async function callGemini(
   }
 
   try {
-    const firstModel = await resolveGeminiModel(admin);
-    let res = await callGeminiOnce(firstModel, GEMINI_SYSTEM_INSTRUCTIONS, parts);
+    const resolved = await resolveGeminiModel(admin);
+    let model = resolved.model;
+    if (resolved.reason) {
+      console.warn(`Gemini MODEL SWAP: using ${model} instead of ${GEMINI_MODEL_PRIMARY} (${resolved.reason} cooldown active)`);
+    }
+    let res = await callGeminiOnce(model, GEMINI_SYSTEM_INSTRUCTIONS, parts);
 
-    // Only escalate to the fallback model when this was specifically the
-    // daily-quota violation on the PRIMARY model — if we were already on
-    // the fallback (because of a prior day's exhaustion), or this is any
-    // other kind of error, fall through to the existing best-effort
-    // "no reply this time" behavior below.
-    if (!res.ok && firstModel === GEMINI_MODEL_PRIMARY && (await isDailyQuotaExhausted(res))) {
+    // 1) Daily quota on the primary -> fallback model for 24h.
+    if (!res.ok && model === GEMINI_MODEL_PRIMARY && (await isDailyQuotaExhausted(res))) {
       console.log("gemini-3.6-flash: daily quota hit, falling back to gemini-3.5-flash-lite for 24h");
       await recordDailyQuotaExhaustion(admin);
-      res = await callGeminiOnce(GEMINI_MODEL_FALLBACK, GEMINI_SYSTEM_INSTRUCTIONS, parts);
+      console.warn(`Gemini MODEL SWAP: ${GEMINI_MODEL_PRIMARY} -> ${GEMINI_MODEL_FALLBACK} (daily quota exhausted, 24h cooldown set)`);
+      model = GEMINI_MODEL_FALLBACK;
+      res = await callGeminiOnce(model, GEMINI_SYSTEM_INSTRUCTIONS, parts);
+    }
+
+    // 2) Primary overloaded (503 etc.) -> 10 min cooldown and straight to the
+    // fallback, no retry (a 503 from the primary is slow and usually repeats).
+    if (!res.ok && model === GEMINI_MODEL_PRIMARY && RETRYABLE_STATUS.has(res.status)) {
+      await gLog(admin, msgId, "fallback_5xx", { model, http_status: res.status });
+      await setOverloadCooldown(admin);
+      console.warn(`Gemini MODEL SWAP: ${GEMINI_MODEL_PRIMARY} -> ${GEMINI_MODEL_FALLBACK} (HTTP ${res.status}, 10 min cooldown set)`);
+      model = GEMINI_MODEL_FALLBACK;
+      res = await callGeminiOnce(model, GEMINI_SYSTEM_INSTRUCTIONS, parts);
+    }
+
+    // 3) Fallback also failing with a 5xx -> one retry (it's fast, so cheap).
+    if (!res.ok && model === GEMINI_MODEL_FALLBACK && RETRYABLE_STATUS.has(res.status)) {
+      console.warn(`Gemini ${model} returned HTTP ${res.status}, retrying once`);
+      await gLog(admin, msgId, "retry_5xx", { model, http_status: res.status });
+      await sleep(1500);
+      res = await callGeminiOnce(model, GEMINI_SYSTEM_INSTRUCTIONS, parts);
     }
 
     if (!res.ok) {
-      console.error("Gemini API error:", await res.text());
-      return null;
+      const errText = await res.text();
+      console.error("Gemini API error:", errText);
+      await gLog(admin, msgId, "api_error", { model, http_status: res.status, raw: errText });
+      // Google-side "can't serve you right now" (5xx / timeout-as-504 / 429):
+      // every model we tried failed, so the caller posts a visible notice.
+      // Other errors (400/403/404: bad key, bad model name, bad request) are
+      // OUR bug, not overload — those stay silent so the notice never lies.
+      const unavailable = RETRYABLE_STATUS.has(res.status) || res.status === 429;
+      if (unavailable) console.warn(`Gemini UNAVAILABLE: ${model} failed with HTTP ${res.status} after all fallbacks, no model could answer`);
+      return { text: null, unavailable };
     }
 
     const data = await res.json();
-    const reply = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("").trim();
-    return reply || null;
+    const cand = data?.candidates?.[0];
+    const reply = cand?.content?.parts?.map((p: any) => p.text).join("").trim();
+    if (!reply) {
+      // 200 OK but no text (SAFETY block, empty candidate...) — previously silent.
+      await gLog(admin, msgId, "empty_reply", {
+        model,
+        http_status: res.status,
+        finish_reason: cand?.finishReason ?? data?.promptFeedback?.blockReason ?? null,
+        raw: JSON.stringify(data),
+      });
+    }
+    return { text: reply || null, unavailable: false };
   } catch (err) {
     console.error("Gemini call failed:", err);
-    return null;
+    await gLog(admin, msgId, "exception", { raw: String(err) });
+    return { text: null, unavailable: false };
+  }
+}
+
+// Fixed, hand-written notice posted (as the bot) when every model failed on
+// Google's side — see callGemini's `unavailable`. Static text, so it skips the
+// moderation call. Plain text: this forum only renders LaTeX delimiters.
+function geminiUnavailableNotice(taggerName: string): string {
+  return `@${taggerName}, Google's AI servers are overloaded right now, so I can't answer at the moment. Please try again in a few minutes.`;
+}
+
+async function postGeminiUnavailableNotice(
+  admin: any,
+  humanMsg: { id: number; author_name: string; scope: string; problem_key: string | null }
+) {
+  const { error } = await admin.from("forum_messages").insert({
+    author_name: GEMINI_BOT_NAME,
+    device_id: GEMINI_BOT_DEVICE_ID,
+    body: geminiUnavailableNotice(humanMsg.author_name),
+    scope: humanMsg.scope,
+    problem_key: humanMsg.problem_key,
+    reply_to_id: humanMsg.id,
+    moderation_status: "approved",
+  });
+  if (error) {
+    console.error("Gemini unavailable-notice insert error:", error);
+    await gLog(admin, humanMsg.id, "notice_insert_error", { raw: JSON.stringify(error) });
+  } else {
+    console.warn(`Gemini unavailable notice posted (reply to message ${humanMsg.id})`);
+    await gLog(admin, humanMsg.id, "unavailable_notice_posted");
   }
 }
 
@@ -774,6 +901,8 @@ async function maybePostGeminiReply(
 ) {
   if (!forceTrigger && !GEMINI_MENTION_RE.test(humanMsg.body)) return;
 
+  await gLog(admin, humanMsg.id, "triggered");
+
   const [contextMessages, problemContext] = await Promise.all([
     fetchRecentContext(admin, humanMsg.scope, humanMsg.problem_key, humanMsg.id),
     fetchProblemContext(humanMsg.problem_key),
@@ -784,16 +913,20 @@ async function maybePostGeminiReply(
   // threads have no figure to fetch.
   const problemImage = problemContext?.imageUrl ? await fetchProblemImage(problemContext.imageUrl) : null;
 
-  const reply = await callGemini(
+  const { text: reply, unavailable } = await callGemini(
     admin,
     humanMsg.author_name,
     humanMsg.body,
     contextMessages,
     problemContext?.text ?? null,
     repliedTo,
-    problemImage
+    problemImage,
+    humanMsg.id
   );
-  if (!reply) return;
+  if (!reply) {
+    if (unavailable) await postGeminiUnavailableNotice(admin, humanMsg);
+    return;
+  }
 
   // Gemini's explicit "I choose not to reply" signal — see the no-reply
   // bullet in GEMINI_SYSTEM_INSTRUCTIONS. .startsWith() rather than a strict
@@ -805,6 +938,7 @@ async function maybePostGeminiReply(
   const normalizedReply = reply.trim();
   if (normalizedReply === GEMINI_NO_REPLY_SENTINEL || normalizedReply.startsWith(GEMINI_NO_REPLY_SENTINEL)) {
     console.info("Gemini chose not to reply (trivial reply-to, or offensive message).");
+    await gLog(admin, humanMsg.id, "no_reply_sentinel", { raw: normalizedReply });
     return;
   }
 
@@ -826,16 +960,20 @@ async function maybePostGeminiReply(
       body: JSON.stringify({ model: "omni-moderation-latest", input: trimmedReply }),
     });
     if (!modRes.ok) {
-      console.error("Gemini-reply moderation API error:", await modRes.text());
+      const modErrText = await modRes.text();
+      console.error("Gemini-reply moderation API error:", modErrText);
+      await gLog(admin, humanMsg.id, "mod_error", { http_status: modRes.status, raw: modErrText });
       return;
     }
     const modData = await modRes.json();
     if (modData?.results?.[0]?.flagged) {
       console.error("Gemini reply was flagged by moderation, not posted.");
+      await gLog(admin, humanMsg.id, "mod_flagged", { raw: trimmedReply });
       return;
     }
   } catch (err) {
     console.error("Gemini-reply moderation call failed:", err);
+    await gLog(admin, humanMsg.id, "mod_error", { raw: String(err) });
     return;
   }
 
@@ -850,10 +988,12 @@ async function maybePostGeminiReply(
   });
   if (geminiInsertErr) {
     console.error("Gemini reply insert error:", geminiInsertErr);
+    await gLog(admin, humanMsg.id, "insert_error", { raw: JSON.stringify(geminiInsertErr) });
   } else {
     console.info(
       `Gemini reply posted (problem=${humanMsg.problem_key ?? "none"}, image=${!!problemImage})`
     );
+    await gLog(admin, humanMsg.id, "posted");
   }
 }
 
