@@ -162,8 +162,9 @@ async function deleteAttempt(hash) {
 // it looked the moment it was actually checked, not a re-implementation
 // that could quietly drift out of sync with real grading over time.
 function findReviewProblem(quizNum, problemId) {
-  const q = QUIZZES[quizNum - 1];
-  return q ? (q.problems.find(p => p.id === problemId) || null) : null;
+  // Active OR retired — retired problems stay openable from review (they
+  // just show as "DEL"); only a problem removed outright resolves to null.
+  return getQuizProblem(quizNum, problemId);
 }
 
 // Set by renderAttemptReview, read by paintForumProblemButtons via the
@@ -243,7 +244,7 @@ function renderAttemptReview(attempt) {
   if (boxesEl) {
     boxesEl.innerHTML = attempt.answers.map((a, idx) => {
       const cls = a.points === 1 ? 'score-box-correct' : a.points === 0.9 ? 'score-box-partial' : 'score-box-wrong';
-      return `<span class="score-box ${cls}" title="${a.points} pt" onclick="scrollToReviewCard(${idx})">${a.problem_id}</span>`;
+      return `<span class="score-box ${cls}" title="${a.points} pt" onclick="scrollToReviewCard(${idx})">${problemLabel(a.quiz_num, a.problem_id)}</span>`;
     }).join('');
   }
 
@@ -255,7 +256,7 @@ function renderAttemptReview(attempt) {
     card.className = 'problem-card review-problem-card';
     const forumRowHtml = `
         <div class="card-check-row" id="rv-forum-row-${idx}">
-          <button class="forum-problem-btn" id="rv-forum-btn-${idx}" title="Forum thread for ${_escAttr(a.problem_id)}"
+          <button class="forum-problem-btn" id="rv-forum-btn-${idx}" title="Forum thread for ${problemLabel(a.quiz_num, a.problem_id)}"
             onclick="openForumForProblem(${a.quiz_num}, '${_escAttr(a.problem_id).replace(/'/g, "\\'")}')">
             💬 <span id="rv-forum-total-${idx}"></span>
             <span class="forum-problem-btn-badge" id="rv-forum-badge-${idx}" style="display:none;"></span>
@@ -269,7 +270,7 @@ function renderAttemptReview(attempt) {
       // instead of silently dropping the row from the review.
       card.classList.add('wrong');
       card.innerHTML = `
-        <div class="card-header"><span class="problem-num">${a.problem_id} · Quiz #${a.quiz_num}</span></div>
+        <div class="card-header"><span class="problem-num">${problemLabel(a.quiz_num, a.problem_id)} · Quiz #${a.quiz_num}</span></div>
         <div class="problem-text" style="color:var(--muted)">This problem's original text is no longer available.</div>
         <div class="answer-row">
           <span class="answer-label">Value =</span>
@@ -290,7 +291,8 @@ function renderAttemptReview(attempt) {
 
     card.classList.add(pts === 1 ? 'correct' : pts === 0.9 ? 'partial' : 'wrong');
     const isCumulative = attempt.mode === 'cumulative' && a.quiz_num !== attempt.quizNum;
-    const numDisplay = isCumulative ? `${p.id} · Quiz #${a.quiz_num}` : p.id;
+    const pLabel = problemLabel(a.quiz_num, a.problem_id);
+    const numDisplay = isCumulative ? `${pLabel} · Quiz #${a.quiz_num}` : pLabel;
 
     let fbClass, fbHtml;
     if (pts === 1) {
@@ -917,8 +919,8 @@ function _recolorProblemsOverview() {
     box.classList.remove('score-box-unattempted', 'score-box-correct', 'score-box-partial', 'score-box-wrong');
     box.classList.add(cls);
     box.title = rec
-      ? `${box.dataset.pid} · ${_poMode === 'best' ? 'best' : 'latest'} attempt: ${rec.points} pt`
-      : `${box.dataset.pid} · not attempted yet`;
+      ? `${box.textContent} · ${_poMode === 'best' ? 'best' : 'latest'} attempt: ${rec.points} pt`
+      : `${box.textContent} · not attempted yet`;
   });
   document.querySelectorAll('.po-mode-switch-row').forEach(row => {
     const [lastLabel, track, bestLabel] = row.children;
@@ -964,21 +966,22 @@ function renderProblemsOverview() {
 
     const total = q.problems.length;
     const attemptedCount = q.problems.reduce((n, p) => n + (scores.has(`${quizNum}_${p.id}`) ? 1 : 0), 0);
-    const boxes = q.problems.map(p => {
+    const boxes = q.problems.map((p, pi) => {
+      const pLabel = 'P' + (pi + 1);  // same as problemLabel(quizNum, p.id) for an active problem
       const rec = scores.get(`${quizNum}_${p.id}`);
       const cls = !rec ? 'score-box-unattempted'
         : rec.points === 1 ? 'score-box-correct'
         : rec.points === 0.9 ? 'score-box-partial'
         : 'score-box-wrong';
       const title = rec
-        ? `${p.id} · ${_poMode === 'best' ? 'best' : 'latest'} attempt: ${rec.points} pt`
-        : `${p.id} · not attempted yet`;
+        ? `${pLabel} · ${_poMode === 'best' ? 'best' : 'latest'} attempt: ${rec.points} pt`
+        : `${pLabel} · not attempted yet`;
       // Clickable straight into that problem's forum thread — same
       // openForumForProblem() the in-quiz forum buttons use (js/forum.js),
       // so it lands on the identical thread/context view. data-quiz/
       // data-pid let _recolorProblemsOverview() find this exact box again
       // without a full rebuild.
-      return `<span class="score-box ${cls}" title="${title}" data-quiz="${quizNum}" data-pid="${p.id}" onclick="openForumForProblem(${quizNum}, '${p.id}')">${p.id}</span>`;
+      return `<span class="score-box ${cls}" title="${title}" data-quiz="${quizNum}" data-pid="${p.id}" onclick="openForumForProblem(${quizNum}, '${p.id}')">${pLabel}</span>`;
     }).join('');
 
     return `

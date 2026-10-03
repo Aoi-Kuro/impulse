@@ -413,7 +413,11 @@ function forumTagInfo(scope, problemKey) {
   const m = /^q(\d+)_(.+)$/i.exec(problemKey);
   if (!m) return { label: problemKey, color: null };
   const quizNum = m[1];
-  const probId  = m[2].toUpperCase();
+  // "general" threads keep their GENERAL tag; real problems show their
+  // CURRENT number ("P12") or "DEL" if retired — never the stored id.
+  const probId  = m[2].toLowerCase() === 'general' || typeof problemLabel !== 'function'
+    ? m[2].toUpperCase()
+    : problemLabel(parseInt(quizNum, 10), m[2]);
   return { label: `Q${quizNum}—${probId}`, color: `var(--q${quizNum})` };
 }
 
@@ -686,6 +690,20 @@ function populateForumComposerQuizSelect(selectId = 'forumScopeQuizSelect') {
 // (no specific problem) — see buildForumScopePayload() for how that's
 // encoded. selectId defaults to the composer's own select, same reasoning
 // as populateForumComposerQuizSelect above.
+// A retired problem isn't offered as a place to post (it's not in
+// quiz.problems), but if the thread the user is already IN belongs to one —
+// opened from review, replying to / editing a message in it — its option must
+// still exist, or the select would silently snap to "General" and the post/edit
+// would land in the wrong thread. Value stays the stored id; text is "DEL".
+function _forumAppendRetiredOption(sel, quizNum, problemId) {
+  if (!sel || !problemId || problemId === 'general') return;
+  if (typeof isProblemRetired !== 'function' || !isProblemRetired(parseInt(quizNum, 10), problemId)) return;
+  const opt = document.createElement('option');
+  opt.value = problemId;
+  opt.textContent = 'DEL';
+  sel.appendChild(opt);
+}
+
 function populateForumComposerProblemSelect(quizValue, selectId = 'forumScopeProblemSelect') {
   const sel = document.getElementById(selectId);
   if (!sel) return;
@@ -699,13 +717,16 @@ function populateForumComposerProblemSelect(quizValue, selectId = 'forumScopePro
   sel.appendChild(generalOpt);
 
   if (quiz && Array.isArray(quiz.problems)) {
-    quiz.problems.forEach(p => {
+    quiz.problems.forEach((p, pi) => {
       const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.id;
+      opt.value = p.id;                 // stored key — stable
+      opt.textContent = 'P' + (pi + 1); // what the user sees — current position
       sel.appendChild(opt);
     });
   }
+  // The edit modal's select tracks forumEditProblemId; the composer's tracks
+  // forumComposerProblemId — both are set before this runs (see callers).
+  _forumAppendRetiredOption(sel, quizNum, selectId === 'forumEditProblemSelect' ? forumEditProblemId : forumComposerProblemId);
 }
 
 function onForumScopeQuizChange() {
@@ -3581,13 +3602,16 @@ function updateForumFilterProblemSelect() {
   sel.appendChild(generalOpt);
 
   if (quiz && Array.isArray(quiz.problems)) {
-    quiz.problems.forEach(p => {
+    quiz.problems.forEach((p, pi) => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      opt.textContent = p.id;
+      opt.textContent = 'P' + (pi + 1);
       sel.appendChild(opt);
     });
   }
+  // Landed on a retired problem's thread (e.g. from attempt review)? Keep it
+  // selectable so the filter shows what's actually being viewed.
+  _forumAppendRetiredOption(sel, quizNum, forumFilterProblemId);
 
   sel.value = forumFilterProblemId;
   sel.style.display = '';
@@ -3774,12 +3798,14 @@ function showForumProblemContext(quizNum, problemId) {
   const toggle = document.getElementById('forumProblemContextToggle');
   const body   = document.getElementById('forumProblemContextBody');
   if (!toggle || !body) return;
-  const quiz = typeof QUIZZES !== 'undefined' ? QUIZZES[quizNum - 1] : null;
-  const problem = quiz && Array.isArray(quiz.problems) ? quiz.problems.find(pr => pr.id === problemId) : null;
+  // Active OR retired — a retired problem's thread still shows its statement.
+  const problem = typeof getQuizProblem === 'function' ? getQuizProblem(quizNum, problemId) : null;
+  const label = typeof problemLabel === 'function' ? problemLabel(quizNum, problemId) : problemId;
   body.innerHTML = problem ? problem.text : '';
   body.dataset.problemId = problemId;
+  body.dataset.problemLabel = label;
   body.style.display = '';
-  toggle.textContent = '▾ Hide ' + problemId;
+  toggle.textContent = '▾ Hide ' + label;
   toggle.dataset.expanded = 'true';
   if (typeof renderMathIn === 'function') renderMathIn(body);
 }
@@ -3791,7 +3817,7 @@ function toggleForumProblemContext() {
   const wasExpanded = toggle.dataset.expanded === 'true';
   body.style.display = wasExpanded ? 'none' : '';
   toggle.dataset.expanded = wasExpanded ? 'false' : 'true';
-  toggle.textContent = (wasExpanded ? '▸ Show ' : '▾ Hide ') + (body.dataset.problemId || 'problem');
+  toggle.textContent = (wasExpanded ? '▸ Show ' : '▾ Hide ') + (body.dataset.problemLabel || 'problem');
   if (!wasExpanded && typeof renderMathIn === 'function') renderMathIn(body);
 }
 

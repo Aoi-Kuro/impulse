@@ -184,7 +184,8 @@ function discoverCourseImageUrls() {
   const urls = new Set();
   if (typeof QUIZZES !== 'undefined') {
     QUIZZES.forEach((q) => {
-      (q.problems || []).forEach((p) => {
+      // Retired problems too: attempt review / forum threads can still open them.
+      [...(q.problems || []), ...(q.retired || [])].forEach((p) => {
         const text = p && p.text;
         if (typeof text !== 'string') return;
         const re = /<img[^>]+src=["']([^"']+)["']/gi;

@@ -325,14 +325,13 @@ const GEMINI_NO_REPLY_SENTINEL = "[[NO_REPLY]]";
 //
 // The live site — used only to fetch a tagged problem's own statement text
 // for context (that text lives in course/quizzes/quizN.js, not in Supabase).
-const SITE_ORIGIN = "https://phys162.netlify.app";
+const SITE_ORIGIN = "https://phys161.netlify.app";
 
 // Edit this any time to change how Gemini behaves/answers in the forum —
 // nothing else about the pipeline needs to change alongside it. Also
 // course-specific, same manual-edit note as SITE_ORIGIN above.
 const GEMINI_SYSTEM_INSTRUCTIONS = `
-You are "Gemini", a helpful participant in a student forum for PHYS162
-(electromagnetism & optics physics) at Nazarbayev University.
+You are "Gemini", a helpful participant in a student forum for PHYS 161 at Nazarbayev University.
 Someone just tagged you with @gemini. You'll be given the tagged message,
 recent messages from the same thread for context, and — if the thread is
 about a specific problem — that problem's exact text.

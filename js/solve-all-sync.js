@@ -91,7 +91,6 @@ function mergeSolveAllSnapshots(local, server) {
   });
 
   return {
-    order: (local.order && local.order.length) ? local.order : server.order,
     checkedById,
     lockedIds: [...lockedSet],
     answersById,

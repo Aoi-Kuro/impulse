@@ -469,3 +469,8 @@ const Quiz_2_Problems = [
     text:"A wheel consists of a thin circular rim of mass 2.75 kg and radius 0.12 m, together with four identical uniform spokes, each of mass 0.5 kg, running from the center of the wheel to the rim. What is the moment of inertia of this wheel about an axle through its center, perpendicular to the plane of the wheel?" },
 
 ];
+
+// Retired problems: no longer served (Random quiz / Solve-All) but still openable from
+// attempt review, stats and forum threads. See the rules in quizzes.js. Move a problem
+// object here unchanged — keep its id.
+const Quiz_2_Retired = [];

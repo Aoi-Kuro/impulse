@@ -473,3 +473,8 @@ const Quiz_1_Problems = [
     text:"A 82-kg person rides in a 37-kg cart moving at 12 m s$^{-1}$ at the bottom of a valley that is in the shape of an arc of a circle with a radius of 42 m. What is the apparent weight of the person as the cart passes through the lowest point of the valley? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
 ];
+
+// Retired problems: no longer served (Random quiz / Solve-All) but still openable from
+// attempt review, stats and forum threads. See the rules in quizzes.js. Move a problem
+// object here unchanged — keep its id.
+const Quiz_1_Retired = [];

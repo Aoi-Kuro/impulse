@@ -322,7 +322,9 @@ function problemPassesFilter(p, quizIdx) {
   if (mode === 'number') {
     const nf = cumulativeNumFilter[quizIdx];
     if (!nf) return true;
-    const num = parseInt(String(p.id).replace(/\D/g, ''), 10);
+    // Numbers the user types refer to the numbers they SEE (position in the
+    // quiz), not the stored id — see problemNumber() in quizzes.js.
+    const num = problemNumber(quizIdx + 1, p.id);
     const inSet = nf.ranges.has(num);
     return nf.incexc === 'exclude' ? !inSet : inSet;
   }
@@ -875,7 +877,8 @@ function render() {
   container.classList.remove('results-shown');
   quiz.forEach((p, i) => {
     const isCumulative = selectedCumulativeMode === 'cumulative' && p._quizNum != null;
-    const numDisplay   = isCumulative ? `${p.id} · Quiz #${p._quizNum}` : p.id;
+    const pLabel       = problemLabel(p._quizNum || selectedQuizNum, p.id);
+    const numDisplay   = isCumulative ? `${pLabel} · Quiz #${p._quizNum}` : pLabel;
     const card = document.createElement("div");
     card.className = "problem-card";
     card.id = "card-" + i;
@@ -893,7 +896,7 @@ function render() {
       </div>
       <div class="feedback" id="fb-${i}"></div>
       <div class="card-check-row" id="forum-row-${i}" style="display:none;">
-        <button class="forum-problem-btn" id="rq-forum-btn-${i}" title="Forum thread for ${p.id}"
+        <button class="forum-problem-btn" id="rq-forum-btn-${i}" title="Forum thread for ${pLabel}"
           onclick="openForumForProblem(${p._quizNum || selectedQuizNum}, '${p.id}')">
           💬 <span id="rq-forum-total-${i}"></span>
           <span class="forum-problem-btn-badge" id="rq-forum-badge-${i}" style="display:none;"></span>
@@ -1046,7 +1049,7 @@ function checkAll() {
 // quiz (a row where every chip is already the same quiz has nothing
 // useful to toggle to).
 function pqChipInner(problemId, quizNum) {
-  return `<span class="pq-label pq-label-p">${problemId}</span><span class="pq-label pq-label-q">Q${quizNum}</span>`;
+  return `<span class="pq-label pq-label-p">${problemLabel(quizNum, problemId)}</span><span class="pq-label pq-label-q">Q${quizNum}</span>`;
 }
 function togglePQRow(btn) {
   const row = btn.closest('.pq-row');
@@ -1110,7 +1113,7 @@ function renderRecentAttemptsMini() {
         const cls = ans.points === 1 ? 'score-box-correct' : ans.points === 0.9 ? 'score-box-partial' : 'score-box-wrong';
         const problemId = String(ans.problem_id || '').replace(/'/g, "\\'");
         const qNum = ans.quiz_num || a.quizNum;
-        return `<span class="score-box score-box-sm ${cls} recent-attempt-problem" title="Open ${ans.problem_id} forum" role="button" tabindex="0" onclick="openForumForProblem(${qNum}, '${problemId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">${pqChipInner(ans.problem_id, qNum)}</span>`;
+        return `<span class="score-box score-box-sm ${cls} recent-attempt-problem" title="Open ${problemLabel(qNum, ans.problem_id)} forum" role="button" tabindex="0" onclick="openForumForProblem(${qNum}, '${problemId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">${pqChipInner(ans.problem_id, qNum)}</span>`;
       }).join('') + pqToggleButton(rowShowToggle);
       return `
         <div class="recent-attempt-row">
@@ -1206,7 +1209,6 @@ function buildSolveAllSnapshot() {
   });
   const lockedIds = [...solveAllLocked].map(idx => solveAllProblems[idx]?.id).filter(Boolean);
   return {
-    order: solveAllProblems.map(p => p.id),
     checkedById,
     lockedIds,
     answersById
@@ -1298,7 +1300,6 @@ function openSolveAllModal() {
   const shuffleHint  = hasSaved ? 'progress kept' : 'random order';
   document.getElementById('solveAllOrderedSub').textContent = progressHint;
   document.getElementById('solveAllShuffledSub').textContent = shuffleHint;
-  document.getElementById('solveAllResumeRow').style.display = hasSaved ? '' : 'none';
   fadeInScreen(document.getElementById('choicePage'), 380);
 }
 
@@ -1322,20 +1323,15 @@ function _startSolveAllCore(order) {
   const pool  = [...ACTIVE_PROBLEMS];
   const saved = loadSolveAllProgress();
 
-  if (order === 'resume' && saved && saved.order) {
-    // Restore exact saved order
-    const idMap = new Map(pool.map(p => [p.id, p]));
-    solveAllProblems = saved.order.map(id => idMap.get(id)).filter(Boolean);
-    const savedIds = new Set(saved.order);
-    pool.forEach(p => { if (!savedIds.has(p.id)) solveAllProblems.push(p); });
-  } else {
-    // Fresh order (1→N or shuffled)
-    solveAllProblems = [...pool];
-    if (order === 'unordered') {
-      for (let i = solveAllProblems.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [solveAllProblems[i], solveAllProblems[j]] = [solveAllProblems[j], solveAllProblems[i]];
-      }
+  // The card order is never stored or synced — it is decided locally every
+  // time Solve-All opens: 'ordered' = the quiz's own order (1→N), 'unordered'
+  // = a fresh shuffle each time. Progress is keyed by problem id, so it is
+  // applied below regardless of the order chosen.
+  solveAllProblems = [...pool];
+  if (order === 'unordered') {
+    for (let i = solveAllProblems.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [solveAllProblems[i], solveAllProblems[j]] = [solveAllProblems[j], solveAllProblems[i]];
     }
   }
 
@@ -1646,7 +1642,7 @@ function buildSolveAllCards(container, batchSize = 12) {
 
           card.innerHTML = `
             <div class="card-header">
-              <span class="problem-num">${p.id}</span>
+              <span class="problem-num">${problemLabel(p._quizNum || selectedQuizNum, p.id)}</span>
               <span class="problem-topic">${p.topic}</span>
             </div>
             <div class="problem-text">${cached !== null ? cached.html : p.text}</div>
@@ -1658,7 +1654,7 @@ function buildSolveAllCards(container, batchSize = 12) {
             </div>
             <div class="feedback" id="sa-fb-${i}"></div>
             <div class="card-check-row" id="sa-btnrow-${i}">
-              <button class="forum-problem-btn" id="sa-forum-btn-${i}" title="Forum thread for ${p.id}"
+              <button class="forum-problem-btn" id="sa-forum-btn-${i}" title="Forum thread for ${problemLabel(p._quizNum || selectedQuizNum, p.id)}"
                 onclick="openForumForProblem(${p._quizNum || selectedQuizNum}, '${p.id}')">
                 💬 <span id="sa-forum-total-${i}"></span>
                 <span class="forum-problem-btn-badge" id="sa-forum-badge-${i}" style="display:none;"></span>
@@ -2046,7 +2042,7 @@ function renderMistakes() {
 
     card.innerHTML = `
       <div class="card-header">
-        <span class="problem-num">${p.id}</span>
+        <span class="problem-num">${problemLabel(p._quizNum || selectedQuizNum, p.id)}</span>
         <span class="problem-topic">${p.topic}</span>
       </div>
       <div class="problem-text">${p.text}</div>
@@ -2447,20 +2443,14 @@ function startSelected() {
       const appPage = document.getElementById('appPage');
       appPage.classList.remove('visible', 'fading-out');
       // Settings > Study > "Lock order" (+ its ordered/shuffled sub) —
-      // when on, skip the order-picker modal entirely: resume straight
-      // into saved progress if there is any (matching what the modal's
-      // own "progress kept" hint already implies people expect), otherwise
-      // jump directly into the locked order. openSolveAllModal() itself
-      // still runs normally whenever this is off.
+      // when on, skip the order-picker modal entirely and jump straight into
+      // the locked order (saved progress, if any, is applied by id either
+      // way). openSolveAllModal() itself still runs normally whenever this
+      // is off.
       if (typeof getSetting === 'function' && getSetting('study', 'lockSolveAllOrder') === true) {
-        const saved = loadSolveAllProgress();
-        const hasSaved = saved && (
-          (saved.checkedById && Object.keys(saved.checkedById).length > 0) ||
-          (saved.checked && saved.checked.length > 0)
-        );
         const lockedOrder = getSetting('study', 'solveAllLockedOrder') === 'unordered' ? 'unordered' : 'ordered';
         appPage.classList.add('visible');
-        _startSolveAllCore(hasSaved ? 'resume' : lockedOrder);
+        _startSolveAllCore(lockedOrder);
       } else {
         openSolveAllModal();
       }
@@ -2670,7 +2660,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '11.2.5';
+const CURRENT_VERSION = '12.0.0';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

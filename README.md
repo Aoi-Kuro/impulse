@@ -618,6 +618,44 @@ called out with comments at each location so they're never a silent gap:
 
 ---
 
+## Problem ids, numbers, and retiring problems
+
+[#problem-ids-numbers-and-retiring-problems](#problem-ids-numbers-and-retiring-problems)
+
+Every problem has an `id` (`"P1"`, `"P47"`, …). The **id is the permanent key** all
+history is stored under — attempts (`quiz_attempts`), Solve-All progress
+(`checkedById` / `lockedIds` / `answersById`; card order is never stored — Ordered is the quiz's own order, Shuffled reshuffles on every open), forum threads (`problem_key` = `qN_<id>`),
+and the math cache. It is never shown to users and never has to match the problem's
+position.
+
+What users **see** is the problem's *current 1-based position* in its quiz's
+`problems` array (`P12`), via `problemLabel(quizNum, id)` in
+`course/quizzes/quizzes.js`. So you can reorder problems or insert new ones anywhere
+and nobody's history moves with the numbers.
+
+- **New problem:** give it the next unused id (never reuse one) and put it at the
+  position you want it shown at.
+- **Retire a problem:** *move* its object, unchanged, from `Quiz_N_Problems` to
+  `Quiz_N_Retired` (same file). It is no longer served in Random quiz / Solve-All,
+  disappears from Solve-All progress, but still opens from attempt review, stats and
+  forum threads, where it is labelled **`DEL`**. Stats keep counting its attempts.
+  Moving it back restores attempt history and forum threads. Its *Solve-All* progress is
+  not restored: Solve-All pushes overwrite the server row with only the problems currently
+  served, so a retired problem's solved status is dropped on the next sync.
+- **Changed a problem substantially** (new numbers / different question)? Retire the old
+  one and add the new one under a fresh id. Keeping the id would carry the old solved
+  status over to what is effectively a different problem.
+- **Never delete** a problem object outright if anyone may have attempted it (its
+  attempts would show "original text no longer available"). Retire it instead.
+- A console error is logged at load if an id is duplicated within a quiz (including
+  across `problems` + `retired`).
+
+`getQuizProblem(quizNum, id)` resolves an id to its content whether active or retired —
+use it wherever a *stored* id must be shown again; use `QUIZZES[n].problems` when you
+want only what is currently served.
+
+---
+
 ## Versioning
 
 Bump the version in **three places** on every release: `js/data/changelog.js`
