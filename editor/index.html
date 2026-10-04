@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head data-course="phys161">
+<!-- Change data-course per course site, exactly like the root index.html. -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Solutions editor</title>
+<!-- Absolute asset paths + base so this page works at /editor/ and /editor.
+     Problem text uses site-root-relative image paths (course/images/...), which
+     also resolve correctly thanks to this base. -->
+<base href="/">
+<link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600&family=STIX+Two+Text:ital,wght@0,400;1,400&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&family=Quicksand:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/figure.css">
+<link rel="stylesheet" href="/vendor/tikzjax/fonts.css">
+<link rel="stylesheet" href="/editor/editor.css">
+<!-- MathJax, same config as the main site (STIX Two) -->
+<script>
+  try { localStorage.removeItem('MathJax-Menu-Settings'); } catch (e) {}
+  window.MathJaxReady = new Promise(resolve => {
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+      chtml: { fontURL: 'vendor/mathjax/fonts/woff' },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+        enableMenu: false,
+        menuOptions: { settings: { assistiveMml: false, collapsible: false, explorer: false, inTabOrder: false } }
+      },
+      startup: { typeset: false, ready() { MathJax.startup.defaultReady(); resolve(); } }
+    };
+  });
+</script>
+<script defer id="MathJax-script" src="/vendor/mathjax/mathjax-stix2.js"></script>
+</head>
+<body class="ed">
+
+<!-- ── Top bar: sidebar toggle (left), themes + day/night (right). Nothing else. ── -->
+<div class="top-bar-backdrop" aria-hidden="true"></div>
+
+<div class="ed-topleft">
+  <!-- Back to the practice site. Absolute path so it works at /editor/ and
+       /editor alike; the toggle, title and name sit to its right. -->
+  <a class="ed-logo" href="/" title="Back to the main site" aria-label="Back to the main site">
+    <img src="/favicon/favicon.svg" alt="" class="ed-logo-img">
+  </a>
+  <button class="ed-iconbtn" id="sbToggle" title="Toggle problem list" aria-label="Toggle problem list">☰</button>
+  <span class="ed-title" id="edTitle">Solutions</span>
+  <span class="ed-who" id="edWho"></span>
+</div>
+
+<div class="theme-toggle-wrap">
+  <button class="palette-icon-btn" id="paletteBtn" onclick="toggleThemePanel(event)" title="Color themes">🎨</button>
+  <span class="theme-icon">🌙</span>
+  <div class="toggle-track" id="themeTrack" onclick="toggleTheme()"><div class="toggle-knob"></div></div>
+  <span class="theme-icon">☀️</span>
+</div>
+
+<div class="theme-panel" id="themePanel">
+  <div class="theme-panel-title">Color theme</div>
+  <div class="theme-grid" id="themeGrid"></div>
+  <button class="theme-custom-btn" id="customThemeBtn" onclick="openCustomThemeModal()">🎛 Edit custom…</button>
+</div>
+
+<!-- Custom theme modal (same markup as the main site; logic is in js/themes.js) -->
+<div class="theme-modal-overlay" id="customThemeOverlay" onclick="if(event.target===this)closeCustomThemeModal()">
+  <div class="theme-modal">
+    <div class="theme-modal-header"><span>🎛 Custom theme</span><button onclick="closeCustomThemeModal()">✕</button></div>
+    <div class="theme-modal-tabs">
+      <button class="ctm-tab" data-mode="night" onclick="ctmTabClick('night')">🌙 Night</button>
+      <button class="ctm-tab" data-mode="day" onclick="ctmTabClick('day')">☀️ Day</button>
+    </div>
+    <div class="ctm-field"><label>Background</label><input type="color" id="ctm-bg" oninput="updateCustomField('bg', this.value)"></div>
+    <div class="ctm-field"><label>Text</label><input type="color" id="ctm-text" oninput="updateCustomField('text', this.value)"></div>
+    <div class="ctm-field"><label>Accent 1</label><input type="color" id="ctm-accent" oninput="updateCustomField('accent', this.value)"></div>
+    <div class="ctm-field"><label>Accent 2</label><input type="color" id="ctm-accent2" oninput="updateCustomField('accent2', this.value)"></div>
+    <div class="ctm-divider"></div>
+    <div class="ctm-field"><label>Roundness</label><input type="range" id="ctm-radius" min="0.15" max="1.8" step="0.05" oninput="updateCustomRadius(this.value)"></div>
+    <div class="ctm-field">
+      <label>Font</label>
+      <select id="ctm-font" onchange="updateCustomFont(this.value)">
+        <option value="plex">Plex</option>
+        <option value="grotesk">Grotesk</option>
+        <option value="quicksand">Quicksand</option>
+        <option value="mono">All-mono</option>
+      </select>
+    </div>
+    <div class="ctm-preview" id="ctm-preview">
+      <div class="ctm-preview-inner">
+        <div class="ctm-preview-row">
+          <span class="ctm-preview-chip accent">Accent</span>
+          <span class="ctm-preview-chip accent2">Accent 2</span>
+        </div>
+        <div class="ctm-preview-text">The quick brown fox jumps.</div>
+      </div>
+    </div>
+    <div class="ctm-actions">
+      <button class="ctm-btn" onclick="closeCustomThemeModal()">Cancel</button>
+      <button class="ctm-btn primary" onclick="saveCustomTheme()">Save &amp; apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Key gate (shown only when no key is stored) ── -->
+<div class="ed-gate" id="edGate" hidden>
+  <div class="ed-gate-box">
+    <div class="ed-gate-eyebrow" id="edGateEyebrow">Solutions editor</div>
+    <h1 class="ed-gate-title">Enter your access key</h1>
+    <p class="ed-gate-sub">32 characters. It is stored only in this browser.</p>
+    <input class="ed-input ed-gate-input" id="edKeyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="••••••••••••••••••••••••••••••••">
+    <div class="ed-gate-err" id="edKeyErr" role="alert"></div>
+    <button class="ed-btn primary" id="edKeyGo">Continue</button>
+  </div>
+</div>
+
+<!-- ── App ── -->
+<div class="ed-app" id="edApp">
+
+  <aside class="ed-sidebar" id="edSidebar" aria-label="Problems">
+    <div class="ed-sb-head"><span>Problems</span><span class="ed-sb-count" id="edCount"></span></div>
+    <div class="ed-list" id="edList"><div class="ed-note">Loading problems…</div></div>
+    <div class="ed-sb-foot">
+      <button class="ed-link" id="edCheckAll" title="Re-read every solution from the database and compare each one against its problem">Check all</button>
+      <button class="ed-link" id="edChangeKey">Change key</button>
+    </div>
+    <!-- Report from "Check all": fills in after the pass, and each line
+         selects that problem. -->
+    <div class="ed-check" id="edCheck" hidden></div>
+  </aside>
+  <div class="ed-scrim" id="edScrim"></div>
+
+  <main class="ed-main">
+    <div class="ed-probbar" id="edProbBar">
+      <span class="ed-probkey" id="edProbKey">—</span>
+      <span class="ed-probmeta" id="edProbMeta"></span>
+      <button class="ed-statebtn" id="edStateToggle" aria-expanded="true" aria-controls="edState">
+        <span id="edStatePill" class="ed-pill none">—</span><span class="ed-caret">▾</span>
+      </button>
+      <button class="ed-probtoggle" id="edProbToggle" aria-expanded="true" aria-controls="edProb">Problem <span class="ed-caret">▾</span></button>
+    </div>
+
+    <div class="ed-state" id="edState">
+      <div class="ed-state-rows">
+        <div class="ed-state-row">Current state: <b id="edStCurrent">—</b></div>
+        <div class="ed-state-row">Sync state: <b id="edStSync">—</b></div>
+        <div class="ed-state-row">Last saved: <b id="edStWhen">—</b></div>
+        <div class="ed-state-row">By: <b id="edStAuthor">—</b></div>
+        <div class="ed-state-row">Problem changed since: <b id="edStStale">—</b></div>
+      </div>
+      <div class="ed-state-actions">
+        <button class="ed-abtn primary" id="edBtnPublish">Publish</button>
+        <button class="ed-abtn" id="edBtnSave">Save draft</button>
+        <button class="ed-abtn" id="edBtnUnpublish">Unpublish</button>
+        <button class="ed-abtn danger" id="edBtnReload">Load from database…</button>
+        <button class="ed-abtn danger" id="edBtnClear">Clear this problem…</button>
+        <button class="ed-abtn" id="edBtnExport">Export all as JSON</button>
+      </div>
+      <div class="ed-state-msg" id="edStMsg"></div>
+      <div class="ed-state-note" id="edStNote" hidden></div>
+    </div>
+    <div class="ed-prob" id="edProb">
+      <div class="ed-prob-text problem-text" id="edProbText"></div>
+      <div class="ed-prob-ans" id="edProbAns"></div>
+    </div>
+
+    <div class="ed-split" id="edSplit">
+
+      <!-- Left: inputs -->
+      <section class="ed-left" id="edLeft">
+        <div class="ed-field">
+          <div class="ed-label"><span>Figure · TikZ</span></div>
+          <details class="ed-preamble">
+            <summary>Preamble (added automatically)</summary>
+            <pre id="edPreamble"></pre>
+          </details>
+          <textarea class="ed-input ed-code" id="edTikz" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off" disabled
+            placeholder="\begin{tikzpicture}&#10;  \useasboundingbox (0,0) rectangle (8,5);&#10;  \draw (0,0) rectangle (3,2);&#10;  \onstep{2}{\draw[c1,->] (1.5,1) -- (4,1);}&#10;\end{tikzpicture}"></textarea>
+        </div>
+
+        <div class="ed-field">
+          <div class="ed-label"><span>Captions</span><span class="ed-badge" id="edStepBadge">1 step</span></div>
+          <div class="ed-caps" id="edCaps"></div>
+        </div>
+
+        <div class="ed-field ed-field-grow">
+          <div class="ed-label"><span>Solution · text &amp; LaTeX</span></div>
+          <textarea class="ed-input ed-code ed-sol" id="edSol" spellcheck="false" autocapitalize="off" autocomplete="off" disabled
+            placeholder="Write the solution here. Inline math: $F = ma$"></textarea>
+        </div>
+      </section>
+
+      <div class="ed-divider" id="edDivider" role="separator" tabindex="0" aria-label="Resize panels" title="Drag to resize · double-click to reset"></div>
+
+      <!-- Right: previews (empty for now) -->
+      <section class="ed-right" id="edRight">
+        <div class="ed-card">
+          <div class="ed-label"><span>Figure preview</span><span class="ed-status" id="edStatus"></span></div>
+          <div class="ed-stage fig" id="edStage"><span class="ed-empty">No figure</span></div>
+          <div class="ed-viewer" id="edViewer">
+            <button class="ed-navbtn" id="edPrev" aria-label="Previous step" disabled>‹</button>
+            <div class="ed-viewer-mid">
+              <div class="ed-dots" id="edDots"></div>
+              <div class="ed-stepno" id="edStepNo">Step 1 / 1</div>
+            </div>
+            <button class="ed-navbtn" id="edNext" aria-label="Next step" disabled>›</button>
+          </div>
+          <div class="ed-capshow sol-text" id="edCapShow"></div>
+          <div class="ed-warn" id="edWarn" hidden></div>
+          <details class="ed-log" id="edLogWrap" hidden>
+            <summary>TeX log</summary>
+            <pre id="edLog"></pre>
+          </details>
+        </div>
+
+        <div class="ed-card ed-card-grow">
+          <div class="ed-label"><span>Solution preview</span></div>
+          <div class="ed-solview sol-text" id="edSolView"><span class="ed-empty">Nothing to show yet</span></div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- Day/night + theme engine: stub BannerManager (themes.js registers a nudge
+     banner with it, which this page does not have). -->
+<script>window.BannerManager = { register(){}, request(){}, release(){}, cancel(){} };</script>
+<script src="/js/course-config.js"></script>
+<script src="/js/theme-colors.js"></script>
+<script src="/js/themes.js"></script>
+<script src="/js/math-render.js"></script>
+<script src="/vendor/dompurify/purify.min.js"></script>
+<script src="/js/figure.js"></script>
+<script src="/js/solution-render.js"></script>
+<script src="/vendor/tikzjax/tikzjax.js"></script>
+<!-- Swap this for /editor/store-mock.js to run the editor without a
+     database (localStorage only) — same methods, nothing shared. -->
+<script src="/editor/store.js"></script>
+<script src="/editor/editor.js"></script>
+</body>
+</html>

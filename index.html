@@ -135,6 +135,12 @@
 <link rel="stylesheet" href="css/manual.css">
 <link rel="stylesheet" href="css/settings.css">
 <link rel="stylesheet" href="css/solve-all-nav.css">
+<!-- Solution figures (shared with the authoring tool) + the solution screen -->
+<link rel="stylesheet" href="css/figure.css">
+<link rel="stylesheet" href="css/solutions.css">
+<!-- TeX fonts: dvisvgm writes figure glyphs as private-use codepoints in
+     Computer Modern, so without this every label inside a figure is blank. -->
+<link rel="stylesheet" href="vendor/tikzjax/fonts.css">
 
 <!-- ── MathJax (math rendering, STIX Two font) ── -->
 <script>
@@ -1252,6 +1258,16 @@
 <script src="js/math-render.js"></script>
 
 <!-- ── Quiz engine: all app logic ── -->
+<!-- Worked solutions: figure.js + solution-render.js are shared with the
+     solutions authoring tool, so both render a solution identically.
+     DOMPurify sanitizes every figure SVG before it is inlined. -->
+<script src="vendor/dompurify/purify.min.js"></script>
+<script src="js/figure.js"></script>
+<script src="js/solution-render.js"></script>
+<script src="js/solutions.js"></script>
+<!-- Long-press affordance on the site logo for the solutions authors (see
+     the file's own header). Nothing is rendered until the hold completes. -->
+<script src="js/editor-access.js"></script>
 <script src="js/quiz-engine.js"></script>
 
 <!-- ── Tier 2: everything below is cosmetic/non-critical once the landing
@@ -1324,6 +1340,58 @@
     });
   }
 </script>
+
+
+<!-- ── Solution Screen (js/solutions.js) — a full screen like the forum,
+     not an overlay: problem on top, then the figure, then the solution. ── -->
+<div id="solutionScreen">
+  <div class="solution-wrap">
+    <div class="solution-header">
+      <div class="solution-header-left">
+        <div class="solution-title" id="solutionTitle">📘 Solution</div>
+      </div>
+      <div class="solution-header-right">
+        <button class="solution-close-btn" onclick="closeSolutionScreen()">✕ Close</button>
+      </div>
+    </div>
+
+    <div class="solution-loading" id="solutionLoading" hidden>Loading…</div>
+
+    <div class="solution-problem" id="solutionProblem">
+      <div class="solution-problem-head">
+        <span class="solution-section-label">Problem</span>
+        <span class="solution-problem-num" id="solutionProblemNum"></span>
+        <span class="solution-problem-topic" id="solutionProblemTopic"></span>
+      </div>
+      <div class="problem-text" id="solutionProblemText"></div>
+    </div>
+
+    <div class="solution-stale" id="solutionStale" hidden>
+      This problem has been edited since the solution was written, so some numbers may no longer match.
+    </div>
+
+    <div class="solution-figwrap" id="solutionFigureWrap" hidden>
+      <div class="solution-section-label">Figure</div>
+      <div class="fig" id="solutionFigure"></div>
+      <div class="solution-nav" id="solutionNav">
+        <button type="button" class="solution-navbtn" id="solutionPrev" aria-label="Previous step" onclick="solutionStep(-1)">‹</button>
+        <div class="solution-nav-mid">
+          <div class="solution-dots" id="solutionDots"></div>
+          <div class="solution-stepno" id="solutionStepNo"></div>
+        </div>
+        <button type="button" class="solution-navbtn" id="solutionNext" aria-label="Next step" onclick="solutionStep(1)">›</button>
+      </div>
+      <div class="solution-caption sol-text" id="solutionCaption"></div>
+    </div>
+
+    <div class="solution-main" id="solutionMain">
+      <div class="solution-section-label">Solution</div>
+      <div class="sol-text" id="solutionBody"></div>
+    </div>
+
+    <div class="solution-credit" id="solutionCredit"></div>
+  </div>
+</div>
 
 </body>
 </html>

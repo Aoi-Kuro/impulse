@@ -902,6 +902,13 @@ function render() {
           <span class="forum-problem-btn-badge" id="rq-forum-badge-${i}" style="display:none;"></span>
           <span class="forum-problem-btn-at" id="rq-forum-at-${i}" style="display:none;">@</span>
         </button>
+        <!-- Sits in the row that checkAll() reveals, so in Random quiz a
+             solution is only ever reachable after scores are shown.
+             js/solutions.js hides it unless this problem has a published
+             solution. -->
+        <button class="solution-btn" data-quiz="${p._quizNum || selectedQuizNum}" data-problem="${p.id}" style="display:none;"
+          title="Worked solution for ${pLabel}"
+          onclick="openSolution(${p._quizNum || selectedQuizNum}, '${p.id}')">📘 See solution</button>
       </div>
     `;
     container.appendChild(card);
@@ -917,6 +924,11 @@ function render() {
     });
   });
   renderMathIn(container);
+
+  // Show 📘 on the problems that have a published solution (the index may
+  // still be loading on first paint; solutions.js calls this again when it
+  // arrives).
+  if (typeof refreshSolutionButtons === 'function') refreshSolutionButtons();
 }
 
 function checkAll() {
@@ -1660,6 +1672,12 @@ function buildSolveAllCards(container, batchSize = 12) {
                 <span class="forum-problem-btn-badge" id="sa-forum-badge-${i}" style="display:none;"></span>
                 <span class="forum-problem-btn-at" id="sa-forum-at-${i}" style="display:none;">@</span>
               </button>
+              <!-- Solve-them-all is the "work through it with help" mode, so
+                   the solution is available from the start (unlike Random
+                   quiz, where it only appears once scores are revealed). -->
+              <button class="solution-btn" data-quiz="${p._quizNum || selectedQuizNum}" data-problem="${p.id}" style="display:none;"
+                title="Worked solution for ${problemLabel(p._quizNum || selectedQuizNum, p.id)}"
+                onclick="openSolution(${p._quizNum || selectedQuizNum}, '${p.id}')">📘 See solution</button>
               <button class="check-problem-btn" id="sa-check-btn-${i}" onclick="checkSingleProblem(${i})">Check</button>
             </div>
           `;
@@ -1686,6 +1704,9 @@ function buildSolveAllCards(container, batchSize = 12) {
         // document.getElementById, which only finds nodes that are
         // actually in the document (not ones still sitting in a fragment).
         container.appendChild(frag);
+        // Same pass the Random-quiz render() does, once per batch so the
+        // 📘 buttons appear as cards stream in.
+        if (typeof refreshSolutionButtons === 'function') refreshSolutionButtons();
 
         // Cheap dedup-by-selector pass over whatever's been restored so
         // far (see injectRestoredStyles) — cards from this and every
@@ -2660,7 +2681,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '12.0.0';
+const CURRENT_VERSION = '12.1.0';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

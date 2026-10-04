@@ -25,6 +25,7 @@
 
 // WARNING! The version has to be bumped in three places: here, in version.json and in quiz-engine.js
 const CHANGELOG = [
+  { version: "12.1.0", note: "Human-written solutions!", scope: 1 },
   { version: "12.0.0", note: "PHYS 161 Set 3 Added.", scope: 1 },
   { version: "11.2.5", note: "Fixed Gemini and some UI bugs.", scope: 0 },
   { version: "11.2.4", note: "DB identity tokens added (just database related changes).", scope: 0 },
