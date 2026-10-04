@@ -13,6 +13,20 @@
 .fig svg [stroke="#ff0001"] { stroke: var(--accent); }
 .fig svg [fill="#ff0002"]   { fill: var(--accent2); }
 .fig svg [stroke="#ff0002"] { stroke: var(--accent2); }
+/* Page and card background, so a figure can knock out what is behind a
+   label or fill a shape and still follow the theme. */
+.fig svg [fill="#ff0003"]   { fill: var(--bg); }
+.fig svg [stroke="#ff0003"] { stroke: var(--bg); }
+.fig svg [fill="#ff0004"]   { fill: var(--surface); }
+.fig svg [stroke="#ff0004"] { stroke: var(--surface); }
+
+/* Displayed size, shared by the practice site and the editor preview so the
+   editor shows what readers get. Without a cap a figure fills its container,
+   which on a wide screen blows a small diagram up to the full card; phones
+   are narrower than the cap, so they are unaffected. --fig-scale is the
+   per-figure scale factor the editor stores as figure.scale (1 = default). */
+.fig-sized { max-width: calc(26rem * var(--fig-scale, 1)); margin: 0 auto; }
+.fig-sized svg { max-height: calc(42vh * var(--fig-scale, 1)); }
 
 /* Stepped figures: every step is stacked in the same grid cell and cross-fades. */
 .fig-steps { display: grid; }

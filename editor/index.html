@@ -23,7 +23,19 @@
   try { localStorage.removeItem('MathJax-Menu-Settings'); } catch (e) {}
   window.MathJaxReady = new Promise(resolve => {
     window.MathJax = {
-      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']],
+        // Site-wide LaTeX macros — keep identical in index.html, offline.html and editor/index.html (and the TikZ preamble in editor/editor.js).
+        macros: {
+          dd:   ['\\mathrm{d}#1', 1],                                        // \dd{x}
+          dv:   ['\\frac{\\mathrm{d}^{#1}#2}{\\mathrm{d}#3^{#1}}', 3, ''],  // \dv{x}{t}, \dv[2]{x}{t}
+          pdv:  ['\\frac{\\partial^{#1}#2}{\\partial #3^{#1}}', 3, ''],     // \pdv{f}{x}, \pdv[2]{f}{x}
+          vb:   ['\\mathbf{#1}', 1],                                        // bold vector
+          vu:   ['\\hat{\\mathbf{#1}}', 1],                                 // unit vector
+          abs:  ['\\left|#1\\right|', 1],
+          norm: ['\\left\\|#1\\right\\|', 1]
+        }
+      },
       chtml: { fontURL: 'vendor/mathjax/fonts/woff' },
       options: {
         skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
@@ -48,8 +60,9 @@
     <img src="/favicon/favicon.svg" alt="" class="ed-logo-img">
   </a>
   <button class="ed-iconbtn" id="sbToggle" title="Toggle problem list" aria-label="Toggle problem list">☰</button>
-  <span class="ed-title" id="edTitle">Solutions</span>
+  <span class="ed-title" id="edTitle">Editorial</span>
   <span class="ed-who" id="edWho"></span>
+  <button class="ed-ver" id="edVer" hidden></button>
 </div>
 
 <div class="theme-toggle-wrap">
@@ -120,11 +133,16 @@
 <div class="ed-app" id="edApp">
 
   <aside class="ed-sidebar" id="edSidebar" aria-label="Problems">
-    <div class="ed-sb-head"><span>Problems</span><span class="ed-sb-count" id="edCount"></span></div>
+    <div class="ed-sb-head">
+      <span title="Alt+↑ / Alt+↓: previous / next problem · Alt+N: next problem with no work">Problems</span>
+      <button class="ed-filterbtn" id="edFilter" aria-pressed="false" title="Show only problems with work (a dot)" aria-label="Show only problems with work">
+        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M1.5 2.5h13l-5 6v4.5l-3 1.5v-6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
     <div class="ed-list" id="edList"><div class="ed-note">Loading problems…</div></div>
     <div class="ed-sb-foot">
       <button class="ed-link" id="edCheckAll" title="Re-read every solution from the database and compare each one against its problem">Check all</button>
-      <button class="ed-link" id="edChangeKey">Change key</button>
+      <button class="ed-link" id="edEditors" aria-haspopup="dialog">Editors</button>
     </div>
     <!-- Report from "Check all": fills in after the pass, and each line
          selects that problem. -->
@@ -135,11 +153,11 @@
   <main class="ed-main">
     <div class="ed-probbar" id="edProbBar">
       <span class="ed-probkey" id="edProbKey">—</span>
-      <span class="ed-probmeta" id="edProbMeta"></span>
-      <button class="ed-statebtn" id="edStateToggle" aria-expanded="true" aria-controls="edState">
+      <button class="ed-statebtn" id="edStateToggle" aria-expanded="false" aria-controls="edState">
         <span id="edStatePill" class="ed-pill none">—</span><span class="ed-caret">▾</span>
       </button>
-      <button class="ed-probtoggle" id="edProbToggle" aria-expanded="true" aria-controls="edProb">Problem <span class="ed-caret">▾</span></button>
+      <button class="ed-figtoggle" id="edFigToggle" aria-pressed="false">Hide figure</button>
+      <button class="ed-probtoggle" id="edProbToggle" aria-expanded="false" aria-controls="edProb">Problem <span class="ed-caret">▾</span></button>
     </div>
 
     <div class="ed-state" id="edState">
@@ -156,6 +174,7 @@
         <button class="ed-abtn" id="edBtnUnpublish">Unpublish</button>
         <button class="ed-abtn danger" id="edBtnReload">Load from database…</button>
         <button class="ed-abtn danger" id="edBtnClear">Clear this problem…</button>
+        <button class="ed-abtn" id="edBtnHistory" title="Earlier versions of this problem kept in this browser">History…</button>
         <button class="ed-abtn" id="edBtnExport">Export all as JSON</button>
       </div>
       <div class="ed-state-msg" id="edStMsg"></div>
@@ -170,17 +189,21 @@
 
       <!-- Left: inputs -->
       <section class="ed-left" id="edLeft">
-        <div class="ed-field">
+        <div class="ed-field ed-figpart">
           <div class="ed-label"><span>Figure · TikZ</span></div>
-          <details class="ed-preamble">
-            <summary>Preamble (added automatically)</summary>
-            <pre id="edPreamble"></pre>
-          </details>
+          <div class="ed-preamble-row">
+            <details class="ed-preamble">
+              <summary>Preamble (added automatically)</summary>
+              <pre id="edPreamble"></pre>
+            </details>
+            <button type="button" class="ed-hintbtn" id="edColorHint"
+              title="How c1, c2, c3 and c4 look in every theme">🎨 Colors</button>
+          </div>
           <textarea class="ed-input ed-code" id="edTikz" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off" disabled
             placeholder="\begin{tikzpicture}&#10;  \useasboundingbox (0,0) rectangle (8,5);&#10;  \draw (0,0) rectangle (3,2);&#10;  \onstep{2}{\draw[c1,->] (1.5,1) -- (4,1);}&#10;\end{tikzpicture}"></textarea>
         </div>
 
-        <div class="ed-field">
+        <div class="ed-field ed-figpart">
           <div class="ed-label"><span>Captions</span><span class="ed-badge" id="edStepBadge">1 step</span></div>
           <div class="ed-caps" id="edCaps"></div>
         </div>
@@ -196,8 +219,16 @@
 
       <!-- Right: previews (empty for now) -->
       <section class="ed-right" id="edRight">
-        <div class="ed-card">
-          <div class="ed-label"><span>Figure preview</span><span class="ed-status" id="edStatus"></span></div>
+        <div class="ed-card ed-figpart">
+          <div class="ed-label">
+            <span>Figure preview</span>
+            <span class="ed-label-right">
+              <span class="ed-status" id="edStatus"></span>
+              <label class="ed-scale" title="Display size relative to the default (1.00). Scales the stored figure, no recompile.">
+                Scale <input type="number" id="edScale" min="0.25" max="2" step="0.05" value="1.00" disabled>
+              </label>
+            </span>
+          </div>
           <div class="ed-stage fig" id="edStage"><span class="ed-empty">No figure</span></div>
           <div class="ed-viewer" id="edViewer">
             <button class="ed-navbtn" id="edPrev" aria-label="Previous step" disabled>‹</button>

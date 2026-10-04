@@ -203,7 +203,17 @@
     window.MathJax = {
       tex: {
         inlineMath: [['$', '$'], ['\\(', '\\)']],
-        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+        displayMath: [['$$', '$$'], ['\\[', '\\]']],
+        // Site-wide LaTeX macros — keep identical in index.html, offline.html and editor/index.html (and the TikZ preamble in editor/editor.js).
+        macros: {
+          dd:   ['\\mathrm{d}#1', 1],                                        // \dd{x}
+          dv:   ['\\frac{\\mathrm{d}^{#1}#2}{\\mathrm{d}#3^{#1}}', 3, ''],  // \dv{x}{t}, \dv[2]{x}{t}
+          pdv:  ['\\frac{\\partial^{#1}#2}{\\partial #3^{#1}}', 3, ''],     // \pdv{f}{x}, \pdv[2]{f}{x}
+          vb:   ['\\mathbf{#1}', 1],                                        // bold vector
+          vu:   ['\\hat{\\mathbf{#1}}', 1],                                 // unit vector
+          abs:  ['\\left|#1\\right|', 1],
+          norm: ['\\left\\|#1\\right\\|', 1]
+        }
       },
       chtml: { fontURL: 'vendor/mathjax/fonts/woff' },
       options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] },

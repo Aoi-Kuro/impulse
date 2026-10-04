@@ -39,13 +39,12 @@
 //   POST { action: "...", key: "<32 hex>", ...fields }
 //         (admin_key instead of key for the two editor-management actions)
 //
-//   diagnose       -> { ok, pepper_set, admin_key_set, pepper_fingerprint,
-//                        editor_rows }
-//                     No auth. Setup aid only — see the comment at its
-//                     implementation below.
 //   whoami         -> { ok, name }
 //                     Who this key belongs to. The editor shows it in the
 //                     top bar, and uses it to confirm the key works at all.
+//   editors        -> { ok, editors: [{ name, link }] }
+//                     Active (non-revoked) editors, for the editor's
+//                     "Editors" list. Names and links only, never key data.
 //   index          -> { ok, index: { "<problem_key>": { status, updated_at,
 //                                                       author } } }
 //                     Every row's status, drafts included. One call at
@@ -55,6 +54,8 @@
 //                     One full row, or row: null.
 //   save           { problem_key, solution, figure, status, problem_hash?,
 //                    expected_updated_at? } -> { ok, row }
+//                     figure = { tikz, steps: [{ svg, caption }], scale? };
+//                     scale (0.25-2, default 1) is the display size factor.
 //                     Creates or replaces the row. expected_updated_at is
 //                     what the caller last saw; if the stored row has moved
 //                     on since, nothing is written and 409 comes back with
@@ -64,9 +65,14 @@
 //   delete         { problem_key } -> { ok }
 //   export         -> { ok, rows: [...] }
 //                     Everything, for the editor's JSON backup button.
-//   create-editor  { name } -> { ok, name, key }      [admin key]
+//   create-editor  { name, link? } -> { ok, name, key }   [admin key]
 //                     The generated key is shown ONCE. Only its hash is
 //                     stored, so it cannot be recovered later.
+//   set-editor-link { name, link } -> { ok }          [admin key]
+//                     Sets (or, with "" / null, clears) the http(s) link
+//                     "Solution by @name" points to. A trigger (migration
+//                     009) rewrites author_link on that editor's existing
+//                     rows, so nothing needs re-saving.
 //   revoke-editor  { name } -> { ok }                 [admin key]
 //                     The key stops working immediately. The row stays, so
 //                     past solutions keep showing their author.
@@ -98,6 +104,7 @@ const SOLUTIONS_ADMIN_KEY = Deno.env.get("SOLUTIONS_ADMIN_KEY");
 const KEY_RE = /^[0-9a-f]{32}$/i;
 const PROBLEM_KEY_RE = /^q[1-9][0-9]?_[A-Za-z][A-Za-z0-9_-]{0,30}$/;  // "q1_P47"
 const EDITOR_NAME_RE = /^[\p{L}\p{N}._ -]{2,40}$/u;
+const MAX_LINK_CHARS = 300;          // matches solution_editors_link_check
 
 const MAX_SOLUTION_CHARS = 60_000;   // a very long worked solution is ~5k
 const MAX_STEPS = 12;                // matches MAX_STEPS in editor/editor.js
@@ -134,12 +141,12 @@ function timingSafeEqual(a: string, b: string): boolean {
 // editors table because each row has its own salt, so the hash can't be
 // computed without first knowing which salt to use. Two or three rows —
 // this is a sub-millisecond loop, not a scan.
-async function resolveEditor(db: any, key: unknown): Promise<{ id: number; name: string } | null> {
+async function resolveEditor(db: any, key: unknown): Promise<{ id: number; name: string; link: string | null } | null> {
   if (!SOLUTIONS_KEY_PEPPER || typeof key !== "string" || !KEY_RE.test(key)) return null;
 
   const { data: rows, error } = await db
     .from("solution_editors")
-    .select("id, name, key_hash, key_salt, revoked_at")
+    .select("id, name, link, key_hash, key_salt, revoked_at")
     .is("revoked_at", null);
 
   if (error) {
@@ -148,7 +155,7 @@ async function resolveEditor(db: any, key: unknown): Promise<{ id: number; name:
   }
   for (const row of rows ?? []) {
     const candidate = await sha256Hex(`${SOLUTIONS_KEY_PEPPER}:${row.key_salt}:${key}`);
-    if (candidate === row.key_hash) return { id: row.id, name: row.name };
+    if (candidate === row.key_hash) return { id: row.id, name: row.name, link: row.link ?? null };
   }
   return null;
 }
@@ -185,6 +192,12 @@ function figureProblem(figure: any): string | null {
   if (typeof figure !== "object" || Array.isArray(figure)) return "figure must be an object";
   const tikz = figure.tikz ?? "";
   if (typeof tikz !== "string" || tikz.length > MAX_TIKZ_CHARS) return "figure source is missing or too long";
+  // Optional display scale set in the editor's preview (1 = default size).
+  // Same range as FIG_SCALE_MIN/MAX in js/figure.js.
+  if (figure.scale !== undefined &&
+      (typeof figure.scale !== "number" || !(figure.scale >= 0.25 && figure.scale <= 2))) {
+    return "figure scale must be a number between 0.25 and 2";
+  }
   const steps = figure.steps ?? [];
   if (!Array.isArray(steps)) return "figure steps must be a list";
   if (steps.length > MAX_STEPS) return `a figure may have at most ${MAX_STEPS} steps`;
@@ -196,6 +209,20 @@ function figureProblem(figure: any): string | null {
     if (bad) return bad;
   }
   return null;
+}
+
+// An editor's profile link: null to clear, otherwise an absolute http(s)
+// URL. Returns undefined when the value is unacceptable. Only http(s), since
+// it ends up in an href on the practice site.
+function parseLink(raw: unknown): string | null | undefined {
+  if (raw === null || raw === undefined || raw === "") return null;
+  if (typeof raw !== "string" || raw.length > MAX_LINK_CHARS) return undefined;
+  try {
+    const u = new URL(raw.trim());
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 const bad = (error: string, status = 400) => Response.json({ ok: false, error }, { status });
@@ -212,31 +239,8 @@ export default {
 
     const admin = ctx.supabaseAdmin;
 
-    // ── Diagnostics (no auth) ──────────────────────────────────────────────
-    // Setup-time only: says whether each secret is set, and a one-way
-    // fingerprint of the pepper so it can be compared against the value
-    // used when an editor row was created — WITHOUT either side revealing
-    // the pepper. The fingerprint is a truncated SHA-256 of a 128-bit
-    // random value, so it gives an attacker nothing, but this action is
-    // still worth deleting once the setup is known good.
-    //
-    // Compare with, in the SQL editor:
-    //   select left(encode(digest('<your pepper>', 'sha256'), 'hex'), 12);
-    if (action === "diagnose") {
-      const { count } = await admin
-        .from("solution_editors")
-        .select("id", { count: "exact", head: true });
-      return Response.json({
-        ok: true,
-        pepper_set: !!SOLUTIONS_KEY_PEPPER,
-        admin_key_set: !!SOLUTIONS_ADMIN_KEY,
-        pepper_fingerprint: SOLUTIONS_KEY_PEPPER ? (await sha256Hex(SOLUTIONS_KEY_PEPPER)).slice(0, 12) : null,
-        editor_rows: count ?? 0,
-      });
-    }
-
     // ── Editor management (admin key) ──────────────────────────────────────
-    if (action === "create-editor" || action === "revoke-editor") {
+    if (action === "create-editor" || action === "revoke-editor" || action === "set-editor-link") {
       const adminKey = (typeof payload?.admin_key === "string" ? payload.admin_key : "")
         || req.headers.get("x-admin-key") || "";
       if (!SOLUTIONS_ADMIN_KEY || !timingSafeEqual(adminKey, SOLUTIONS_ADMIN_KEY)) {
@@ -245,6 +249,27 @@ export default {
       const name = payload?.name;
       if (typeof name !== "string" || !EDITOR_NAME_RE.test(name)) {
         return bad("Editor name must be 2-40 letters, digits, spaces, dots, dashes or underscores.");
+      }
+
+      // Only create/set-link use the link. Revoke must never be blocked by a
+      // stray or malformed `link` in its body: it is what you reach for when
+      // a key has leaked, so it should work whatever else the request holds.
+      const link = action === "revoke-editor" ? null : parseLink(payload?.link);
+      if (link === undefined) return bad("The link must be a full http:// or https:// address.");
+
+      if (action === "set-editor-link") {
+        const { data: rows, error } = await admin
+          .from("solution_editors")
+          .update({ link })
+          .eq("name", name)
+          .is("revoked_at", null)
+          .select("id");
+        if (error) {
+          console.error("set-editor-link error:", error);
+          return bad("Could not set that link.", 500);
+        }
+        if (!rows?.length) return bad("No active editor with that name.", 404);
+        return Response.json({ ok: true });
       }
 
       if (action === "revoke-editor") {
@@ -269,7 +294,7 @@ export default {
 
       const { error } = await admin
         .from("solution_editors")
-        .insert({ name, key_hash, key_salt: salt });
+        .insert({ name, link, key_hash, key_salt: salt });
       if (error) {
         console.error("create-editor error:", error);
         return bad("Could not create that editor.", 500);
@@ -284,6 +309,19 @@ export default {
 
     if (action === "whoami") {
       return Response.json({ ok: true, name: editor.name });
+    }
+
+    if (action === "editors") {
+      const { data: rows, error } = await admin
+        .from("solution_editors")
+        .select("name, link")
+        .is("revoked_at", null)
+        .order("name", { ascending: true });
+      if (error) {
+        console.error("editors error:", error);
+        return bad("Could not read the editors list.", 500);
+      }
+      return Response.json({ ok: true, editors: rows ?? [] });
     }
 
     if (action === "index") {
@@ -304,7 +342,7 @@ export default {
     if (action === "export") {
       const { data: rows, error } = await admin
         .from("problem_solutions")
-        .select("problem_key, solution, figure, status, author, problem_hash, updated_at")
+        .select("problem_key, solution, figure, status, author, author_link, problem_hash, updated_at")
         .order("problem_key", { ascending: true });
       if (error) {
         console.error("export error:", error);
@@ -321,7 +359,7 @@ export default {
     if (action === "get") {
       const { data: row, error } = await admin
         .from("problem_solutions")
-        .select("problem_key, solution, figure, status, author, problem_hash, updated_at")
+        .select("problem_key, solution, figure, status, author, author_link, problem_hash, updated_at")
         .eq("problem_key", problemKey)
         .maybeSingle();
       if (error) {
@@ -366,7 +404,7 @@ export default {
       // next load.
       const { data: existing, error: readErr } = await admin
         .from("problem_solutions")
-        .select("problem_key, solution, figure, status, author, problem_hash, updated_at")
+        .select("problem_key, solution, figure, status, author, author_link, problem_hash, updated_at")
         .eq("problem_key", problemKey)
         .maybeSingle();
       if (readErr) {
@@ -391,6 +429,7 @@ export default {
         // this is, the same principle post-message.ts applies to
         // author_name.
         author: editor.name,
+        author_link: editor.link,
         problem_hash: problemHash,
         updated_at: new Date().toISOString(),
       };
@@ -398,7 +437,7 @@ export default {
       const { data: saved, error: writeErr } = await admin
         .from("problem_solutions")
         .upsert(row, { onConflict: "problem_key" })
-        .select("problem_key, solution, figure, status, author, problem_hash, updated_at")
+        .select("problem_key, solution, figure, status, author, author_link, problem_hash, updated_at")
         .single();
       if (writeErr) {
         console.error("save/write error:", writeErr);

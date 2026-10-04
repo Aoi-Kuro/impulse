@@ -115,7 +115,10 @@
     const logo  = document.getElementById('siteLogoLink');
     const icons = document.querySelector('.theme-toggle-wrap');
     if (!logo || !icons) return null;
-    const logoRight = logo.getBoundingClientRect().right;
+    // The editor quick link (js/editor-access.js) sits right of the logo when shown.
+    const quick = document.getElementById('editorQuickLink');
+    const logoRight = Math.max(logo.getBoundingClientRect().right,
+                               quick ? quick.getBoundingClientRect().right : 0);
     const iconsLeft = icons.getBoundingClientRect().left;
     if (iconsLeft - logoRight < MIN_GAP_PX) return null;
     return (logoRight + iconsLeft) / 2;

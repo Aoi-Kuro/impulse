@@ -65,6 +65,7 @@ const SolutionStore = (function () {
       figure: payload.figure,
       status: payload.status,
       author: payload.author || null,
+      author_link: payload.author_link || null,
       updated_at: new Date().toISOString(),
     };
     all[problemKey] = row;
@@ -83,7 +84,9 @@ const SolutionStore = (function () {
   /** Everything, for the JSON backup button. */
   async function exportAll() { return wait(read()); }
 
+  async function editors() { return wait([]); }
+
   async function createEditor() { throw new Error('Not available without the database.'); }
 
-  return { whoami, index, get, save, remove, exportAll, createEditor, isMock: true };
+  return { whoami, editors, index, get, save, remove, exportAll, createEditor, isMock: true };
 })();

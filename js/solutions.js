@@ -8,11 +8,13 @@
    a plain PostgREST GET with the publishable key. Drafts are invisible
    here — not hidden by this code, but unreachable by the policy.
 
-   Two requests at most:
-     1. one index call per session — which problem_keys have a published
-        solution (keys only, no bodies), cached in sessionStorage;
-     2. one row call the first time a given solution is opened, cached
-        in memory for the rest of the session.
+   Two kinds of request:
+     1. the index — which problem_keys have a published solution and when
+        each was last saved (no bodies). Fetched on load, when the tab comes
+        back into view and hourly while it stays visible; cached in
+        sessionStorage for a fast first paint;
+     2. one row call the first time a given solution is opened, cached in
+        memory until the index shows it was unpublished or saved again.
 
    WHERE THE BUTTON APPEARS
      Random quiz — only once scores are revealed (checkAll), so a
@@ -33,6 +35,7 @@
 const SOLUTIONS_REST = `${SUPABASE_URL}/rest/v1/problem_solutions`;
 const SOLUTIONS_INDEX_CACHE_KEY = STORAGE_PREFIX + '-solutions-index';
 const SOLUTIONS_INDEX_TTL_MS = 5 * 60 * 1000;
+const SOLUTIONS_INDEX_POLL_MS = 60 * 60 * 1000;   // re-check while a tab stays open and visible
 
 let solutionsIndex = null;          // Set of problem_key with a published solution
 let solutionsIndexPromise = null;   // in-flight load, so parallel callers share one request
@@ -51,7 +54,7 @@ function solutionsRestHeaders() {
 function fetchSolutionsIndex() {
   if (solutionsIndexPromise) return solutionsIndexPromise;
 
-  solutionsIndexPromise = fetch(`${SOLUTIONS_REST}?select=problem_key&status=eq.published`, {
+  solutionsIndexPromise = fetch(`${SOLUTIONS_REST}?select=problem_key,updated_at&status=eq.published`, {
     headers: solutionsRestHeaders(),
     cache: 'no-store',
   })
@@ -59,10 +62,14 @@ function fetchSolutionsIndex() {
     .then((rows) => {
       if (!rows) return solutionsIndex || new Set();      // keep what we had on a server error
       const fresh = new Set(rows.map((r) => r.problem_key));
+      const stamps = new Map(rows.map((r) => [r.problem_key, r.updated_at]));
 
-      // Anything no longer published must also leave the row cache, or a
-      // solution unpublished mid-session would still open from memory.
-      solutionsRowCache.forEach((_, key) => { if (!fresh.has(key)) solutionsRowCache.delete(key); });
+      // A solution opened earlier stays in memory, so drop it when it is no
+      // longer published (or it would still open), or when it was saved
+      // again since (or the student would keep reading the old text).
+      solutionsRowCache.forEach((row, key) => {
+        if (!fresh.has(key) || !row || row.updated_at !== stamps.get(key)) solutionsRowCache.delete(key);
+      });
 
       solutionsIndex = fresh;
       try {
@@ -117,11 +124,11 @@ function hasPublishedSolution(quizNum, problemId) {
   return !!solutionsIndex && solutionsIndex.has(solutionKeyFor(quizNum, problemId));
 }
 
-/** One published row, or null. Only the body is cached; whether the row is
-    still published is re-checked by the background index refresh above. */
+/** One published row, or null. Only the body is cached; the background
+    index refresh above drops it once it is unpublished or edited. */
 async function fetchSolution(problemKey) {
   if (solutionsRowCache.has(problemKey)) return solutionsRowCache.get(problemKey);
-  const url = `${SOLUTIONS_REST}?select=problem_key,solution,figure,author,problem_hash,updated_at`
+  const url = `${SOLUTIONS_REST}?select=problem_key,solution,figure,author,author_link,problem_hash,updated_at`
             + `&problem_key=eq.${encodeURIComponent(problemKey)}&status=eq.published&limit=1`;
   const res = await fetch(url, { headers: solutionsRestHeaders() });
   if (!res.ok) throw new Error('Could not load the solution.');
@@ -153,6 +160,12 @@ function initSolutions() {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) fetchSolutionsIndex().then(refreshSolutionButtons);
   });
+
+  // And a tab that stays in front the whole time: re-check hourly. Skipped
+  // while hidden, since coming back already refreshes (above).
+  setInterval(() => {
+    if (!document.hidden) fetchSolutionsIndex().then(refreshSolutionButtons);
+  }, SOLUTIONS_INDEX_POLL_MS);
 }
 
 /* ── Screen ───────────────────────────────────────────────────────────
@@ -301,6 +314,9 @@ function drawSolutionStep() {
   document.getElementById('solutionNext').disabled = i >= n - 1;
   document.getElementById('solutionStepNo').textContent = `Step ${i + 1} / ${n}`;
   const cap = document.getElementById('solutionCaption');
+  // Hidden only when NO step has a caption; otherwise the reserved line
+  // stays so the layout doesn't jump between captioned and bare steps.
+  cap.hidden = !v.steps.some((s) => (s.caption || '').trim());
   const text = v.steps[i].caption || '';
   if (!text.trim()) {
     if (window.MathJax && MathJax.typesetClear) { try { MathJax.typesetClear([cap]); } catch (e) {} }
@@ -382,7 +398,8 @@ async function openSolution(quizNum, problemId) {
     const stage = document.getElementById('solutionFigure');
     stage.textContent = '';
     const holder = document.createElement('div');
-    holder.className = 'fig-steps';
+    holder.className = 'fig-steps fig-sized';
+    holder.style.setProperty('--fig-scale', String(figScaleOf(row.figure)));
     steps.forEach((s) => {
       const d = document.createElement('div');
       d.className = 'fig-step';
@@ -393,6 +410,7 @@ async function openSolution(quizNum, problemId) {
     });
     stage.appendChild(holder);
     document.getElementById('solutionFigureWrap').hidden = false;
+    figCropToContent(holder);                      // only measurable once visible
     solutionViewer = { steps, index: 0, manual: false };
     document.getElementById('solutionNav').style.display = steps.length > 1 ? '' : 'none';
     drawSolutionStep();
@@ -411,7 +429,19 @@ async function openSolution(quizNum, problemId) {
     credit.append(document.createTextNode('Solution by '));
     const b = document.createElement('b');
     b.textContent = '@' + String(row.author).replace(/^@/, '');
-    credit.appendChild(b);
+    // The editor's own link, if they set one. http(s) only: anything else
+    // (javascript:, data:) would run or render on click.
+    const href = safeAuthorLink(row.author_link);
+    if (href) {
+      const a = document.createElement('a');
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.appendChild(b);
+      credit.appendChild(a);
+    } else {
+      credit.appendChild(b);
+    }
     credit.hidden = false;
   }
 
@@ -419,6 +449,16 @@ async function openSolution(quizNum, problemId) {
   if (row.problem_hash && p) {
     const now = await solutionProblemHash(p);
     if (solutionOpen && now !== row.problem_hash) document.getElementById('solutionStale').hidden = false;
+  }
+}
+
+function safeAuthorLink(raw) {
+  if (typeof raw !== 'string' || !raw) return null;
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null;
+  } catch (e) {
+    return null;
   }
 }
 

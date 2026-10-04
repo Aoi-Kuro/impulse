@@ -13,6 +13,12 @@
 
    Deliberately NOT a tap counter: tap-five-times is easy to hit by
    accident on a logo people already click to get home.
+
+   Once someone has signed in to the editor in this browser, the door no
+   longer needs hiding from them: a 📘 link sits next to the logo. "Signed
+   in" = the editor's key is in localStorage, which editor.js only writes
+   after the server accepted it and removes on sign-out or rejection. The
+   key itself is never read here, only whether it exists.
    ─────────────────────────────────────────────────────────────────── */
 
 (function () {
@@ -23,6 +29,29 @@
 
   const logo = document.getElementById('siteLogoLink');
   if (!logo) return;
+
+  // ── Quick link for signed-in editors ──────────────────────────────────
+  const KEY_STORAGE = STORAGE_PREFIX + '-editor-key';   // same as editor/editor.js
+  function hasEditorKey() {
+    try { return /^\S{32}$/.test(localStorage.getItem(KEY_STORAGE) || ''); } catch (e) { return false; }
+  }
+  function syncQuickLink() {
+    let a = document.getElementById('editorQuickLink');
+    if (!hasEditorKey()) { if (a) a.remove(); return; }
+    if (a) return;
+    // A real link, so ctrl/middle-click and long-press "open in new tab" work.
+    a = document.createElement('a');
+    a.id = 'editorQuickLink';
+    a.className = 'editor-quick-link';
+    a.href = EDITOR_URL;
+    a.title = 'Editorial';
+    a.setAttribute('aria-label', 'Open Editorial');
+    a.textContent = '📘';
+    logo.insertAdjacentElement('afterend', a);
+  }
+  syncQuickLink();
+  // Signing in or out in the editor tab updates this page too.
+  window.addEventListener('storage', (e) => { if (e.key === KEY_STORAGE || e.key === null) syncQuickLink(); });
 
   let timer = null;
   let holding = false;
@@ -37,7 +66,7 @@
 
     const title = document.createElement('div');
     title.className = 'editor-access-title';
-    title.textContent = '📘 Solutions editor';
+    title.textContent = '📘 Editorial';
 
     const sub = document.createElement('div');
     sub.className = 'editor-access-sub';
@@ -51,12 +80,16 @@
     open.textContent = 'Open';
     open.addEventListener('click', () => { window.location.href = EDITOR_URL; });
 
-    const cancel = document.createElement('button');
-    cancel.className = 'editor-access-btn';
-    cancel.textContent = 'Cancel';
-    cancel.addEventListener('click', hidePrompt);
+    // No Cancel: a tap anywhere outside the panel already closes it.
+    const newTab = document.createElement('button');
+    newTab.className = 'editor-access-btn';
+    newTab.textContent = 'Open in new tab';
+    newTab.addEventListener('click', () => {
+      window.open(EDITOR_URL, '_blank', 'noopener');
+      hidePrompt();
+    });
 
-    row.append(open, cancel);
+    row.append(open, newTab);
     panel.append(title, sub, row);
     document.body.appendChild(panel);
 

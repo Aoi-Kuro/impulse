@@ -105,6 +105,12 @@ const SolutionStore = (function () {
     return { name: d.name || null };
   }
 
+  /** [{ name, link }] for every active editor. */
+  async function editors() {
+    const d = await call('editors');
+    return Array.isArray(d.editors) ? d.editors : [];
+  }
+
   /** problem_key -> { status, updated_at, author } for every row, drafts included. */
   async function index() {
     const d = await call('index');
@@ -145,13 +151,6 @@ const SolutionStore = (function () {
     return out;
   }
 
-  /** Setup check: is the function's pepper the same one the editor rows
-      were created with? Compare pepper_fingerprint against
-      `select left(encode(digest('<pepper>','sha256'),'hex'),12);` in SQL. */
-  async function diagnose() {
-    return await call('diagnose');
-  }
-
   /** Issues a new editor key. Needs the admin key, which only the site
       owner has; the generated key is returned once and never again. */
   async function createEditor(adminKey, name) {
@@ -159,5 +158,5 @@ const SolutionStore = (function () {
     return { name: d.name, key: d.key };
   }
 
-  return { whoami, index, get, save, remove, exportAll, createEditor, diagnose, isMock: false };
+  return { whoami, editors, index, get, save, remove, exportAll, createEditor, isMock: false };
 })();

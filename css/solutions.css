@@ -108,6 +108,8 @@ html.solution-screen-open #stickyScore.visible {
 .solution-dots i:hover { background: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .solution-stepno { font-family: var(--mono); font-size: .68rem; color: var(--muted); }
 .solution-caption { min-height: 2.4em; text-align: center; font-size: .95rem; margin-top: .6rem; }
+/* No step has a caption: drop the reserved line instead of leaving a gap. */
+.solution-caption[hidden] { display: none; }
 
 .solution-main {
   padding: .9rem 1rem 1rem;
@@ -121,6 +123,8 @@ html.solution-screen-open #stickyScore.visible {
   font-family: var(--mono); font-size: .72rem; color: var(--muted); text-align: right;
 }
 .solution-credit b { color: var(--accent); font-weight: 600; }
+.solution-credit a { color: inherit; text-decoration: none; }
+.solution-credit a:hover b, .solution-credit a:focus-visible b { text-decoration: underline; }
 .solution-credit[hidden] { display: none; }
 
 .solution-loading { color: var(--muted); font-size: .9rem; text-align: center; padding: 2.5rem 0; }
@@ -146,6 +150,19 @@ html.solution-screen-open #stickyScore.visible {
   opacity: .6;
   transition: transform 1.2s ease, opacity 1.2s ease;
 }
+/* Shortcut for signed-in editors, right of the logo (26px wide at the same
+   left offset), centred in the bar the same way as the logo. */
+.editor-quick-link {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  left: calc(1.2rem + env(safe-area-inset-left, 0px) + 26px + .55rem);
+  height: var(--top-bar-h);
+  z-index: 1001;
+  display: flex; align-items: center;
+  font-size: 1.05rem; line-height: 1; text-decoration: none;
+  opacity: .85; transition: opacity .15s, transform .15s;
+}
+.editor-quick-link:hover { opacity: 1; transform: scale(1.08); }
 .editor-access-panel {
   position: fixed;
   top: calc(var(--top-bar-h) + env(safe-area-inset-top, 0px) + .4rem);

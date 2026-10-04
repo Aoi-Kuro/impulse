@@ -27,8 +27,7 @@ function toggleTheme() {
   let editorName = null;          // set once the server confirms the key
   const P  = STORAGE_PREFIX;
   const LS = { key: P + '-editor-key', sb: P + '-editor-sidebar', split: P + '-editor-split', last: P + '-editor-last',
-               prob: P + '-editor-problem-open', drafts: P + '-editor-drafts',
-               state: P + '-editor-state-open' };
+               drafts: P + '-editor-drafts', history: P + '-editor-history' };
   const MAX_STEPS = 12;
   const $ = (id) => document.getElementById(id);
   const mqNarrow = window.matchMedia('(max-width: 720px)');
@@ -41,21 +40,35 @@ function toggleTheme() {
     preamble: [
       '\\definecolor{c1}{HTML}{FF0001}',
       '\\definecolor{c2}{HTML}{FF0002}',
+      '\\definecolor{c3}{HTML}{FF0003}',
+      '\\definecolor{c4}{HTML}{FF0004}',
+      '\\colorlet{ctext}{black}\\colorlet{cbg}{c3}\\colorlet{csurface}{c4}',
       '\\newcount\\thestep',
       '\\newcommand{\\onstep}[2]{\\ifnum\\thestep<#1 \\else #2\\fi}',
+      // same as the site-wide MathJax macros (index.html etc.)
+      '\\newcommand{\\dd}[1]{\\mathrm{d}#1}',
+      '\\newcommand{\\dv}[3][]{\\frac{\\mathrm{d}^{#1}#2}{\\mathrm{d}#3^{#1}}}',
+      '\\newcommand{\\pdv}[3][]{\\frac{\\partial^{#1}#2}{\\partial #3^{#1}}}',
+      '\\newcommand{\\vb}[1]{\\mathbf{#1}}',
+      '\\newcommand{\\vu}[1]{\\hat{\\mathbf{#1}}}',
+      '\\newcommand{\\abs}[1]{\\left|#1\\right|}',
+      '\\newcommand{\\norm}[1]{\\left\\|#1\\right\\|}',
     ],
   };
   const PREAMBLE_SHOWN = [
     '% packages: ' + Object.keys(TZ.packages).join(', '),
     '% tikz libraries: ' + TZ.libraries.split(',').join(', '),
     ...TZ.preamble,
-    '% colors: c1 = accent 1, c2 = accent 2, default black = text color',
+    '% colors — each one follows the reader\'s theme:',
+    '%   (default)  = text color      ctext   same thing, by name',
+    '%   c1         = accent 1        c2      accent 2',
+    '%   c3 / cbg   = page background c4 / csurface = card background',
+    '%   use cbg or csurface as a FILL to hide what is behind a label',
     '% \\thestep is set automatically (1..N) for each step',
     '% keep everything inside \\useasboundingbox — anything outside it is cut off',
   ].join('\n');
 
   document.title = `${COURSE_CODE_DISPLAY} Solutions editor`;
-  $('edTitle').textContent = `${COURSE_CODE_DISPLAY} · Solutions`;
   $('edGateEyebrow').textContent = `${COURSE_CODE_DISPLAY} · Solutions editor`;
   $('edPreamble').textContent = PREAMBLE_SHOWN;
 
@@ -103,7 +116,125 @@ function toggleTheme() {
   $('edKeyGo').addEventListener('click', submitKey);
   keyIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitKey(); });
   keyIn.addEventListener('input', () => { keyErr.textContent = ''; });
-  $('edChangeKey').addEventListener('click', () => { localStorage.removeItem(LS.key); location.reload(); });
+
+  /* ───────────────────────── small floating panels ─────────────────────────
+     One at a time; closes on outside tap, Escape, or a second tap on its
+     button. place(pop, rect) positions it against the anchor's rect. */
+  let floatPop = null, floatAnchor = null;
+  function closeFloat() {
+    if (!floatPop) return;
+    document.removeEventListener('pointerdown', onFloatOutside, true);
+    document.removeEventListener('keydown', onFloatKey, true);
+    floatPop.remove();
+    floatPop = floatAnchor = null;
+  }
+  function onFloatOutside(e) {
+    if (floatPop && !floatPop.contains(e.target) && !(floatAnchor && floatAnchor.contains(e.target))) closeFloat();
+  }
+  function onFloatKey(e) { if (e.key === 'Escape') closeFloat(); }
+  function openFloat(anchor, build, place) {
+    const again = floatAnchor === anchor;
+    closeFloat();
+    if (again) return null;
+    const pop = document.createElement('div');
+    pop.className = 'ed-colorpop ed-float';
+    pop.setAttribute('role', 'dialog');
+    build(pop);
+    document.body.appendChild(pop);
+    floatPop = pop; floatAnchor = anchor;
+    place(pop, anchor.getBoundingClientRect());
+    setTimeout(() => {
+      document.addEventListener('pointerdown', onFloatOutside, true);
+      document.addEventListener('keydown', onFloatKey, true);
+    }, 0);
+    return pop;
+  }
+  const clampX = (x, pop) => Math.max(8, Math.min(x, window.innerWidth - pop.offsetWidth - 8));
+  const clampY = (y, pop) => Math.max(8, Math.min(y, window.innerHeight - pop.offsetHeight - 8));
+  function floatHead(pop, title) {
+    const head = document.createElement('div'); head.className = 'ed-cp-head';
+    const t = document.createElement('span'); t.textContent = title;
+    const x = document.createElement('button'); x.className = 'ed-cp-close'; x.textContent = '✕'; x.title = 'Close';
+    x.addEventListener('click', closeFloat);
+    head.append(t, x);
+    pop.appendChild(head);
+  }
+
+  // Tapping your own @name in the top bar: sign out (forget the key here).
+  // Drafts typed in this browser stay in localStorage either way.
+  function openSignOut(anchor) {
+    openFloat(anchor, (pop) => {
+      floatHead(pop, 'Sign out?');
+      const sub = document.createElement('div'); sub.className = 'ed-cp-sub';
+      sub.textContent = 'This browser forgets your access key; you will need it to come back. Unsaved drafts stay in this browser.';
+      const row = document.createElement('div'); row.className = 'ed-float-actions';
+      const no = document.createElement('button'); no.className = 'ed-abtn'; no.textContent = 'Cancel';
+      no.addEventListener('click', closeFloat);
+      const yes = document.createElement('button'); yes.className = 'ed-abtn danger'; yes.textContent = 'Sign out';
+      yes.addEventListener('click', () => { localStorage.removeItem(LS.key); location.reload(); });
+      row.append(no, yes);
+      pop.append(sub, row);
+    }, (pop, r) => {
+      pop.style.left = clampX(r.left, pop) + 'px';
+      pop.style.top = clampY(r.bottom + 6, pop) + 'px';
+    });
+  }
+
+  // Sidebar "Editors": every active editor and their contact link, floating
+  // to the right of the sidebar.
+  let editorsCache = null;
+  async function openEditors() {
+    const anchor = $('edEditors');
+    const pop = openFloat(anchor, (p) => {
+      floatHead(p, 'Editors');
+      const list = document.createElement('div'); list.className = 'ed-editors';
+      const n = document.createElement('div'); n.className = 'ed-cp-sub'; n.textContent = 'Loading…';
+      list.appendChild(n);
+      p.appendChild(list);
+    }, placeEditors);
+    if (!pop) return;
+    try {
+      editorsCache = editorsCache || await SolutionStore.editors();
+    } catch (e) {
+      if (floatPop === pop) pop.querySelector('.ed-editors').firstChild.textContent = (e && e.message) || 'Could not load the list.';
+      return;
+    }
+    if (floatPop !== pop) return;                   // closed while loading
+    const list = pop.querySelector('.ed-editors');
+    list.textContent = '';
+    if (!editorsCache.length) {
+      const n = document.createElement('div'); n.className = 'ed-cp-sub'; n.textContent = 'No editors to show.';
+      list.appendChild(n);
+    }
+    editorsCache.forEach((ed) => {
+      const row = document.createElement('div'); row.className = 'ed-editor-row';
+      const name = document.createElement('b'); name.textContent = '@' + ed.name;
+      if (ed.name === editorName) name.classList.add('me');
+      row.appendChild(name);
+      // http(s) only, same rule as the practice site's credit link.
+      let href = null;
+      try { const u = new URL(ed.link); if (u.protocol === 'http:' || u.protocol === 'https:') href = u.href; } catch (e) {}
+      if (href) {
+        const a = document.createElement('a');
+        a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        a.textContent = new URL(href).host.replace(/^www\./, '');
+        a.title = href;
+        row.appendChild(a);
+      } else {
+        const none = document.createElement('span'); none.className = 'none'; none.textContent = 'no link';
+        row.appendChild(none);
+      }
+      list.appendChild(row);
+    });
+    placeEditors(pop, anchor.getBoundingClientRect());   // its size changed
+  }
+  function placeEditors(pop, r) {
+    const sb = $('edSidebar').getBoundingClientRect();
+    const right = sb.width && sb.right > 0 ? sb.right : r.right;
+    pop.style.left = clampX(right + 8, pop) + 'px';
+    pop.style.top = clampY(r.bottom - pop.offsetHeight, pop) + 'px';
+  }
+  $('edEditors').addEventListener('click', openEditors);
 
   /* ───────────────────────── "Check all" ─────────────────────────
      A full pass over the database: re-reads every stored solution and
@@ -272,6 +403,194 @@ function toggleTheme() {
 
   $('edCheckAll').addEventListener('click', runCheckAll);
 
+  /* ───────────────────────── colour hint ─────────────────────────
+     Shows the five figure colours as they will actually render, in every
+     theme and in both night and day.
+
+     The values are MEASURED, not hard-coded: presets live as CSS rules on
+     body[data-theme=…] / body.light, and surface, border and muted are
+     derived from bg and text, so the only way to get the real numbers is
+     to ask the browser. Each theme is applied to <body> and read back in
+     one synchronous pass, then the original is restored before the browser
+     paints — so nothing flickers and the list can never drift out of step
+     with css/style.css. */
+  const FIG_COLORS = [
+    { key: 'text',    label: 'text',      note: 'default · ctext' },
+    { key: 'accent',  label: 'c1',        note: 'accent 1' },
+    { key: 'accent2', label: 'c2',        note: 'accent 2' },
+    { key: 'bg',      label: 'c3',        note: 'cbg' },
+    { key: 'surface', label: 'c4',        note: 'csurface' },
+  ];
+
+  function measureThemes() {
+    const body = document.body;
+    const prevTheme = body.getAttribute('data-theme');
+    const prevLight = body.classList.contains('light');
+    const read = () => {
+      const cs = getComputedStyle(body);
+      const v = (n) => cs.getPropertyValue(n).trim();
+      return { bg: v('--bg'), surface: v('--surface'), text: v('--text'),
+               accent: v('--accent'), accent2: v('--accent2'), border: v('--border') };
+    };
+
+    const list = (typeof THEMES !== 'undefined' ? THEMES : [{ id: 'default', name: 'Default' }])
+      .map((t) => ({ id: t.id, name: t.name }));
+    list.push({ id: 'custom', name: 'Custom' });
+
+    const out = [];
+    list.forEach((t) => {
+      const entry = { id: t.id, name: t.name };
+      ['night', 'day'].forEach((mode) => {
+        body.classList.toggle('light', mode === 'day');
+        if (t.id === 'custom') {
+          // Custom lives in inline style vars, applied per mode.
+          body.removeAttribute('data-theme');
+          if (typeof applyCustomForCurrentMode === 'function') applyCustomForCurrentMode();
+        } else {
+          if (typeof clearCustomVars === 'function') clearCustomVars();
+          if (t.id === 'default') body.removeAttribute('data-theme');
+          else body.setAttribute('data-theme', t.id);
+        }
+        entry[mode] = read();
+      });
+      out.push(entry);
+    });
+
+    // put everything back exactly as it was
+    if (typeof clearCustomVars === 'function') clearCustomVars();
+    body.classList.toggle('light', prevLight);
+    if (prevTheme) body.setAttribute('data-theme', prevTheme);
+    else body.removeAttribute('data-theme');
+    if (!prevTheme && typeof getColorTheme === 'function' && getColorTheme() === 'custom'
+        && typeof applyCustomForCurrentMode === 'function') applyCustomForCurrentMode();
+    if (typeof updateOnColorVars === 'function') updateOnColorVars();
+    return out;
+  }
+
+  /** The five figure colours of one theme, as small squares. */
+  function swatchRow(c) {
+    const row = document.createElement('div');
+    row.className = 'ed-cp-chips';
+    // Same order as FIG_COLORS, so a column lines up across every theme.
+    [c.text, c.accent, c.accent2, c.bg, c.surface].forEach((col, i) => {
+      const sq = document.createElement('i');
+      sq.style.background = col;
+      sq.title = `${FIG_COLORS[i].label} · ${col}`;
+      row.appendChild(sq);
+    });
+    return row;
+  }
+
+  let colorPop = null;
+  function closeColorPop() {
+    if (!colorPop) return;
+    document.removeEventListener('pointerdown', onColorPopOutside, true);
+    document.removeEventListener('keydown', onColorPopKey, true);
+    colorPop.remove();
+    colorPop = null;
+  }
+  function onColorPopOutside(e) {
+    if (colorPop && !colorPop.contains(e.target) && e.target !== $('edColorHint')) closeColorPop();
+  }
+  function onColorPopKey(e) { if (e.key === 'Escape') closeColorPop(); }
+
+  function openColorPop() {
+    if (colorPop) { closeColorPop(); return; }
+    const data = measureThemes();
+
+    const pop = document.createElement('div');
+    pop.className = 'ed-colorpop';
+
+    const head = document.createElement('div');
+    head.className = 'ed-cp-head';
+    const ht = document.createElement('span'); ht.textContent = 'Figure colours in every theme';
+    const close = document.createElement('button');
+    close.className = 'ed-cp-close'; close.textContent = '✕'; close.title = 'Close';
+    close.addEventListener('click', closeColorPop);
+    head.append(ht, close);
+    pop.appendChild(head);
+
+    const sub = document.createElement('div');
+    sub.className = 'ed-cp-sub';
+    sub.append(document.createTextNode('A figure follows the reader\u2019s theme, so draw only with these. '));
+    const code = document.createElement('code'); code.textContent = 'c3 / c4';
+    sub.append(code, document.createTextNode(' are the backgrounds — useful as a fill under a label.'));
+    pop.appendChild(sub);
+
+    const cols = document.createElement('div');
+    cols.className = 'ed-cp-cols';
+    ['', '🌙 Night', '☀️ Day'].forEach((t) => {
+      const c = document.createElement('div'); c.textContent = t; cols.appendChild(c);
+    });
+    pop.appendChild(cols);
+
+    // The square order, named once at the top instead of on every row.
+    const names = document.createElement('div');
+    names.className = 'ed-cp-names';
+    const spacer = document.createElement('div');
+    names.appendChild(spacer);
+    ['night', 'day'].forEach(() => {
+      const strip = document.createElement('div');
+      strip.className = 'ed-cp-chips labels';
+      FIG_COLORS.forEach((c) => {
+        const l = document.createElement('span');
+        l.textContent = c.label;
+        strip.appendChild(l);
+      });
+      names.appendChild(strip);
+    });
+    pop.appendChild(names);
+
+    data.forEach((t) => {
+      const row = document.createElement('div');
+      row.className = 'ed-cp-row';
+      const name = document.createElement('div');
+      name.className = 'ed-cp-name';
+      const b = document.createElement('b'); b.textContent = t.name;
+      name.appendChild(b);
+      row.appendChild(name);
+      ['night', 'day'].forEach((mode) => {
+        const cell = document.createElement('div');
+        cell.className = 'ed-cp-cell';
+        cell.appendChild(swatchRow(t[mode]));
+        row.appendChild(cell);
+      });
+      pop.appendChild(row);
+    });
+
+    const legend = document.createElement('div');
+    legend.className = 'ed-cp-legend';
+    FIG_COLORS.forEach((c) => {
+      const s = document.createElement('span');
+      const i = document.createElement('i');
+      // the legend chips show the CURRENT theme, which is what the preview
+      // on the right of the editor is using
+      i.style.background = `var(--${c.key === 'text' ? 'text' : c.key})`;
+      const t = document.createElement('span');
+      t.textContent = `${c.label} · ${c.note}`;
+      s.append(i, t);
+      legend.appendChild(s);
+    });
+    pop.appendChild(legend);
+
+    document.body.appendChild(pop);
+    colorPop = pop;
+
+    // anchored under the button, nudged back inside the viewport
+    const r = $('edColorHint').getBoundingClientRect();
+    const w = pop.offsetWidth;
+    let left = Math.min(r.left, window.innerWidth - w - 8);
+    pop.style.left = Math.max(8, left) + 'px';
+    pop.style.top = Math.min(r.bottom + 6, window.innerHeight - pop.offsetHeight - 8) + 'px';
+
+    setTimeout(() => {
+      document.addEventListener('pointerdown', onColorPopOutside, true);
+      document.addEventListener('keydown', onColorPopKey, true);
+    }, 0);
+  }
+
+  $('edColorHint').addEventListener('click', openColorPop);
+
   /* ───────────────────────── sidebar ───────────────────────── */
   function setSidebar(open, persist) {
     document.body.classList.toggle('sb-closed', !open);
@@ -364,10 +683,16 @@ function toggleTheme() {
   let saveTimer = null;
   function persistDrafts() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      try { localStorage.setItem(LS.drafts, JSON.stringify(drafts)); } catch (e) { /* quota: ignore */ }
-    }, 500);
+    saveTimer = setTimeout(flushDrafts, 500);
   }
+  function flushDrafts() {
+    clearTimeout(saveTimer); saveTimer = null;
+    try { localStorage.setItem(LS.drafts, JSON.stringify(drafts)); } catch (e) { /* quota: ignore */ }
+  }
+  // The write above is debounced; without this, a reload or tab close within
+  // half a second of typing would drop the last keystrokes.
+  window.addEventListener('pagehide', flushDrafts);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushDrafts(); });
   const hasContent = (d) => !!(d && (d.tikz.trim() || d.solution.trim() || (d.captions || []).some((c) => c && c.trim())));
 
   // What the server has: problem_key -> { status, updated_at }. Filled at boot
@@ -380,9 +705,46 @@ function toggleTheme() {
   let curSvgs = [];
   let curSvgSrc = '';          // the TikZ those SVGs were compiled from
   let cur = null;
-  const draft = () => (drafts[cur.key] ||= { tikz: '', captions: [], solution: '' });
+  const draft = () => (drafts[cur.key] ||= { tikz: '', captions: [], solution: '', scale: 1 });
 
   /* ───────────────────────── sidebar list ───────────────────────── */
+  // Quizzes whose problem list is expanded. Memory only on purpose: every
+  // page load starts with just the quiz headers, and an expanded quiz stays
+  // expanded until the page is reloaded.
+  const openQuizzes = new Set();
+  function setQuizOpen(quiz, open) {
+    if (open) openQuizzes.add(quiz); else openQuizzes.delete(quiz);
+    const box = $('edList');
+    const h = box.querySelector(`.ed-group[data-quiz="${quiz}"]`);
+    if (h) h.setAttribute('aria-expanded', String(open));
+    box.querySelectorAll(`.ed-item[data-quiz="${quiz}"]`).forEach((el) => { el.hidden = !open; });
+  }
+  // Marks the header of the quiz holding the open problem, so it can be
+  // found while that quiz is collapsed.
+  function markActiveGroup() {
+    document.querySelectorAll('#edList .ed-group').forEach((h) => {
+      h.classList.toggle('has-active', !!cur && +h.dataset.quiz === cur.quiz);
+    });
+  }
+
+  // Filter: hide problems with nothing on them (no dot), and quizzes left
+  // with none. Memory only, like the expanded quizzes.
+  let onlyTouched = false;
+  $('edFilter').addEventListener('click', () => {
+    onlyTouched = !onlyTouched;
+    $('edFilter').setAttribute('aria-pressed', String(onlyTouched));
+    $('edList').classList.toggle('only-touched', onlyTouched);
+  });
+  // A quiz header is "empty" when none of its problems has a dot. Re-run
+  // whenever a dot can appear or vanish (list render, markItem).
+  function markEmptyGroups() {
+    const box = $('edList');
+    box.querySelectorAll('.ed-group').forEach((h) => {
+      const any = box.querySelector(`.ed-item.has[data-quiz="${h.dataset.quiz}"]`);
+      h.classList.toggle('empty', !any);
+    });
+  }
+
   function renderList() {
     const box = $('edList');
     box.textContent = '';
@@ -393,30 +755,40 @@ function toggleTheme() {
     problems.forEach((p) => {
       if (p.quiz !== lastQ) {
         lastQ = p.quiz;
-        const h = document.createElement('div');
-        h.className = 'ed-group';
-        const a = document.createElement('span'); a.textContent = `Q${p.quiz}`;
-        const b = document.createElement('span'); b.textContent = String(counts[p.quiz]);
+        const quiz = p.quiz;
+        const h = document.createElement('button');
+        h.className = 'ed-group' + (cur && cur.quiz === quiz ? ' has-active' : '');
+        h.dataset.quiz = String(quiz);
+        h.setAttribute('aria-expanded', String(openQuizzes.has(quiz)));
+        const a = document.createElement('span');
+        const caret = document.createElement('i'); caret.className = 'ed-group-caret'; caret.textContent = '▸';
+        a.append(caret, document.createTextNode(`Q${quiz}`));
+        const b = document.createElement('span'); b.textContent = String(counts[quiz]);
         h.append(a, b);
+        h.addEventListener('click', () => setQuizOpen(quiz, !openQuizzes.has(quiz)));
         frag.appendChild(h);
       }
       const btn = document.createElement('button');
       btn.className = 'ed-item' + (p.retired ? ' retired' : '') + itemClasses(p.key);
       btn.dataset.key = p.key;
-      const l = document.createElement('span'); l.textContent = `Q${p.quiz} · ${p.id}`;
+      btn.dataset.quiz = String(p.quiz);
+      btn.hidden = !openQuizzes.has(p.quiz);
+      // Shown position first (what the quiz page calls it), permanent key on
+      // the right; the quiz itself is in the group header.
+      const l = document.createElement('span'); l.textContent = p.retired ? 'DEL' : `#${p.pos}`;
       const dot = document.createElement('i'); dot.className = 'dot';
       // Tooltip follows the colour: green = published, amber = saved draft,
       // grey = typed here only. (It used to say "Has a draft" on all three.)
       const st = serverIndex[p.key];
       dot.title = st ? (st.status === 'published' ? 'Published' : 'Saved as draft')
                      : 'Unsaved — only in this browser';
-      const r = document.createElement('span'); r.className = 'pos'; r.textContent = p.retired ? 'DEL' : `#${p.pos}`;
+      const r = document.createElement('span'); r.className = 'pid'; r.textContent = p.id;
       btn.append(l, dot, r);
       btn.addEventListener('click', () => { select(p.key); if (mqNarrow.matches) setSidebar(false, false); });
       frag.appendChild(btn);
     });
     box.appendChild(frag);
-    $('edCount').textContent = String(problems.length);
+    markEmptyGroups();
   }
   // "has" = there is something to show a dot for; colour = server status;
   // "dirty" = the window differs from what the server has.
@@ -435,23 +807,37 @@ function toggleTheme() {
     if (!it) return;
     const p = byKey.get(key);
     it.className = 'ed-item' + (p && p.retired ? ' retired' : '') + itemClasses(key) + (cur && cur.key === key ? ' active' : '');
+    markEmptyGroups();
   }
 
   /* ───────────────────────── problem panel (hidable) ───────────────────────── */
-  function setProbOpen(open, persist) {
+  // Starts closed, and closes again whenever another problem is opened
+  // (see select()), so the page opens on the figure and solution fields.
+  function setProbOpen(open) {
     document.body.classList.toggle('prob-closed', !open);
     $('edProbToggle').setAttribute('aria-expanded', String(open));
-    if (persist) localStorage.setItem(LS.prob, open ? '1' : '0');
   }
-  (function () {
-    const saved = localStorage.getItem(LS.prob);
-    setProbOpen(saved === null ? !mqNarrow.matches : saved === '1', false);
-  })();
-  $('edProbToggle').addEventListener('click', () => setProbOpen(document.body.classList.contains('prob-closed'), true));
+  setProbOpen(false);
+  $('edProbToggle').addEventListener('click', () => setProbOpen(document.body.classList.contains('prob-closed')));
+
+  /* ───────────────────────── figure fields (hidable) ─────────────────────────
+     For problems that need no figure: hides the TikZ box, the captions and
+     the figure preview. A view setting only — nothing is saved or erased.
+     Every problem opens with them hidden unless it already has a figure
+     (see loadIntoFields); the button opens them to start one. */
+  function setFigOpen(open) {
+    document.body.classList.toggle('fig-closed', !open);
+    $('edFigToggle').textContent = open ? 'Hide figure' : 'Show figure';
+    $('edFigToggle').setAttribute('aria-pressed', String(!open));
+    // A figure that compiled while hidden couldn't be measured; crop it now.
+    const steps = open && $('edStage').querySelector('.fig-steps');
+    if (steps) figCropToContent(steps);
+  }
+  setFigOpen(true);
+  $('edFigToggle').addEventListener('click', () => setFigOpen(document.body.classList.contains('fig-closed')));
 
   function showProblem(p) {
     $('edProbKey').textContent = `Q${p.quiz} · ${p.id}`;
-    $('edProbMeta').textContent = [p.retired ? 'retired (DEL)' : `position #${p.pos}`, p.topic].filter(Boolean).join(' · ');
     // Problem text is the site's own trusted content (HTML + $math$), rendered exactly like on the site.
     $('edProbText').innerHTML = p.text;
     const ans = Array.isArray(p.answer) ? p.answer.join(' ; ') : (p.answer == null ? '—' : String(p.answer));
@@ -617,15 +1003,35 @@ function toggleTheme() {
   function mountSteps(svgs) {
     stage.className = 'ed-stage fig has-fig';
     stage.textContent = '';
-    const wrap = document.createElement('div'); wrap.className = 'fig-steps';
+    const wrap = document.createElement('div'); wrap.className = 'fig-steps fig-sized';
     svgs.forEach((svg, i) => {
       const d = document.createElement('div'); d.className = 'fig-step';
       d.innerHTML = figSanitizeSvg(svg);
       wrap.appendChild(d);
     });
     stage.appendChild(wrap);
+    figCropToContent(wrap);   // same crop the practice site applies
+    applyScale();
     renderViewer();
   }
+
+  // Display scale (figure.scale): only changes how big the stored SVGs are
+  // drawn, so it never needs a recompile.
+  const scaleEl = $('edScale');
+  const draftScale = (d) => figScaleOf({ scale: d && d.scale });
+  function applyScale() {
+    if (cur) stage.style.setProperty('--fig-scale', String(draftScale(draft())));
+  }
+  scaleEl.addEventListener('input', () => {
+    if (!cur) return;
+    const v = parseFloat(scaleEl.value);
+    if (!isFinite(v) || v <= 0) return;           // mid-typing ("0.", "")
+    draft().scale = figScaleOf({ scale: v });
+    persistDrafts(); markItem(); refreshState(); applyScale();
+  });
+  scaleEl.addEventListener('change', () => {       // tidy the field on blur/enter
+    if (cur) scaleEl.value = draftScale(draft()).toFixed(2);
+  });
 
   function compileFigure(src, steps, gen) {
     return new Promise((resolve) => {
@@ -719,7 +1125,7 @@ function toggleTheme() {
   /* ───────────────────────── inputs ───────────────────────── */
   tikzEl.addEventListener('input', () => {
     if (!cur) return;
-    draft().tikz = tikzEl.value; persistDrafts(); markItem(); refreshState();
+    draft().tikz = tikzEl.value; persistDrafts(); markItem(); refreshState(); histMaybeAuto();
     const next = detectSteps(tikzEl.value);
     const changed = next.n !== stepState.n || next.hasSteps !== stepState.hasSteps;
     stepState = next;
@@ -729,23 +1135,20 @@ function toggleTheme() {
   });
   solEl.addEventListener('input', () => {
     if (!cur) return;
-    draft().solution = solEl.value; persistDrafts(); markItem(); refreshState();
+    draft().solution = solEl.value; persistDrafts(); markItem(); refreshState(); histMaybeAuto();
     clearTimeout(solTimer); solTimer = setTimeout(renderSolPreview, 200);
   });
 
   /* ───────────────────────── state panel ───────────────────────── */
   const stPill = $('edStatePill'), stMsg = $('edStMsg'), stNote = $('edStNote');
 
-  function setStateOpen(open, persist) {
+  // Same as the problem panel: closed by default and on every problem change.
+  function setStateOpen(open) {
     document.body.classList.toggle('state-closed', !open);
     $('edStateToggle').setAttribute('aria-expanded', String(open));
-    if (persist) localStorage.setItem(LS.state, open ? '1' : '0');
   }
-  (function () {
-    const saved = localStorage.getItem(LS.state);
-    setStateOpen(saved === null ? !mqNarrow.matches : saved === '1', false);
-  })();
-  $('edStateToggle').addEventListener('click', () => setStateOpen(document.body.classList.contains('state-closed'), true));
+  setStateOpen(false);
+  $('edStateToggle').addEventListener('click', () => setStateOpen(document.body.classList.contains('state-closed')));
 
   // Hash of the problem the solution was written against (text + accepted
   // answer), stored with the row so a solution can be flagged stale if the
@@ -758,7 +1161,7 @@ function toggleTheme() {
 
   // What would be sent to the server for the problem on screen.
   function payloadOf(key) {
-    const d = drafts[key] || { tikz: '', captions: [], solution: '' };
+    const d = drafts[key] || { tikz: '', captions: [], solution: '', scale: 1 };
     const n = detectSteps(d.tikz).n;
     const steps = [];
     // Freshly compiled SVGs when the figure in the window is what was
@@ -770,7 +1173,10 @@ function toggleTheme() {
     for (let i = 0; i < (d.tikz.trim() ? n : 0); i++) {
       steps.push({ svg: svgs[i] || '', caption: (d.captions[i] || '').trim() });
     }
-    return { solution: d.solution, figure: { tikz: d.tikz, steps } };
+    const figure = { tikz: d.tikz, steps };
+    const scale = draftScale(d);
+    if (d.tikz.trim() && scale !== 1) figure.scale = scale;
+    return { solution: d.solution, figure };
   }
   function rowFigure(key) {
     const r = (key === (cur && cur.key)) ? curRow : null;
@@ -782,6 +1188,7 @@ function toggleTheme() {
     const p = payloadOf(key);
     return p.solution === row.solution &&
            p.figure.tikz === (row.figure ? row.figure.tikz : '') &&
+           figScaleOf(p.figure) === figScaleOf(row.figure) &&
            JSON.stringify(p.figure.steps.map((s) => s.caption)) === JSON.stringify((row.figure ? row.figure.steps : []).map((s) => s.caption));
   };
   function isDirty(key) {
@@ -856,18 +1263,31 @@ function toggleTheme() {
       markItem(key);
       refreshState();
       setMsg(status === 'published' ? 'Published.' : 'Draft saved.', 'ok');
+      histSnapshot(key, status === 'published' ? 'Published' : 'Saved as draft');
+      return true;
     } catch (e) {
       if (e && e.conflict) {
         setMsg('', 'err');
         askConfirm('Someone else saved this problem while you were editing it. Loading their version will erase what is in your window.',
           'Load theirs', () => doReload());
       } else if (e && e.auth) {
-        setMsg('Your access key was not accepted. Use "Change key" to enter it again.', 'err');
+        setMsg('Your access key was not accepted. Tap your @name at the top to sign out and enter it again.', 'err');
       } else {
         setMsg('Could not save: ' + (e && e.message ? e.message : e), 'err');
       }
       refreshState();
+      return false;
     }
+  }
+
+  // The editable fields for a stored row.
+  function draftFromRow(row) {
+    return {
+      tikz: (row.figure && row.figure.tikz) || '',
+      captions: ((row.figure && row.figure.steps) || []).map((s) => s.caption || ''),
+      solution: row.solution || '',
+      scale: figScaleOf(row.figure),
+    };
   }
 
   async function doReload() {
@@ -879,11 +1299,8 @@ function toggleTheme() {
       curRow = row;
       curStale = row && row.problem_hash ? (row.problem_hash !== await problemHashOf(cur)) : null;
       if (row) {
-        drafts[key] = {
-          tikz: (row.figure && row.figure.tikz) || '',
-          captions: ((row.figure && row.figure.steps) || []).map((s) => s.caption || ''),
-          solution: row.solution || '',
-        };
+        histSnapshot(key, 'Before loading from the database');
+        drafts[key] = draftFromRow(row);
         serverIndex[key] = { status: row.status, updated_at: row.updated_at };
       } else {
         delete serverIndex[key];
@@ -898,7 +1315,7 @@ function toggleTheme() {
     }
   }
 
-  $('edBtnPublish').addEventListener('click', () => doSave('published'));
+  $('edBtnPublish').addEventListener('click', () => requestPublish());
   $('edBtnSave').addEventListener('click', () => doSave('draft'));
   $('edBtnUnpublish').addEventListener('click', () => {
     askConfirm('Unpublishing hides this solution on the site immediately. The text stays here as a draft.',
@@ -915,6 +1332,7 @@ function toggleTheme() {
         setMsg('Deleting…', '');
         try {
           await SolutionStore.remove(key);
+          histSnapshot(key, 'Before delete');
           delete serverIndex[key];
           delete drafts[key];
           persistDrafts();
@@ -940,8 +1358,13 @@ function toggleTheme() {
   // Puts the current draft into the fields and refreshes both previews.
   function loadIntoFields() {
     const d = draft();
-    tikzEl.disabled = solEl.disabled = false;
+    tikzEl.disabled = solEl.disabled = scaleEl.disabled = false;
     tikzEl.value = d.tikz;
+    scaleEl.value = draftScale(d).toFixed(2);
+    applyScale();
+    // Per problem: figure fields open only when there is a figure. Runs
+    // again after an automatic load from the database, which then opens them.
+    setFigOpen(!!d.tikz.trim());
     solEl.value = d.solution;
     viewStep = 1;
     stepState = detectSteps(d.tikz);
@@ -953,15 +1376,20 @@ function toggleTheme() {
     else { clearStage('No figure'); setStatus('', ''); renderViewer(); }
   }
 
-  async function select(key) {
+  // reveal: expand the problem's quiz in the sidebar. Off only for the
+  // problem restored at page load, so the list starts collapsed.
+  async function select(key, reveal = true) {
     const p = byKey.get(key);
     if (!p) return;
     cur = p;
+    if (reveal && !openQuizzes.has(p.quiz)) setQuizOpen(p.quiz, true);
+    markActiveGroup();
     document.querySelectorAll('.ed-item.active').forEach((el) => el.classList.remove('active'));
     const item = $('edList').querySelector(`.ed-item[data-key="${CSS.escape(key)}"]`);
     if (item) { item.classList.add('active'); item.scrollIntoView({ block: 'nearest' }); }
 
     showProblem(p);
+    setProbOpen(false); setStateOpen(false);
     curRow = null; curStale = null;
     hideNote(); setMsg('');
     loadIntoFields();
@@ -976,13 +1404,686 @@ function toggleTheme() {
         curRow = row;
         curStale = row && row.problem_hash ? (row.problem_hash !== await problemHashOf(cur)) : null;
         if (cur.key !== key) return;
+        // Stored in the database but nothing in this browser (another
+        // device, cleared storage, the other editor's work): fill the fields
+        // from the row instead of showing it as empty. Checked after the
+        // fetch, so anything typed while it was loading is never replaced.
+        if (row && !hasContent(drafts[key])) {
+          drafts[key] = draftFromRow(row);
+          persistDrafts();
+          loadIntoFields();
+          markItem(key);
+        }
         refreshState();
       } catch (e) {
-        setMsg(e && e.auth ? 'Your access key was not accepted. Use "Change key" to enter it again.'
+        setMsg(e && e.auth ? 'Your access key was not accepted. Tap your @name at the top to sign out and enter it again.'
                            : 'Could not read this problem from the database.', 'err');
       }
     }
   }
+
+  /* ───────────────────────── toast ─────────────────────────
+     Feedback for actions taken while the state panel is closed (Ctrl+S,
+     restoring a version). */
+  let toastTimer = null;
+  function toast(text, cls) {
+    let t = $('edToast');
+    if (!t) {
+      t = document.createElement('div'); t.id = 'edToast'; t.className = 'ed-toast';
+      t.setAttribute('role', 'status');
+      document.body.appendChild(t);
+    }
+    t.textContent = text;
+    t.className = 'ed-toast visible ' + (cls || '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.className = 'ed-toast ' + (cls || ''); }, 2200);
+  }
+
+  /* ───────────────────────── pre-publish checks ─────────────────────────
+     Things that are easy to miss and look broken to a student. Warnings
+     only: "Publish anyway" is always offered. */
+  function texIssues(text, where) {
+    const out = [];
+    const t = String(text || '').replace(/\\\\/g, '').replace(/\\\$/g, '');   // ignore \\ and \$
+    const dd = (t.match(/\$\$/g) || []).length;
+    if (dd % 2) out.push(`Unclosed $$ in ${where}.`);
+    const single = (t.replace(/\$\$/g, '').match(/\$/g) || []).length;
+    if (single % 2) out.push(`Unclosed $ in ${where}.`);
+    const cnt = (re) => (t.match(re) || []).length;
+    if (cnt(/\\\[/g) !== cnt(/\\\]/g)) out.push(`\\[ and \\] don't pair up in ${where}.`);
+    if (cnt(/\\\(/g) !== cnt(/\\\)/g)) out.push(`\\( and \\) don't pair up in ${where}.`);
+    const b = t.replace(/\\[{}]/g, '');                  // \{ \} are literal braces
+    if ((b.match(/\{/g) || []).length !== (b.match(/\}/g) || []).length) {
+      out.push(`{ and } don't pair up in ${where}.`);
+    }
+    const begins = {}, ends = {};
+    t.replace(/\\begin\{([^}]+)\}/g, (m, e) => { begins[e] = (begins[e] || 0) + 1; return m; });
+    t.replace(/\\end\{([^}]+)\}/g, (m, e) => { ends[e] = (ends[e] || 0) + 1; return m; });
+    new Set([...Object.keys(begins), ...Object.keys(ends)]).forEach((e) => {
+      if ((begins[e] || 0) !== (ends[e] || 0)) out.push(`\\begin{${e}} without a matching \\end{${e}} in ${where}.`);
+    });
+    return out;
+  }
+  function prePublishIssues(key) {
+    const d = drafts[key] || { tikz: '', captions: [], solution: '' };
+    const issues = [];
+    const n = d.tikz.trim() ? detectSteps(d.tikz).n : 0;
+    if (!d.solution.trim()) issues.push('The solution text is empty.');
+    issues.push(...texIssues(d.solution, 'the solution'));
+    (d.captions || []).forEach((c, i) => {
+      if (!c || !c.trim()) return;
+      if (i >= n) issues.push(`Caption ${i + 1} has no figure step and will be dropped.`);
+      else issues.push(...texIssues(c, n > 1 ? `caption ${i + 1}` : 'the caption'));
+    });
+    if (n > 1) {
+      const filled = (d.captions || []).slice(0, n).filter((c) => c && c.trim()).length;
+      if (filled && filled < n) issues.push(`Only ${filled} of ${n} steps have a caption.`);
+    }
+    if (curRow && key === cur.key && curStale === true) {
+      issues.push('The problem changed after this solution was last saved; check that the numbers still match.');
+    }
+    return issues;
+  }
+  // Publish, but show the checks first when there is anything to flag.
+  async function requestPublish() {
+    const key = cur.key;
+    if (payloadOf(key).figure.steps.some((s) => !s.svg)) {
+      toast('The figure is still compiling. Try again in a moment.', 'err');
+      return false;
+    }
+    const issues = prePublishIssues(key);
+    if (!issues.length) return doSave('published');
+    setStateOpen(true);
+    askConfirm('Before publishing, check:\n• ' + issues.join('\n• '), 'Publish anyway', () => doSave('published'));
+    return false;
+  }
+
+  /* ───────────────────────── Ctrl+S ─────────────────────────
+     Saves the open problem as it stands: a published solution is
+     re-published (a draft save would take it off the site), anything else
+     is saved as a draft. */
+  document.addEventListener('keydown', async (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || (e.key !== 's' && e.key !== 'S')) return;
+    e.preventDefault();                               // never the browser's "save page"
+    if (!cur || !gate.hidden) return;
+    const key = cur.key;
+    if (!hasContent(drafts[key]) && !curRow) { toast('Nothing to save yet.'); return; }
+    if (!isDirty(key)) { toast('Already saved.'); return; }
+    const published = curRow && curRow.status === 'published';
+    if (published) {
+      const ok = await requestPublish();
+      if (ok) toast('Published changes.', 'ok');
+      return;
+    }
+    toast('Saving…');
+    const ok = await doSave('draft');
+    if (ok) toast('Draft saved.', 'ok');
+    else { toast('Could not save. See the state panel.', 'err'); setStateOpen(true); }
+  });
+
+  /* ───────────────────────── local version history ─────────────────────────
+     Earlier versions of each problem, kept ONLY in this browser
+     (localStorage) — nothing is added to the database. Figures are kept as
+     TikZ source, not SVG, so a restored version recompiles; that keeps the
+     store small.
+
+     A version is kept: on every save/publish, before anything replaces the
+     fields (load from database, delete, restoring another version), and
+     every HIST_AUTO_MS while typing. Identical consecutive versions are
+     kept once. */
+  const HIST_PER_PROBLEM = 30;
+  const HIST_TOTAL = 400;
+  const HIST_AUTO_MS = 10 * 60 * 1000;
+  let histAll = null;
+  function histLoad() {
+    if (histAll) return histAll;
+    try { histAll = JSON.parse(localStorage.getItem(LS.history) || '{}') || {}; } catch (e) { histAll = {}; }
+    return histAll;
+  }
+  function histPersist() {
+    for (let tries = 0; tries < 6; tries++) {
+      try { localStorage.setItem(LS.history, JSON.stringify(histAll)); return; }
+      catch (e) {
+        // Quota: drop the oldest fifth of all versions and retry.
+        const all = [];
+        Object.keys(histAll).forEach((k) => histAll[k].forEach((v) => all.push([v.at, k, v])));
+        if (!all.length) return;
+        all.sort((a, b) => a[0] - b[0]);
+        all.slice(0, Math.max(1, Math.ceil(all.length / 5))).forEach(([, k, v]) => {
+          histAll[k] = histAll[k].filter((x) => x !== v);
+          if (!histAll[k].length) delete histAll[k];
+        });
+      }
+    }
+  }
+  const histBody = (d) => ({
+    tikz: d.tikz || '', captions: (d.captions || []).slice(), solution: d.solution || '', scale: draftScale(d),
+  });
+  const histSame = (a, b) => JSON.stringify(histBody(a)) === JSON.stringify(histBody(b));
+  function histSnapshot(key, label) {
+    const d = drafts[key];
+    if (!hasContent(d)) return;
+    const all = histLoad();
+    const list = all[key] || (all[key] = []);
+    if (list.length && histSame(list[0], d)) return;  // nothing new since the last one
+    list.unshift(Object.assign({ at: Date.now(), label }, histBody(d)));
+    if (list.length > HIST_PER_PROBLEM) list.length = HIST_PER_PROBLEM;
+    // Overall cap, oldest first.
+    let total = 0; Object.keys(all).forEach((k) => { total += all[k].length; });
+    while (total > HIST_TOTAL) {
+      let oldK = null, oldAt = Infinity;
+      Object.keys(all).forEach((k) => { const v = all[k][all[k].length - 1]; if (v && v.at < oldAt) { oldAt = v.at; oldK = k; } });
+      if (!oldK) break;
+      all[oldK].pop(); if (!all[oldK].length) delete all[oldK];
+      total--;
+    }
+    histPersist();
+  }
+  let histAutoTimer = null;
+  function histMaybeAuto() {
+    if (!cur) return;
+    const key = cur.key;
+    clearTimeout(histAutoTimer);
+    // Checked a few seconds after typing pauses, not on every keystroke.
+    histAutoTimer = setTimeout(() => {
+      const list = histLoad()[key] || [];
+      if (!list.length || Date.now() - list[0].at >= HIST_AUTO_MS) histSnapshot(key, 'While editing');
+    }, 3000);
+  }
+
+  function fmtAgo(ms) {
+    const s = Math.round((Date.now() - ms) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.round(s / 60)} min ago`;
+    if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+    return new Date(ms).toLocaleString();
+  }
+  function histRestore(key, v) {
+    histSnapshot(key, 'Before restoring');
+    drafts[key] = histBody(v);
+    persistDrafts();
+    loadIntoFields();
+    markItem(key);
+    refreshState();
+    closeFloat();
+    toast(`Restored the version from ${fmtAgo(v.at)}. Save to keep it.`, 'ok');
+  }
+  function openHistory() {
+    if (!cur) return;
+    const key = cur.key;
+    const anchor = $('edBtnHistory');
+    openFloat(anchor, (pop) => {
+      floatHead(pop, 'Local history');
+      const sub = document.createElement('div'); sub.className = 'ed-cp-sub';
+      sub.textContent = 'Kept in this browser only. Restoring replaces the fields (the current text is kept here first); save afterwards to keep it.';
+      pop.appendChild(sub);
+      const list = histLoad()[key] || [];
+      const box = document.createElement('div'); box.className = 'ed-hist';
+      if (!list.length) {
+        const n = document.createElement('div'); n.className = 'ed-cp-sub';
+        n.textContent = 'No versions yet. One is kept on every save, before anything replaces the fields, and every 10 minutes while you type.';
+        box.appendChild(n);
+      }
+      const now = draft();
+      list.forEach((v) => {
+        const row = document.createElement('div'); row.className = 'ed-hist-row';
+        const info = document.createElement('div'); info.className = 'ed-hist-info';
+        const top = document.createElement('div');
+        const lbl = document.createElement('b'); lbl.textContent = v.label;
+        const when = document.createElement('span'); when.textContent = ' · ' + fmtAgo(v.at); when.title = new Date(v.at).toLocaleString();
+        top.append(lbl, when);
+        const peek = document.createElement('div'); peek.className = 'ed-hist-peek';
+        const steps = v.tikz.trim() ? detectSteps(v.tikz).n : 0;
+        const first = (v.solution.trim().split('\n')[0] || '(no solution text)').slice(0, 70);
+        peek.textContent = (steps ? `figure · ${steps} step${steps > 1 ? 's' : ''} · ` : '') + first;
+        info.append(top, peek);
+        const btn = document.createElement('button'); btn.className = 'ed-abtn';
+        if (histSame(v, now)) { btn.textContent = 'Current'; btn.disabled = true; }
+        else { btn.textContent = 'Restore'; btn.addEventListener('click', () => histRestore(key, v)); }
+        row.append(info, btn);
+        box.appendChild(row);
+      });
+      pop.appendChild(box);
+    }, (pop, r) => {
+      pop.style.left = clampX(r.left, pop) + 'px';
+      pop.style.top = clampY(r.bottom + 6, pop) + 'px';
+    });
+  }
+  $('edBtnHistory').addEventListener('click', openHistory);
+
+  /* ───────────────────────── snippets (TikZ + solution) ─────────────────────────
+     VS Code-style completion in both text boxes.
+       TikZ box     — a word at the start of a line, with or without the
+                      backslash (2+ letters): figure building blocks.
+       Solution box — a backslash command anywhere (\fr, \vec, \alp…):
+                      LaTeX that MathJax understands.
+     ↑/↓ choose, Tab or Enter insert, Esc closes, Ctrl+Space lists all.
+
+     Tab stops, as in VS Code: ${1:text} ${2:text} … are visited in order
+     with Tab (Shift+Tab goes back), each one selected so typing replaces
+     it; $0 is where the cursor ends up (end of the snippet if absent).
+     Clicking elsewhere or Esc leaves the snippet. Extra lines get the
+     current line's indentation. Defaults inside ${n:…} can't contain "}". */
+  const TIKZ_SNIPPETS = [
+    { p: 'tikzpicture', d: 'Picture with a bounding box', b: '\\begin{tikzpicture}\n  \\useasboundingbox (0,0) rectangle (${1:8},${2:5});\n  $0\n\\end{tikzpicture}' },
+    { p: 'bbox', d: 'Bounding box (the visible area)', b: '\\useasboundingbox (${1:0,0}) rectangle (${2:8,5});' },
+    { p: 'draw', d: 'Line between two points', b: '\\draw (${1:0,0}) -- (${2:2,0});' },
+    { p: 'arrow', d: 'Arrow with a label (force, velocity…)', b: '\\draw[-{Stealth[length=2.5mm]}, thick, ${1:c1}] (${2:0,0}) -- ++(${3:1.5,0}) node[${4:right}] {$${5:\\vec F}$};' },
+    { p: 'dashed', d: 'Dashed line', b: '\\draw[dashed] (${1:0,0}) -- (${2:2,0});' },
+    { p: 'node', d: 'Text / math label', b: '\\node at (${1:0,0}) {$${2:m}$};' },
+    { p: 'coordinate', d: 'Named point', b: '\\coordinate (${1:A}) at (${2:0,0});' },
+    { p: 'circle', d: 'Circle', b: '\\draw (${1:0,0}) circle (${2:0.5});' },
+    { p: 'dot', d: 'Filled point', b: '\\fill (${1:0,0}) circle (1.5pt);' },
+    { p: 'rectangle', d: 'Rectangle', b: '\\draw (${1:0,0}) rectangle (${2:2,1});' },
+    { p: 'block', d: 'Block of mass m', b: '\\draw[fill=csurface] (${1:0,0}) rectangle ++(${2:1,0.6}) node[midway] {$${3:m}$};' },
+    { p: 'axes', d: 'x and y axes', b: '\\draw[->] (0,0) -- (${1:5},0) node[right] {$${2:x}$};\n\\draw[->] (0,0) -- (0,${3:4}) node[above] {$${4:y}$};' },
+    { p: 'incline', d: 'Inclined plane with angle', b: '\\coordinate (A) at (0,0);\n\\coordinate (B) at (${1:4},0);\n\\coordinate (C) at ($(B)+(0,${2:3})$);\n\\draw (A) -- (B) -- (C) -- cycle;\n\\pic[draw, "$${3:\\theta}$", angle radius=7mm, angle eccentricity=1.45] {angle = B--A--C};' },
+    { p: 'angle', d: 'Angle mark between named points', b: '\\pic[draw, "$${1:\\theta}$", angle radius=6mm, angle eccentricity=1.45] {angle = ${2:B--A--C}};' },
+    { p: 'ground', d: 'Hatched ground', b: '\\draw (0,0) -- (${1:5},0) coordinate (g);\n\\fill[pattern=north east lines] (0,-0.2) rectangle (g);' },
+    { p: 'wall', d: 'Hatched wall', b: '\\draw (0,0) -- (0,${1:3}) coordinate (w);\n\\fill[pattern=north east lines] (-0.2,0) rectangle (w);' },
+    { p: 'spring', d: 'Spring (coil)', b: '\\draw[decorate, decoration={coil, aspect=0.4, segment length=2mm, amplitude=2mm}] (${1:0,0}) -- (${2:2,0});' },
+    { p: 'brace', d: 'Brace with a label', b: '\\draw[decorate, decoration={brace, amplitude=5pt}] (${1:0,0}) -- (${2:2,0}) node[midway, above=5pt] {$${3:d}$};' },
+    { p: 'dimension', d: 'Length marker ↔ with label', b: '\\draw[<->] (${1:0,-0.4}) -- (${2:2,-0.4}) node[midway, below] {$${3:L}$};' },
+    { p: 'onstep', d: 'Show from step N on', b: '\\onstep{${1:2}}{$0}' },
+    { p: 'foreach', d: 'Loop', b: '\\foreach \\x in {${1:0,1,2}} {\n  $0\n}' },
+    { p: 'scope', d: 'Scope (shift / scale a group)', b: '\\begin{scope}[${1:xshift=2cm}]\n  $0\n\\end{scope}' },
+  ];
+
+  // Plain symbols: the command itself, nothing to fill in.
+  const sym = (p, d) => ({ p, d, b: '\\' + p });
+  const SOLUTION_SNIPPETS = [
+    // math modes / structure
+    { p: 'display', d: 'Display math block $$ … $$', b: '$$\n${1:}\n$$' },
+    { p: 'inline', d: 'Inline math $ … $', b: '$${1:x}$' },
+    { p: 'aligned', d: 'Aligned equations (inside $$)', b: '$$\n\\begin{aligned}\n  ${1:a} &= ${2:b} \\\\\n  &= ${3:c}\n\\end{aligned}\n$$' },
+    { p: 'cases', d: 'Piecewise / cases', b: '\\begin{cases}\n  ${1:a}, & ${2:x > 0} \\\\\n  ${3:b}, & ${4:x \\le 0}\n\\end{cases}' },
+    { p: 'boxed', d: 'Boxed final answer', b: '\\boxed{${1:answer}}' },
+    // fractions, roots, calculus
+    { p: 'frac', d: 'Fraction', b: '\\frac{${1:a}}{${2:b}}' },
+    { p: 'dfrac', d: 'Full-size fraction', b: '\\dfrac{${1:a}}{${2:b}}' },
+    { p: 'sqrt', d: 'Square root', b: '\\sqrt{${1:x}}' },
+    { p: 'nroot', d: 'n-th root', b: '\\sqrt[${1:3}]{${2:x}}' },
+    { p: 'dd', d: 'Differential: \\dd{x} → upright d x', b: '\\dd{${1:x}}' },
+    { p: 'dv', d: 'Derivative dx/dt', b: '\\dv{${1:x}}{${2:t}}' },
+    { p: 'dvn', d: 'n-th derivative d²x/dt²', b: '\\dv[${1:2}]{${2:x}}{${3:t}}' },
+    { p: 'pdv', d: 'Partial derivative ∂f/∂x', b: '\\pdv{${1:f}}{${2:x}}' },
+    { p: 'pdvn', d: 'n-th partial derivative ∂²f/∂x²', b: '\\pdv[${1:2}]{${2:f}}{${3:x}}' },
+    { p: 'int', d: 'Definite integral', b: '\\int_{${1:a}}^{${2:b}} ${3:f(x)}\\,\\dd{${4:x}}' },
+    { p: 'oint', d: 'Closed-loop integral', b: '\\oint ${1:\\vec E} \\cdot \\dd{${2:\\vec A}}' },
+    { p: 'sum', d: 'Sum', b: '\\sum_{${1:i=1}}^{${2:n}} ' },
+    { p: 'lim', d: 'Limit', b: '\\lim_{${1:x \\to 0}} ' },
+    // accents
+    { p: 'vec', d: 'Vector arrow', b: '\\vec{${1:F}}' },
+    { p: 'vb', d: 'Bold vector F', b: '\\vb{${1:F}}' },
+    { p: 'vu', d: 'Unit vector r̂ (bold)', b: '\\vu{${1:r}}' },
+    { p: 'hat', d: 'Hat accent', b: '\\hat{${1:x}}' },
+    { p: 'dot', d: 'Time derivative (dot)', b: '\\dot{${1:x}}' },
+    { p: 'ddot', d: 'Second time derivative', b: '\\ddot{${1:x}}' },
+    { p: 'bar', d: 'Average / bar', b: '\\bar{${1:v}}' },
+    // brackets
+    { p: 'lr', d: 'Auto-sized ( … )', b: '\\left(${1:x}\\right)' },
+    { p: 'lrb', d: 'Auto-sized [ … ]', b: '\\left[${1:x}\\right]' },
+    { p: 'abs', d: 'Absolute value | … |', b: '\\abs{${1:x}}' },
+    { p: 'norm', d: 'Norm ‖ … ‖', b: '\\norm{${1:v}}' },
+    { p: 'pmatrix', d: 'Column vector', b: '\\begin{pmatrix} ${1:a} \\\\ ${2:b} \\\\ ${3:c} \\end{pmatrix}' },
+    { p: 'underbrace', d: 'Brace with a label underneath', b: '\\underbrace{${1:x}}_{${2:\\text{label}}}' },
+    { p: 'overset', d: 'Symbol above a sign', b: '\\overset{${1:!}}{${2:=}}' },
+    // text and units
+    { p: 'text', d: 'Words inside math', b: '\\text{${1:text}}' },
+    { p: 'mathrm', d: 'Upright letters (d, e, units)', b: '\\mathrm{${1:d}}' },
+    { p: 'unit', d: 'Unit after a number: 5 m/s', b: '\\,\\text{${1:m/s}}' },
+    { p: 'sci', d: 'Scientific notation × 10ⁿ', b: '\\times 10^{${1:3}}' },
+    { p: 'deg', d: 'Degrees °', b: '^\\circ' },
+    // relations and operators
+    sym('cdot', 'Dot product ·'), sym('times', 'Cross product ×'), sym('approx', '≈'), sym('propto', '∝'),
+    sym('pm', '±'), sym('infty', '∞'), sym('to', '→ (limit, mapping)'), sym('Rightarrow', '⇒ implies'),
+    sym('le', '≤'), sym('ge', '≥'), sym('ne', '≠'), sym('ll', '≪'), sym('gg', '≫'), sym('sim', '∼ order of'),
+    sym('nabla', '∇'), sym('partial', '∂'), sym('perp', '⊥'), sym('parallel', '∥'),
+    // greek
+    sym('alpha', 'α'), sym('beta', 'β'), sym('gamma', 'γ'), sym('delta', 'δ'), sym('epsilon', 'ε'),
+    sym('varepsilon', 'ε (curly)'), sym('theta', 'θ'), sym('lambda', 'λ'), sym('mu', 'μ'), sym('nu', 'ν'),
+    sym('pi', 'π'), sym('rho', 'ρ'), sym('sigma', 'σ'), sym('tau', 'τ'), sym('phi', 'φ'), sym('varphi', 'φ (curly)'),
+    sym('omega', 'ω'), sym('Gamma', 'Γ'), sym('Delta', 'Δ'), sym('Theta', 'Θ'), sym('Lambda', 'Λ'),
+    sym('Sigma', 'Σ'), sym('Phi', 'Φ'), sym('Omega', 'Ω'),
+  ];
+
+  // Pixel position of a caret index inside a textarea (mirror-div trick).
+  function caretXY(ta, pos) {
+    const cs = getComputedStyle(ta);
+    const div = document.createElement('div');
+    ['boxSizing', 'width', 'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'tabSize',
+     'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+     'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderStyle', 'whiteSpace', 'wordWrap', 'overflowWrap']
+      .forEach((k) => { div.style[k] = cs[k]; });
+    div.style.position = 'absolute'; div.style.visibility = 'hidden'; div.style.top = '0'; div.style.left = '-9999px';
+    div.style.overflow = 'hidden';
+    div.textContent = ta.value.slice(0, pos);
+    const span = document.createElement('span'); span.textContent = ta.value.slice(pos, pos + 1) || '.';
+    div.appendChild(span);
+    document.body.appendChild(div);
+    const r = ta.getBoundingClientRect();
+    const x = r.left + parseFloat(cs.borderLeftWidth) + span.offsetLeft - ta.scrollLeft;
+    const y = r.top + parseFloat(cs.borderTopWidth) + span.offsetTop - ta.scrollTop;
+    const h = span.offsetHeight;
+    div.remove();
+    return { x, y, h };
+  }
+
+  // Body -> { text, stops: [{ s, e }] } with stops in visiting order
+  // (${1} ${2} … then $0, or the end of the text).
+  function expandSnippet(body, indent) {
+    body = body.replace(/\n/g, '\n' + indent);
+    const found = [];
+    let text = '', last = 0;
+    body.replace(/\$\{(\d+):([^}]*)\}|\$(\d+)/g, (m, n1, def, n2, at) => {
+      text += body.slice(last, at);
+      const n = +(n1 != null ? n1 : n2);
+      const val = n1 != null ? def : '';
+      found.push({ n, s: text.length, e: text.length + val.length });
+      text += val;
+      last = at + m.length;
+      return m;
+    });
+    text += body.slice(last);
+    // A number used twice is visited once (the first copy).
+    const seen = new Set();
+    const stops = found.filter((f) => f.n > 0 && !seen.has(f.n) && seen.add(f.n)).sort((a, b) => a.n - b.n);
+    const zero = found.find((f) => f.n === 0);
+    stops.push(zero ? { s: zero.s, e: zero.s } : { s: text.length, e: text.length });
+    return { text, stops: stops.map(({ s, e }) => ({ s, e })) };
+  }
+
+  /** Attaches completion + tab stops to a textarea.
+      mode 'line': word at the start of a line, backslash optional, 2+ letters.
+      mode 'cmd' : a \command anywhere, 1+ letters after the backslash. */
+  function attachSnippets(ta, list, mode) {
+    let pop = null;          // { start, end, items, index, el }
+    let stops = null;        // { list: [{s,e}], i, len }
+    let inserting = false;
+
+    function close() { if (pop && pop.el) pop.el.remove(); pop = null; }
+    function endStops() { stops = null; }
+
+    function word(force) {
+      const v = ta.value, pos = ta.selectionStart;
+      if (pos !== ta.selectionEnd) return null;
+      const lineStart = v.lastIndexOf('\n', pos - 1) + 1;
+      const before = v.slice(lineStart, pos);
+      if (mode === 'line') {
+        const m = before.match(/^(\s*)(\\?[A-Za-z]*)$/);
+        return m ? { start: lineStart + m[1].length, end: pos, q: m[2].replace(/^\\/, '') } : null;
+      }
+      // \command not preceded by another backslash (\\ is a line break)
+      const m = before.match(/(^|[^\\])\\([A-Za-z]*)$/);
+      if (m) return { start: pos - m[2].length - 1, end: pos, q: m[2] };
+      return force ? { start: pos, end: pos, q: '' } : null;
+    }
+    function matches(q) {
+      const lq = q.toLowerCase();
+      const starts = list.filter((s) => s.p.toLowerCase().startsWith(lq));
+      // Exact-case first, so \D lists Delta before delta.
+      starts.sort((a, b) => (b.p.startsWith(q) ? 1 : 0) - (a.p.startsWith(q) ? 1 : 0));
+      const inner = lq ? list.filter((s) => !s.p.toLowerCase().startsWith(lq) && s.p.toLowerCase().includes(lq)) : [];
+      return starts.concat(inner);
+    }
+    function update(force) {
+      const w = word(force);
+      const min = mode === 'line' ? 2 : 1;
+      if (!w || (!force && w.q.length < min)) { close(); return; }
+      const items = matches(w.q);
+      if (!items.length) { close(); return; }
+      const keep = pop && pop.items[pop.index] ? items.indexOf(pop.items[pop.index]) : -1;
+      pop = Object.assign(pop || {}, { start: w.start, end: w.end, items, index: Math.max(0, keep) });
+      render();
+    }
+    function render() {
+      if (!pop) return;
+      let el = pop.el;
+      if (!el) {
+        el = pop.el = document.createElement('div');
+        el.className = 'ed-snip';
+        el.setAttribute('role', 'listbox');
+        document.body.appendChild(el);
+      }
+      el.textContent = '';
+      pop.items.forEach((s, i) => {
+        const it = document.createElement('div');
+        it.className = 'ed-snip-item' + (i === pop.index ? ' on' : '');
+        it.setAttribute('role', 'option');
+        const a = document.createElement('b'); a.textContent = mode === 'cmd' ? '\\' + s.p : s.p;
+        const b = document.createElement('span'); b.textContent = s.d;
+        it.append(a, b);
+        // mousedown, not click: keeps focus (and the caret) in the textarea
+        it.addEventListener('mousedown', (e) => { e.preventDefault(); accept(i); });
+        it.addEventListener('mousemove', () => { if (pop && pop.index !== i) { pop.index = i; render(); } });
+        el.appendChild(it);
+      });
+      const c = caretXY(ta, pop.start);
+      const w = el.offsetWidth, h = el.offsetHeight;
+      let top = c.y + c.h + 2;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, c.y - h - 2);
+      el.style.left = Math.max(8, Math.min(c.x, window.innerWidth - w - 8)) + 'px';
+      el.style.top = top + 'px';
+      const on = el.children[pop.index];
+      if (on) on.scrollIntoView({ block: 'nearest' });
+    }
+    function accept(i) {
+      if (!pop) return;
+      const s = pop.items[i == null ? pop.index : i];
+      const { start, end } = pop;
+      close();
+      if (!s) return;
+      const v = ta.value;
+      const lineStart = v.lastIndexOf('\n', start - 1) + 1;
+      const indent = v.slice(lineStart, start).match(/^\s*/)[0];
+      const { text, stops: rel } = expandSnippet(s.b, indent);
+      ta.focus();
+      ta.setSelectionRange(start, end);
+      // execCommand keeps Ctrl+Z working and fires the input event that
+      // updates the draft; setRangeText is the fallback where it's missing.
+      inserting = true;
+      let ok = false;
+      try { ok = document.execCommand('insertText', false, text); } catch (e) { ok = false; }
+      if (!ok) { ta.setRangeText(text, start, end, 'end'); ta.dispatchEvent(new Event('input')); }
+      inserting = false;
+      const abs = rel.map((r) => ({ s: start + r.s, e: start + r.e }));
+      // Only the end stop: nothing to visit, just place the caret.
+      if (abs.length === 1) { ta.setSelectionRange(abs[0].s, abs[0].e); endStops(); return; }
+      stops = { list: abs, i: 0, len: ta.value.length };
+      ta.setSelectionRange(abs[0].s, abs[0].e);
+    }
+    function goStop(dir) {
+      const n = stops.i + dir;
+      if (n < 0) return;
+      stops.i = n;
+      const st = stops.list[n];
+      ta.setSelectionRange(st.s, st.e);
+      if (n === stops.list.length - 1) endStops();     // reached the end
+    }
+
+    ta.addEventListener('input', (e) => {
+      if (inserting) return;
+      // Keep tab stops in place while the current one is being typed into.
+      if (stops) {
+        const delta = ta.value.length - stops.len;
+        stops.len = ta.value.length;
+        const cur = stops.list[stops.i];
+        const caret = ta.selectionStart;
+        if (caret < cur.s || caret > cur.e + delta) endStops();
+        else {
+          cur.e += delta;
+          for (let j = stops.i + 1; j < stops.list.length; j++) { stops.list[j].s += delta; stops.list[j].e += delta; }
+        }
+      }
+      if (e.inputType === 'insertText' || e.inputType === 'deleteContentBackward') update(false);
+      else close();
+    });
+    ta.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === ' ') { e.preventDefault(); update(true); return; }
+      // Alt+arrows / Alt+N switch problems (keyboard navigation): leave the
+      // list and any tab stops to that instead of moving inside them.
+      if (e.altKey) { close(); endStops(); return; }
+      if (pop) {
+        const n = pop.items.length;
+        if (e.key === 'ArrowDown') { e.preventDefault(); pop.index = (pop.index + 1) % n; render(); return; }
+        if (e.key === 'ArrowUp') { e.preventDefault(); pop.index = (pop.index - 1 + n) % n; render(); return; }
+        if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); accept(); return; }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+        if (/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) close();
+      }
+      if (stops) {
+        if (e.key === 'Tab') { e.preventDefault(); goStop(e.shiftKey ? -1 : 1); return; }
+        if (e.key === 'Escape') { e.preventDefault(); endStops(); }
+      }
+    });
+    ta.addEventListener('blur', () => { close(); endStops(); });
+    ta.addEventListener('scroll', close);
+    ta.addEventListener('mousedown', () => { close(); endStops(); });
+    window.addEventListener('resize', close);
+  }
+  attachSnippets(tikzEl, TIKZ_SNIPPETS, 'line');
+  attachSnippets(solEl, SOLUTION_SNIPPETS, 'cmd');
+
+
+  /* ───────────────────────── site version ─────────────────────────
+     Pale "v12.1.0" in the top bar. The version this page is running is the
+     one version.json said when it loaded (the editor has no copy of
+     CURRENT_VERSION, so there is no extra place to bump). Re-checked every
+     5 minutes and when the tab comes back; once version.json moves on, the
+     label turns red — "(outdated)!" — and tapping it reloads.
+
+     Reloading is safe: drafts and history live in localStorage, which a
+     reload never touches (they are flushed first, see flushDrafts). Only the
+     service worker's file cache is cleared, the same way the main site does,
+     so one reload is enough to get the new files. */
+  const VERSION_URL = '/version.json';
+  const VERSION_CHECK_MS = 5 * 60 * 1000;
+  let versionAtLoad = null;
+  async function fetchSiteVersion() {
+    try {
+      const r = await fetch(VERSION_URL + '?_=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return null;
+      const d = await r.json();
+      return (d && typeof d.version === 'string' && d.version.trim()) || null;
+    } catch (e) { return null; }
+  }
+  async function checkSiteVersion() {
+    const v = await fetchSiteVersion();
+    if (!v) return;                                   // offline / server hiccup: keep what is shown
+    const el = $('edVer');
+    if (!versionAtLoad) versionAtLoad = v;
+    const outdated = v !== versionAtLoad;
+    el.hidden = false;
+    el.classList.toggle('outdated', outdated);
+    el.textContent = outdated ? `v${versionAtLoad} (outdated)!` : `v${versionAtLoad}`;
+    el.title = outdated ? `Version ${v} is out. Tap to reload; drafts are kept.` : 'Site version';
+    el.disabled = !outdated;
+  }
+  // Same message the main site sends (sw.js 'purge-update-cache'); resolves
+  // regardless, so a missing or silent service worker never blocks reload.
+  function purgeSwCache() {
+    return new Promise((resolve) => {
+      if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) { resolve(); return; }
+      const ch = new MessageChannel();
+      const t = setTimeout(resolve, 2000);
+      ch.port1.onmessage = () => { clearTimeout(t); resolve(); };
+      try { navigator.serviceWorker.controller.postMessage({ type: 'purge-update-cache' }, [ch.port2]); }
+      catch (e) { clearTimeout(t); resolve(); }
+    });
+  }
+  $('edVer').addEventListener('click', async () => {
+    if (!$('edVer').classList.contains('outdated')) return;
+    flushDrafts();
+    $('edVer').textContent = 'Updating…';
+    await purgeSwCache();
+    location.reload();
+  });
+  checkSiteVersion();
+  setInterval(() => { if (!document.hidden) checkSiteVersion(); }, VERSION_CHECK_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkSiteVersion(); });
+
+  /* ───────────────────────── site identicon ─────────────────────────
+     The forum identicon of whoever is signed in on the main site in this
+     browser, shown after the @name. Read-only use of the main site's own
+     storage (same origin, js/forum.js): the claimed nickname, and its avatar
+     cache, keyed by lowercased nickname. A cache miss is fetched from
+     DiceBear with the same URL and seed the site uses (claim-nickname.ts)
+     and written back into that cache, as forum.js itself would.
+     Nothing shows if no nickname is claimed here. */
+  const SITE_NICK_KEY = P + '_forum_nickname';
+  const SITE_AVATAR_CACHE_KEY = P + '_forum_avatar_cache';
+  const DICEBEAR_IDENTICON = 'https://api.dicebear.com/10.x/identicon/svg?seed=';
+  function readAvatarCache() {
+    try { const c = JSON.parse(localStorage.getItem(SITE_AVATAR_CACHE_KEY)); return c && typeof c === 'object' ? c : {}; }
+    catch (e) { return {}; }
+  }
+  async function siteIdenticonSvg(nick) {
+    const hit = readAvatarCache()[nick.toLowerCase()];
+    if (hit && hit.svg) return hit.svg;
+    try {
+      const r = await fetch(DICEBEAR_IDENTICON + encodeURIComponent(nick));
+      if (!r.ok) return null;
+      const svg = await r.text();
+      const c = readAvatarCache();
+      c[nick.toLowerCase()] = { svg, at: Date.now() };
+      try { localStorage.setItem(SITE_AVATAR_CACHE_KEY, JSON.stringify(c)); } catch (e) { /* best-effort */ }
+      return svg;
+    } catch (e) { return null; }
+  }
+  async function showSiteIdenticon() {
+    const el = $('edFace');
+    if (!el) return;
+    let nick = null;
+    try { nick = (localStorage.getItem(SITE_NICK_KEY) || '').trim() || null; } catch (e) {}
+    if (!nick) { el.hidden = true; el.textContent = ''; return; }
+    const svg = await siteIdenticonSvg(nick);
+    if (!svg) { el.hidden = true; return; }
+    // Shown as an <img>, not inlined: an SVG loaded as an image can't run
+    // script or fetch anything, so this third-party markup needs no
+    // sanitizing — and DiceBear's <use href="#row-…"> squares (which
+    // DOMPurify always strips) render as they should.
+    const img = document.createElement('img');
+    img.alt = '';
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    el.textContent = '';
+    el.appendChild(img);
+    el.title = `Signed in on the site as @${nick}`;
+    el.hidden = false;
+  }
+  // Claiming, renaming or dropping the nickname in another tab updates this.
+  window.addEventListener('storage', (e) => {
+    if (e.key === SITE_NICK_KEY || e.key === null) showSiteIdenticon();
+  });
+
+  /* ───────────────────────── keyboard navigation ─────────────────────────
+     Alt+↑ / Alt+↓  previous / next problem, in sidebar order. With the
+                    "has work" filter on, only the problems it shows.
+     Alt+N          next problem with no work at all (no dot), wrapping
+                    around; retired problems are skipped.
+     Work from inside the text boxes too (e.code, so a Mac's Option+N
+     doesn't type "˜"), and never fire while the key gate is up. */
+  const untouched = (p) => !serverIndex[p.key] && !hasContent(drafts[p.key]);
+  function stepProblem(dir) {
+    const pool = onlyTouched ? problems.filter((p) => !untouched(p) || p === cur) : problems;
+    const i = pool.indexOf(cur);
+    const next = pool[i + dir];
+    if (next) select(next.key);
+    else toast(dir > 0 ? 'Last problem.' : 'First problem.');
+  }
+  function nextEmpty() {
+    const start = problems.indexOf(cur);
+    for (let k = 1; k <= problems.length; k++) {
+      const p = problems[(start + k) % problems.length];
+      if (!p.retired && untouched(p) && p !== cur) { select(p.key); return; }
+    }
+    toast('Every problem has some work.', 'ok');
+  }
+  document.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey || !cur || !gate.hidden || !problems.length) return;
+    if (e.code === 'ArrowDown' && !e.shiftKey) { e.preventDefault(); stepProblem(1); }
+    else if (e.code === 'ArrowUp' && !e.shiftKey) { e.preventDefault(); stepProblem(-1); }
+    else if (e.code === 'KeyN' && !e.shiftKey) { e.preventDefault(); nextEmpty(); }
+  });
 
   /* ───────────────────────── boot ───────────────────────── */
   let booted = false;
@@ -1005,10 +2106,15 @@ function toggleTheme() {
       }
     }
     $('edWho').textContent = '';
-    $('edWho').append(document.createTextNode('· signed in as '));
-    const who = document.createElement('b');
+    const lbl = document.createElement('span'); lbl.className = 'ed-who-label'; lbl.textContent = '|';
+    // The name doubles as the sign-out button.
+    const who = document.createElement('button');
+    who.className = 'ed-who-name'; who.title = 'Sign out';
     who.textContent = editorName ? '@' + editorName : 'editor';
-    $('edWho').appendChild(who);
+    who.addEventListener('click', () => openSignOut(who));
+    const face = document.createElement('span'); face.className = 'ed-face'; face.id = 'edFace'; face.hidden = true;
+    $('edWho').append(lbl, who, face);
+    showSiteIdenticon();
     try { serverIndex = await SolutionStore.index(); } catch (e) { serverIndex = {}; }
     if (SolutionStore.isMock) {
       const w = $('edWho');
@@ -1028,7 +2134,7 @@ function toggleTheme() {
     problems.forEach((p) => byKey.set(p.key, p));
     renderList();
     const last = localStorage.getItem(LS.last);
-    select(byKey.has(last) ? last : problems[0].key);
+    select(byKey.has(last) ? last : problems[0].key, false);
   }
 
   renderViewer();
