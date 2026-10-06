@@ -50,10 +50,11 @@ function parseMoodleNumber(raw) {
     if (/^[+-]?\d+(\.\d*)?[Ee][+-]?\d+$/.test(s)) return parseFloat(s);
     return NaN;
   }
-  const m1 = s.match(/^([+-]?\d+(\.\d*)?)\*10\^([+-]?\d+)$/);
-  if (m1) return parseFloat(m1[1]) * Math.pow(10, parseInt(m1[3], 10));
-  const m2 = s.match(/^([+-]?)10\^([+-]?\d+)$/);
-  if (m2) return (m2[1] === "-" ? -1 : 1) * Math.pow(10, parseInt(m2[2], 10));
+  // Exponent may be bare (10^-11) or parenthesized (10^(-11))
+  const m1 = s.match(/^([+-]?\d+(\.\d*)?)\*10\^(?:([+-]?\d+)|\(([+-]?\d+)\))$/);
+  if (m1) return parseFloat(m1[1]) * Math.pow(10, parseInt(m1[3] ?? m1[4], 10));
+  const m2 = s.match(/^([+-]?)10\^(?:([+-]?\d+)|\(([+-]?\d+)\))$/);
+  if (m2) return (m2[1] === "-" ? -1 : 1) * Math.pow(10, parseInt(m2[2] ?? m2[3], 10));
   return NaN;
 }
 
@@ -2681,7 +2682,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '12.1.0';
+const CURRENT_VERSION = '12.1.2';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

@@ -19,6 +19,18 @@
 .fig svg [stroke="#ff0003"] { stroke: var(--bg); }
 .fig svg [fill="#ff0004"]   { fill: var(--surface); }
 .fig svg [stroke="#ff0004"] { stroke: var(--surface); }
+/* Gradient stops and `color` (what currentColor resolves to), which
+   figures drawn as SVG can use; TikZ output never does. */
+.fig svg [stop-color="#000"]    { stop-color: currentColor; }
+.fig svg [stop-color="#ff0001"] { stop-color: var(--accent); }
+.fig svg [stop-color="#ff0002"] { stop-color: var(--accent2); }
+.fig svg [stop-color="#ff0003"] { stop-color: var(--bg); }
+.fig svg [stop-color="#ff0004"] { stop-color: var(--surface); }
+.fig svg [color="#000"]    { color: var(--text); }
+.fig svg [color="#ff0001"] { color: var(--accent); }
+.fig svg [color="#ff0002"] { color: var(--accent2); }
+.fig svg [color="#ff0003"] { color: var(--bg); }
+.fig svg [color="#ff0004"] { color: var(--surface); }
 
 /* Displayed size, shared by the practice site and the editor preview so the
    editor shows what readers get. Without a cap a figure fills its container,

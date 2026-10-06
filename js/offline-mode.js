@@ -48,8 +48,9 @@ function writeOfflineModeUntilFlag(until) {
 // deliberately excluding the forum (Supabase-backed either way, can't work
 // with zero connection regardless of caching) and the PDF/XLSX export
 // vendor bundles (nice-to-have, not required to keep solving problems).
-// Keep this in sync by hand whenever a new top-level css/js file is added
-// to index.html's own script/link tags.
+// This list is the baseline; discoverIndexHtmlAssets() below adds every
+// same-origin file index.html itself references at download time, so a
+// file added to index.html later is picked up even if it's missing here.
 const OFFLINE_CORE_FILES = [
   'index.html',
   'css/style.css',
@@ -57,6 +58,11 @@ const OFFLINE_CORE_FILES = [
   'css/manual.css',
   'css/stats.css',
   'css/forum.css',
+  'css/solve-all-nav.css',
+  'css/figure.css',
+  'css/solutions.css',
+  'vendor/tikzjax/fonts.css',
+  'vendor/dompurify/purify.min.js',
   'js/course-config.js',
   'js/theme-colors.js',
   'js/banner-manager.js',
@@ -71,10 +77,16 @@ const OFFLINE_CORE_FILES = [
   'js/solve-all-sync.js',
   'js/math-cache.js',
   'js/math-render.js',
+  'js/figure.js',
+  'js/solution-render.js',
+  'js/solutions.js',
+  'js/editor-access.js',
   'js/quiz-engine.js',
   'js/fig-attribution.js',
   'js/top-bar-scroll.js',
   'js/top-bar-tips.js',
+  'js/top-bar-quiz-status.js',
+  'js/solve-all-nav.js',
   'js/changelog.js',
   'js/manual.js',
   'js/settings.js',
@@ -92,6 +104,7 @@ const OFFLINE_CORE_FILES = [
   'course/quizzes/quiz4.js',
   'course/quizzes/quizzes.js',
   'favicon/favicon.svg',
+  'favicon/favicon.ico',
   'favicon/favicon-96x96.png',
   'favicon/apple-touch-icon.png',
   'favicon/web-app-manifest-192x192.png',
@@ -197,12 +210,92 @@ function discoverCourseImageUrls() {
   return Array.from(urls);
 }
 
-function buildOfflineManifest() {
-  return Array.from(new Set([
+// Turns a reference found in a page into the plain relative path the cache
+// stores it under (no leading slash, no query string), or null for anything
+// that isn't a same-origin file (other sites, data:, #anchors, mailto:).
+function _offlineLocalPath(ref) {
+  if (!ref || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(ref)) return null;
+  const path = ref.replace(/^\.?\//, '').split(/[?#]/)[0];
+  return path || null;
+}
+
+// Every same-origin file index.html references: src/href attributes, plus
+// the quoted paths in its tier-2 loader list (those are only strings in an
+// inline script, never attributes). Best-effort: if index.html can't be read,
+// OFFLINE_CORE_FILES alone still covers what this page knows about.
+async function discoverIndexHtmlAssets() {
+  try {
+    const res = await fetch('index.html', { cache: 'reload' });
+    if (!res.ok) return [];
+    const html = (await res.text()).replace(/<!--[\s\S]*?-->/g, '');
+    const found = new Set();
+    for (const m of html.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+)["']/gi)) {
+      const p = _offlineLocalPath(m[1]);
+      if (p && /\.(?:js|css|json|svg|png|ico|webp|webmanifest)$/i.test(p)) found.add(p);
+    }
+    for (const m of html.matchAll(/['"]((?:js|css|vendor|course)\/[^'"\s]+\.(?:js|css))['"]/g)) {
+      found.add(m[1]);
+    }
+    return Array.from(found);
+  } catch (e) {
+    return [];
+  }
+}
+
+// Published worked solutions (js/solutions.js) live in Supabase, which the
+// offline window blocks. They are downloaded once here and stored in the
+// offline cache under this same-origin URL, which solutions.js reads while
+// offline mode is active. Must match SOLUTIONS_OFFLINE_URL there.
+const OFFLINE_SOLUTIONS_URL = 'offline-data/solutions.json';
+
+// Resolves the published rows, [] when the project has no solutions table
+// yet (404), or throws on any other failure.
+async function fetchPublishedSolutionsForOffline() {
+  if (typeof SOLUTIONS_REST === 'undefined' || typeof solutionsRestHeaders !== 'function') return [];
+  const res = await fetch(`${SOLUTIONS_REST}?select=${SOLUTIONS_ROW_COLUMNS}&status=eq.published`, {
+    headers: solutionsRestHeaders(),
+    cache: 'no-store',
+  });
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`solutions: HTTP ${res.status}`);
+  const rows = await res.json();
+  return Array.isArray(rows) ? rows : [];
+}
+
+// The TeX fonts (vendor/tikzjax/fonts/*.woff2, ~140 files) that the stored
+// figure SVGs actually use — dvisvgm names each glyph run's font family
+// (cmr10, cmmi10, ...), and fonts.css maps every family to its file. Only
+// the used ones are downloaded instead of the whole ~2 MB set.
+async function discoverSolutionFontUrls(rows) {
+  const svgText = rows.map((r) => {
+    const steps = r && r.figure && Array.isArray(r.figure.steps) ? r.figure.steps : [];
+    return steps.map((s) => (s && typeof s.svg === 'string' ? s.svg : '')).join('\n');
+  }).join('\n');
+  if (!svgText) return [];
+  const res = await fetch('vendor/tikzjax/fonts.css', { cache: 'reload' });
+  if (!res.ok) throw new Error('vendor/tikzjax/fonts.css: HTTP ' + res.status);
+  const css = await res.text();
+  const urls = [];
+  for (const m of css.matchAll(/font-family:\s*['"]?([\w-]+)['"]?;\s*src:\s*url\(['"]?([^'")]+)['"]?\)/g)) {
+    const family = m[1];
+    if (new RegExp('\\b' + family + '\\b').test(svgText)) urls.push('vendor/tikzjax/' + m[2]);
+  }
+  return urls;
+}
+
+// { files, optional }: `optional` holds the paths found only by
+// discoverIndexHtmlAssets(). One of those answering 404 is skipped instead
+// of failing the download, so a stray path in index.html can never keep
+// offline mode from turning on.
+async function buildOfflineManifest(extra) {
+  const required = new Set([
     ...OFFLINE_CORE_FILES,
     ...OFFLINE_MATHJAX_FILES,
     ...discoverCourseImageUrls(),
-  ]));
+    ...(extra || []),
+  ]);
+  const optional = new Set((await discoverIndexHtmlAssets()).filter((p) => !required.has(p)));
+  return { files: [...required, ...optional], optional };
 }
 
 // Runs `worker` over `items` with at most `limit` in flight at once —
@@ -296,11 +389,40 @@ async function startGoOffline() {
     _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
   }
 
-  const manifest = buildOfflineManifest();
-  offlineDownloadState = { status: 'downloading', done: 0, total: manifest.length, failed: [] };
+  offlineDownloadState = { status: 'downloading', done: 0, total: 0, failed: [] };
+  _refreshOfflineTabIfOpen();
+
+  // Solutions first: the fonts their figures need join the manifest below.
+  // Counted as one more "file" in the progress, and like any file, a
+  // failure keeps offline mode off.
+  let solutionRows = null, solutionFonts = [];
+  try {
+    solutionRows = await fetchPublishedSolutionsForOffline();
+    solutionFonts = await discoverSolutionFontUrls(solutionRows);
+  } catch (e) {
+    solutionRows = null;
+  }
+
+  const { files: manifest, optional } = await buildOfflineManifest(solutionFonts);
+  const total = manifest.length + 1;
+  offlineDownloadState = { status: 'downloading', done: 0, total, failed: [] };
   _refreshOfflineTabIfOpen();
 
   const cache = await caches.open(OFFLINE_MODE_CACHE_NAME);
+  if (solutionRows) {
+    try {
+      await cache.put(OFFLINE_SOLUTIONS_URL, new Response(JSON.stringify(solutionRows), {
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    } catch (e) {
+      offlineDownloadState.failed.push('(worked solutions)');
+    }
+  } else {
+    offlineDownloadState.failed.push('(worked solutions)');
+  }
+  offlineDownloadState.done++;
+  _refreshOfflineTabIfOpen();
+
   await runWithConcurrency(manifest, 6, async (url) => {
     try {
       // cache: 'reload' bypasses the browser's own HTTP cache — a real
@@ -310,7 +432,7 @@ async function startGoOffline() {
       const res = await fetch(url, { cache: 'reload' });
       if (res && res.ok) {
         await cache.put(url, res.clone());
-      } else {
+      } else if (!(res && res.status === 404 && optional.has(url))) {
         offlineDownloadState.failed.push(url);
       }
     } catch (e) {
@@ -324,7 +446,7 @@ async function startGoOffline() {
     const until = Date.now() + 24 * 60 * 60 * 1000;
     setSetting('offline', 'until', until);
     writeOfflineModeUntilFlag(until);
-    offlineDownloadState = { status: 'done', done: manifest.length, total: manifest.length, failed: [] };
+    offlineDownloadState = { status: 'done', done: total, total, failed: [] };
   } else {
     offlineDownloadState.status = 'error';
     // Don't leave a half-complete cache lying around to be mistaken for a
@@ -618,7 +740,7 @@ function renderSettingsOfflineTab() {
   return `
     <div class="settings-offline-panel">
       <div class="settings-offline-heading">Go offline</div>
-      <div class="settings-offline-desc">Downloads every quiz, image, and app file needed to study with zero connection, then blocks all server requests for the next 24 hours, even if you\u2019re back online before then. Tap once, then tap again to confirm; the download starts right away. Helpful for in-travel study.</div>
+      <div class="settings-offline-desc">Downloads every quiz, image, worked solution and app file needed to study with zero connection, then blocks all server requests for the next 24 hours, even if you\u2019re back online before then. Tap once, then tap again to confirm; the download starts right away. Helpful for in-travel study.</div>
       <button type="button" class="settings-offline-btn" id="goOfflineBtn" onclick="handleGoOfflineClick()" title="Download everything needed and go offline for 24 hours">
         <svg class="settings-offline-confirm-ring" viewBox="0 0 100 32" preserveAspectRatio="none"><rect x="1.5" y="1.5" rx="7"></rect></svg>
         <span class="settings-offline-btn-label">\u{1F4E5} Go offline</span>

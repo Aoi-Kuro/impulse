@@ -4,10 +4,12 @@
    Shared by the solutions editor (/editor) and the practice site's
    "see solution" window, so both treat a figure identically.
 
-   Colors: authors only use black (default), c1 and c2. TikZJax writes
-   them as #000, #ff0001 and #ff0002. css/figure.css maps those exact
-   values to currentColor / --accent / --accent2, so the stored SVG
-   never needs re-rendering when the theme changes.
+   Colors: authors only use black (default), c1 and c2 (plus the two
+   backgrounds c3/c4). TikZJax writes them as #000, #ff0001 and #ff0002.
+   css/figure.css maps those exact values to currentColor / --accent /
+   --accent2, so the stored SVG never needs re-rendering when the theme
+   changes. Figures drawn as SVG (editor/svg-figure.js) are converted to
+   the same values before they get here.
 
    figNormalizeSvg  — once, at compile/save time: canonical colors,
                       fixed-size attributes dropped, unique ids.
@@ -98,31 +100,49 @@ function figSanitizeSvg(svgText) {
     page and not display:none — a hidden element measures as empty. */
 function figCropToContent(container) {
   const svgs = Array.from(container.querySelectorAll('svg'));
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, pad = 0;
   let vb = null;
   for (const svg of svgs) {
     const v = svg.viewBox && svg.viewBox.baseVal;
     if (!v || !v.width || !v.height) return;
     vb = vb || v;
-    let bb;
-    try { bb = svg.getBBox(); } catch (e) { return; }
-    if (!bb || (!bb.width && !bb.height)) continue;   // an empty step
-    x0 = Math.min(x0, bb.x); y0 = Math.min(y0, bb.y);
-    x1 = Math.max(x1, bb.x + bb.width); y1 = Math.max(y1, bb.y + bb.height);
-    // getBBox ignores stroke width, so leave room for the widest line's
-    // outer half (plus a hair, so nothing touches the edge).
-    svg.querySelectorAll('[stroke-width]').forEach((el) => {
-      const w = parseFloat(el.getAttribute('stroke-width'));
-      if (w > pad) pad = w;
-    });
   }
-  if (!vb || !isFinite(x0) || x1 <= x0 || y1 <= y0) return;
-  pad = pad / 2 + 1;
-  const cx0 = Math.max(vb.x, x0 - pad), cy0 = Math.max(vb.y, y0 - pad);
-  const cx1 = Math.min(vb.x + vb.width, x1 + pad), cy1 = Math.min(vb.y + vb.height, y1 + pad);
+  const c = vb && figContentBox(svgs);
+  if (!c) return;
+  const cx0 = Math.max(vb.x, c.x0), cy0 = Math.max(vb.y, c.y0);
+  const cx1 = Math.min(vb.x + vb.width, c.x1), cy1 = Math.min(vb.y + vb.height, c.y1);
   if (cx1 <= cx0 || cy1 <= cy0) return;
   const box = `${cx0} ${cy0} ${cx1 - cx0} ${cy1 - cy0}`;
   svgs.forEach((svg) => svg.setAttribute('viewBox', box));
+}
+
+/** Union of what is drawn in `svgs` (user units), padded for what getBBox
+    leaves out: the outer half of the widest stroke, and arrowhead markers
+    (SVG-mode figures; TikZ draws its arrows as paths). {x0,y0,x1,y1}, or
+    null when nothing is measurable. The SVGs must be in the page and not
+    display:none. Also used by the editor to find an SVG figure's box. */
+function figContentBox(svgs) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, sw = 0, mk = 0, mkUser = 0;
+  for (const svg of svgs) {
+    let bb;
+    try { bb = svg.getBBox(); } catch (e) { return null; }
+    if (!bb || (!bb.width && !bb.height)) continue;   // an empty step
+    x0 = Math.min(x0, bb.x); y0 = Math.min(y0, bb.y);
+    x1 = Math.max(x1, bb.x + bb.width); y1 = Math.max(y1, bb.y + bb.height);
+    svg.querySelectorAll('[stroke-width]').forEach((el) => {
+      const w = parseFloat(el.getAttribute('stroke-width'));
+      if (w > sw) sw = w;
+    });
+    // A marker reaches at most its own size past the end of the line; in
+    // the default units that size is in multiples of the stroke width.
+    svg.querySelectorAll('marker').forEach((m) => {
+      const s = Math.max(parseFloat(m.getAttribute('markerWidth')) || 3, parseFloat(m.getAttribute('markerHeight')) || 3);
+      if (m.getAttribute('markerUnits') === 'userSpaceOnUse') mkUser = Math.max(mkUser, s);
+      else mk = Math.max(mk, s);
+    });
+  }
+  if (!isFinite(x0) || x1 <= x0 || y1 <= y0) return null;
+  const pad = sw / 2 + Math.max(mk * Math.max(sw, 1), mkUser) + 1;
+  return { x0: x0 - pad, y0: y0 - pad, x1: x1 + pad, y1: y1 + pad };
 }
 
 const FIG_SCALE_MIN = 0.25, FIG_SCALE_MAX = 2;

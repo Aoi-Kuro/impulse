@@ -53,15 +53,29 @@
 //   get            { problem_key } -> { ok, row }
 //                     One full row, or row: null.
 //   save           { problem_key, solution, figure, status, problem_hash?,
-//                    expected_updated_at? } -> { ok, row }
-//                     figure = { tikz, steps: [{ svg, caption }], scale? };
-//                     scale (0.25-2, default 1) is the display size factor.
+//                    expected_updated_at?, author? } -> { ok, row }
+//                     author: when publishing, the active editor to credit
+//                     (default: the key's owner). Drafts keep the row's
+//                     credit; saved_by is always the key's owner.
+//                     figure = { tikz, steps: [{ svg, caption }], scale? }, or
+//                     for a figure drawn as SVG
+//                     { kind: "svg", svgSrc, svgBox?, tikz, steps, scale? };
+//                     scale (0.25-2, default 1) is the display size factor,
+//                     svgBox the author's crop box "x y w h" (absent = auto).
+//                     kind says which source the steps were made from; the
+//                     other kind's text is kept too when there is any.
+//                     Readers only ever use steps; the sources are kept so
+//                     the figure can be edited again.
 //                     Creates or replaces the row. expected_updated_at is
 //                     what the caller last saw; if the stored row has moved
 //                     on since, nothing is written and 409 comes back with
 //                     the current row, so the other editor's work is never
 //                     silently overwritten. Omit it only when creating a
 //                     row that does not exist yet.
+//   set-credit     { problem_key, author?, expected_updated_at? } -> { ok, row }
+//                     Changes ONLY who is credited (author, author_link;
+//                     saved_by and updated_at follow). 409 with the current
+//                     row if it changed since expected_updated_at.
 //   delete         { problem_key } -> { ok }
 //   export         -> { ok, rows: [...] }
 //                     Everything, for the editor's JSON backup button.
@@ -110,7 +124,12 @@ const MAX_SOLUTION_CHARS = 60_000;   // a very long worked solution is ~5k
 const MAX_STEPS = 12;                // matches MAX_STEPS in editor/editor.js
 const MAX_SVG_CHARS = 400_000;       // one compiled TikZ figure is ~1-50 kB
 const MAX_TIKZ_CHARS = 20_000;
+const MAX_SVG_SRC_CHARS = 300_000;   // pasted drawings carry long paths
+const SVG_BOX_RE = /^-?\d*\.?\d+(e[-+]?\d+)?( -?\d*\.?\d+(e[-+]?\d+)?){3}$/i;
 const MAX_CAPTION_CHARS = 500;
+
+// Every column of a problem_solutions row the editor gets back.
+const ROW_COLUMNS = "problem_key, solution, figure, status, author, author_link, saved_by, problem_hash, updated_at";
 
 async function sha256Hex(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input);
@@ -192,6 +211,16 @@ function figureProblem(figure: any): string | null {
   if (typeof figure !== "object" || Array.isArray(figure)) return "figure must be an object";
   const tikz = figure.tikz ?? "";
   if (typeof tikz !== "string" || tikz.length > MAX_TIKZ_CHARS) return "figure source is missing or too long";
+  // SVG-mode figures (editor/svg-figure.js). The source is only ever parsed
+  // inside the editor, which sanitizes everything it shows; readers get the
+  // steps, which are checked below like any other.
+  const kind = figure.kind ?? "tikz";
+  if (kind !== "tikz" && kind !== "svg") return "unknown figure kind";
+  const svgSrc = figure.svgSrc ?? "";
+  if (typeof svgSrc !== "string" || svgSrc.length > MAX_SVG_SRC_CHARS) return "SVG figure source is too long";
+  if (figure.svgBox !== undefined && (typeof figure.svgBox !== "string" || !SVG_BOX_RE.test(figure.svgBox))) {
+    return "figure crop box must be four numbers: x y width height";
+  }
   // Optional display scale set in the editor's preview (1 = default size).
   // Same range as FIG_SCALE_MIN/MAX in js/figure.js.
   if (figure.scale !== undefined &&
@@ -209,6 +238,30 @@ function figureProblem(figure: any): string | null {
     if (bad) return bad;
   }
   return null;
+}
+
+// Who to credit (migration 010): the key's owner when nothing (or their own
+// name) is asked for, otherwise an ACTIVE editor looked up by name — never
+// taken on trust, and the link comes from that editor's own row. Returns
+// { name, link } or an error message.
+async function creditFor(db: any, editor: { name: string; link: string | null }, wanted: unknown):
+    Promise<{ name: string; link: string | null } | string> {
+  if (wanted === undefined || wanted === null || wanted === "" || wanted === editor.name) {
+    return { name: editor.name, link: editor.link };
+  }
+  if (typeof wanted !== "string" || !EDITOR_NAME_RE.test(wanted)) return "Invalid author name.";
+  const { data, error } = await db
+    .from("solution_editors")
+    .select("name, link")
+    .eq("name", wanted)
+    .is("revoked_at", null)
+    .maybeSingle();
+  if (error) {
+    console.error("credit lookup error:", error);
+    return "Could not check that editor, try again.";
+  }
+  if (!data) return "No active editor with that name to credit.";
+  return { name: data.name, link: data.link ?? null };
 }
 
 // An editor's profile link: null to clear, otherwise an absolute http(s)
@@ -327,14 +380,14 @@ export default {
     if (action === "index") {
       const { data: rows, error } = await admin
         .from("problem_solutions")
-        .select("problem_key, status, updated_at, author");
+        .select("problem_key, status, updated_at, author, saved_by");
       if (error) {
         console.error("index error:", error);
         return bad("Could not read the solutions list.", 500);
       }
       const index: Record<string, unknown> = {};
       for (const r of rows ?? []) {
-        index[r.problem_key] = { status: r.status, updated_at: r.updated_at, author: r.author };
+        index[r.problem_key] = { status: r.status, updated_at: r.updated_at, author: r.author, saved_by: r.saved_by };
       }
       return Response.json({ ok: true, index });
     }
@@ -342,7 +395,7 @@ export default {
     if (action === "export") {
       const { data: rows, error } = await admin
         .from("problem_solutions")
-        .select("problem_key, solution, figure, status, author, author_link, problem_hash, updated_at")
+        .select(ROW_COLUMNS)
         .order("problem_key", { ascending: true });
       if (error) {
         console.error("export error:", error);
@@ -359,7 +412,7 @@ export default {
     if (action === "get") {
       const { data: row, error } = await admin
         .from("problem_solutions")
-        .select("problem_key, solution, figure, status, author, author_link, problem_hash, updated_at")
+        .select(ROW_COLUMNS)
         .eq("problem_key", problemKey)
         .maybeSingle();
       if (error) {
@@ -376,6 +429,40 @@ export default {
         return bad("Could not delete that solution.", 500);
       }
       return Response.json({ ok: true });
+    }
+
+    // Only the credit of an existing row: the content is never touched, so
+    // nobody's newer text can be replaced by a stale copy. Refused (409, with
+    // the current row) when the row changed after the caller last saw it —
+    // the credit was decided looking at that version.
+    if (action === "set-credit") {
+      const { data: existing, error: readErr } = await admin
+        .from("problem_solutions")
+        .select(ROW_COLUMNS)
+        .eq("problem_key", problemKey)
+        .maybeSingle();
+      if (readErr) {
+        console.error("set-credit/read error:", readErr);
+        return bad("Could not change the credit, try again.", 500);
+      }
+      if (!existing) return bad("Nothing is stored for this problem.", 404);
+      const expected = payload?.expected_updated_at ?? null;
+      if (expected && existing.updated_at !== expected) {
+        return Response.json({ ok: false, error: "conflict", row: existing }, { status: 409 });
+      }
+      const credit = await creditFor(admin, editor, payload?.author);
+      if (typeof credit === "string") return bad(credit, credit.startsWith("Could not") ? 500 : 400);
+      const { data: saved, error: writeErr } = await admin
+        .from("problem_solutions")
+        .update({ author: credit.name, author_link: credit.link, saved_by: editor.name, updated_at: new Date().toISOString() })
+        .eq("problem_key", problemKey)
+        .select(ROW_COLUMNS)
+        .single();
+      if (writeErr) {
+        console.error("set-credit/write error:", writeErr);
+        return bad("Could not change the credit, try again.", 500);
+      }
+      return Response.json({ ok: true, row: saved });
     }
 
     if (action === "save") {
@@ -404,7 +491,7 @@ export default {
       // next load.
       const { data: existing, error: readErr } = await admin
         .from("problem_solutions")
-        .select("problem_key, solution, figure, status, author, author_link, problem_hash, updated_at")
+        .select(ROW_COLUMNS)
         .eq("problem_key", problemKey)
         .maybeSingle();
       if (readErr) {
@@ -420,16 +507,34 @@ export default {
         );
       }
 
+      // Credit (migration 010). Publishing may name another ACTIVE editor —
+      // the editor asks who wrote the solution, since one editor may polish
+      // another's work; the name is checked against solution_editors, never
+      // taken on trust, and the link comes from that editor's own row. A
+      // draft save keeps whatever credit the row already has (a new row is
+      // credited to whoever creates it). saved_by is never taken from the
+      // request: it is always the owner of this key, the same principle
+      // post-message.ts applies to author_name.
+      let author = editor.name;
+      let authorLink = editor.link;
+      if (status === "published") {
+        const credit = await creditFor(admin, editor, payload?.author);
+        if (typeof credit === "string") return bad(credit, credit.startsWith("Could not") ? 500 : 400);
+        author = credit.name;
+        authorLink = credit.link;
+      } else if (existing?.author) {
+        author = existing.author;
+        authorLink = existing.author_link ?? null;
+      }
+
       const row = {
         problem_key: problemKey,
         solution,
         figure,
         status,
-        // Never taken from the request body: authorship is whoever's key
-        // this is, the same principle post-message.ts applies to
-        // author_name.
-        author: editor.name,
-        author_link: editor.link,
+        author,
+        author_link: authorLink,
+        saved_by: editor.name,
         problem_hash: problemHash,
         updated_at: new Date().toISOString(),
       };
@@ -437,7 +542,7 @@ export default {
       const { data: saved, error: writeErr } = await admin
         .from("problem_solutions")
         .upsert(row, { onConflict: "problem_key" })
-        .select("problem_key, solution, figure, status, author, author_link, problem_hash, updated_at")
+        .select(ROW_COLUMNS)
         .single();
       if (writeErr) {
         console.error("save/write error:", writeErr);

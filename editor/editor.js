@@ -68,9 +68,30 @@ function toggleTheme() {
     '% keep everything inside \\useasboundingbox — anything outside it is cut off',
   ].join('\n');
 
+  // The SVG-mode counterpart of the preamble (rules: editor/svg-figure.js).
+  const SVG_HELP = [
+    'Only the drawing itself: no <svg …> header (a whole pasted file works too,',
+    'its header is ignored).',
+    '',
+    'colors — each one follows the reader\'s theme:',
+    '  #000 = text color     #f00 = accent 1',
+    '  #00f = accent 2       #eee = card background (surface)',
+    '  any other color stays fixed: Layers & colours lists them to map',
+    '',
+    'steps — layers are top-level groups, bottom (first) = step 1:',
+    '  <g data-layer="Name"> … </g>   (Inkscape layers and plain <g> work too)',
+    '  each layer appears at the next step and stays',
+    '  data-steps="3" on a layer gives it 3 steps of its own,',
+    '  data-step="2" on an element inside it shows it from the 2nd of those',
+    '  anything outside every layer is always shown',
+    '',
+    'box — fitted to what is drawn; type x y width height to clip instead',
+  ].join('\n');
+
   document.title = `${COURSE_CODE_DISPLAY} Solutions editor`;
   $('edGateEyebrow').textContent = `${COURSE_CODE_DISPLAY} · Solutions editor`;
   $('edPreamble').textContent = PREAMBLE_SHOWN;
+  $('edSvgHelp').textContent = SVG_HELP;
 
   /* ───────────────────────── key gate ───────────────────────── */
   const validKey = (k) => /^\S{32}$/.test(k || '');
@@ -414,13 +435,19 @@ function toggleTheme() {
      one synchronous pass, then the original is restored before the browser
      paints — so nothing flickers and the list can never drift out of step
      with css/style.css. */
+  // svg: what an SVG figure writes for it (none = not available there).
   const FIG_COLORS = [
-    { key: 'text',    label: 'text',      note: 'default · ctext' },
-    { key: 'accent',  label: 'c1',        note: 'accent 1' },
-    { key: 'accent2', label: 'c2',        note: 'accent 2' },
-    { key: 'bg',      label: 'c3',        note: 'cbg' },
-    { key: 'surface', label: 'c4',        note: 'csurface' },
+    { key: 'text',    label: 'text',      note: 'default · ctext', svg: '#000' },
+    { key: 'accent',  label: 'c1',        note: 'accent 1',        svg: '#f00' },
+    { key: 'accent2', label: 'c2',        note: 'accent 2',        svg: '#00f' },
+    { key: 'bg',      label: 'c3',        note: 'cbg',             svg: null },
+    { key: 'surface', label: 'c4',        note: 'csurface',        svg: '#eee' },
   ];
+  // The list for the figure kind on screen, labelled the way that kind writes them.
+  const figColorsFor = (kind) => kind === 'svg'
+    ? FIG_COLORS.filter((c) => c.svg).map((c) => Object.assign({}, c, {
+        label: c.svg, note: { text: 'text', accent: 'accent 1', accent2: 'accent 2', surface: 'surface' }[c.key] }))
+    : FIG_COLORS;
 
   function measureThemes() {
     const body = document.body;
@@ -467,36 +494,37 @@ function toggleTheme() {
     return out;
   }
 
-  /** The five figure colours of one theme, as small squares. */
-  function swatchRow(c) {
+  /** The figure colours of one theme, as small squares. */
+  function swatchRow(c, list) {
     const row = document.createElement('div');
     row.className = 'ed-cp-chips';
-    // Same order as FIG_COLORS, so a column lines up across every theme.
-    [c.text, c.accent, c.accent2, c.bg, c.surface].forEach((col, i) => {
+    // Same order as the list, so a column lines up across every theme.
+    list.forEach((f) => {
       const sq = document.createElement('i');
-      sq.style.background = col;
-      sq.title = `${FIG_COLORS[i].label} · ${col}`;
+      sq.style.background = c[f.key];
+      sq.title = `${f.label} · ${c[f.key]}`;
       row.appendChild(sq);
     });
     return row;
   }
 
-  let colorPop = null;
+  let colorPop = null, colorPopAnchor = null;
   function closeColorPop() {
     if (!colorPop) return;
     document.removeEventListener('pointerdown', onColorPopOutside, true);
     document.removeEventListener('keydown', onColorPopKey, true);
     colorPop.remove();
-    colorPop = null;
+    colorPop = colorPopAnchor = null;
   }
   function onColorPopOutside(e) {
-    if (colorPop && !colorPop.contains(e.target) && e.target !== $('edColorHint')) closeColorPop();
+    if (colorPop && !colorPop.contains(e.target) && !(colorPopAnchor && colorPopAnchor.contains(e.target))) closeColorPop();
   }
   function onColorPopKey(e) { if (e.key === 'Escape') closeColorPop(); }
 
-  function openColorPop() {
+  function openColorPop(anchor, kind) {
     if (colorPop) { closeColorPop(); return; }
     const data = measureThemes();
+    const list = figColorsFor(kind);
 
     const pop = document.createElement('div');
     pop.className = 'ed-colorpop';
@@ -513,8 +541,9 @@ function toggleTheme() {
     const sub = document.createElement('div');
     sub.className = 'ed-cp-sub';
     sub.append(document.createTextNode('A figure follows the reader\u2019s theme, so draw only with these. '));
-    const code = document.createElement('code'); code.textContent = 'c3 / c4';
-    sub.append(code, document.createTextNode(' are the backgrounds — useful as a fill under a label.'));
+    const code = document.createElement('code'); code.textContent = kind === 'svg' ? '#eee' : 'c3 / c4';
+    sub.append(code, document.createTextNode(kind === 'svg' ? ' is the card background — useful as a fill under a label.'
+      : ' are the backgrounds — useful as a fill under a label.'));
     pop.appendChild(sub);
 
     const cols = document.createElement('div');
@@ -532,7 +561,7 @@ function toggleTheme() {
     ['night', 'day'].forEach(() => {
       const strip = document.createElement('div');
       strip.className = 'ed-cp-chips labels';
-      FIG_COLORS.forEach((c) => {
+      list.forEach((c) => {
         const l = document.createElement('span');
         l.textContent = c.label;
         strip.appendChild(l);
@@ -552,7 +581,7 @@ function toggleTheme() {
       ['night', 'day'].forEach((mode) => {
         const cell = document.createElement('div');
         cell.className = 'ed-cp-cell';
-        cell.appendChild(swatchRow(t[mode]));
+        cell.appendChild(swatchRow(t[mode], list));
         row.appendChild(cell);
       });
       pop.appendChild(row);
@@ -560,7 +589,7 @@ function toggleTheme() {
 
     const legend = document.createElement('div');
     legend.className = 'ed-cp-legend';
-    FIG_COLORS.forEach((c) => {
+    list.forEach((c) => {
       const s = document.createElement('span');
       const i = document.createElement('i');
       // the legend chips show the CURRENT theme, which is what the preview
@@ -574,10 +603,10 @@ function toggleTheme() {
     pop.appendChild(legend);
 
     document.body.appendChild(pop);
-    colorPop = pop;
+    colorPop = pop; colorPopAnchor = anchor;
 
     // anchored under the button, nudged back inside the viewport
-    const r = $('edColorHint').getBoundingClientRect();
+    const r = anchor.getBoundingClientRect();
     const w = pop.offsetWidth;
     let left = Math.min(r.left, window.innerWidth - w - 8);
     pop.style.left = Math.max(8, left) + 'px';
@@ -589,7 +618,8 @@ function toggleTheme() {
     }, 0);
   }
 
-  $('edColorHint').addEventListener('click', openColorPop);
+  $('edColorHint').addEventListener('click', () => openColorPop($('edColorHint'), 'tikz'));
+  $('edColorHintSvg').addEventListener('click', () => openColorPop($('edColorHintSvg'), 'svg'));
 
   /* ───────────────────────── sidebar ───────────────────────── */
   function setSidebar(open, persist) {
@@ -693,7 +723,27 @@ function toggleTheme() {
   // half a second of typing would drop the last keystrokes.
   window.addEventListener('pagehide', flushDrafts);
   document.addEventListener('visibilitychange', () => { if (document.hidden) flushDrafts(); });
-  const hasContent = (d) => !!(d && (d.tikz.trim() || d.solution.trim() || (d.captions || []).some((c) => c && c.trim())));
+  /* A draft: { kind, tikz, svgSrc, svgBox, captions, solution, scale }.
+     kind is how the figure is written ('tikz' | 'svg'); each kind keeps its
+     own text. Only the selected kind is compiled and shown to readers, but
+     both texts are saved, so switching devices or loading from the database
+     never loses the other one. Drafts from before SVG figures have no
+     kind/svgSrc and read as TikZ. */
+  const emptyDraft = () => ({ kind: 'tikz', tikz: '', svgSrc: '', svgBox: '', captions: [], solution: '', scale: 1 });
+  const figKind = (d) => (d && d.kind === 'svg' ? 'svg' : 'tikz');
+  const figSrc = (d) => (d ? (figKind(d) === 'svg' ? d.svgSrc : d.tikz) || '' : '');
+  // What a figure's SVGs were made from: equal keys = the stored SVGs still fit.
+  const figKey = (d) => {
+    if (!figSrc(d).trim()) return '';
+    return figKind(d) === 'svg' ? `svg\u0000${d.svgSrc}\u0000${svgfBoxString(d.svgBox)}` : `tikz\u0000${d.tikz}`;
+  };
+  const rowFigKey = (f) => figKey(f ? { kind: f.kind, tikz: f.tikz, svgSrc: f.svgSrc, svgBox: f.svgBox } : null);
+  // Steps of the figure in a draft: { n, hasSteps, labels? } (labels name SVG layers).
+  const detectFig = (d) => (figKind(d) === 'svg' ? svgfOutline(d.svgSrc || '') : detectSteps(d.tikz || ''));
+  // Both figure texts, as saved: equal = nothing to save on the figure side.
+  const figSources = (d) => JSON.stringify(d ? [figKey(d), d.tikz || '', d.svgSrc || '', svgfBoxString(d.svgBox)] : ['', '', '', '']);
+  const anyFigSrc = (d) => !!(d && ((d.tikz || '').trim() || (d.svgSrc || '').trim()));
+  const hasContent = (d) => !!(d && (anyFigSrc(d) || d.solution.trim() || (d.captions || []).some((c) => c && c.trim())));
 
   // What the server has: problem_key -> { status, updated_at }. Filled at boot
   // by SolutionStore.index(), kept in step with every save/remove.
@@ -703,9 +753,9 @@ function toggleTheme() {
   let curRow = null;
   let curStale = null;         // true when the problem changed after the row was saved
   let curSvgs = [];
-  let curSvgSrc = '';          // the TikZ those SVGs were compiled from
+  let curSvgKey = '';          // figKey() of what those SVGs were made from
   let cur = null;
-  const draft = () => (drafts[cur.key] ||= { tikz: '', captions: [], solution: '', scale: 1 });
+  const draft = () => (drafts[cur.key] ||= emptyDraft());
 
   /* ───────────────────────── sidebar list ───────────────────────── */
   // Quizzes whose problem list is expanded. Memory only on purpose: every
@@ -851,6 +901,7 @@ function toggleTheme() {
 
   /* ───────────────────────── captions + step viewer ───────────────────────── */
   const tikzEl = $('edTikz'), solEl = $('edSol'), capsEl = $('edCaps');
+  const svgEl = $('edSvg'), svgBoxEl = $('edSvgBox');
 
   // Highest N in \onstep{N}, ignoring TeX comments; 1 when there are no steps.
   function detectSteps(src) {
@@ -865,9 +916,13 @@ function toggleTheme() {
   function renderCaptions() {
     const d = draft();
     capsEl.textContent = '';
+    // SVG figures name each step after its layer ("2 · Forces").
+    capsEl.classList.toggle('named', !!stepState.labels);
     for (let i = 0; i < stepState.n; i++) {
       const row = document.createElement('label'); row.className = 'ed-cap';
-      const tag = document.createElement('span'); tag.textContent = stepState.hasSteps ? `Step ${i + 1}` : 'Caption';
+      const tag = document.createElement('span');
+      tag.textContent = stepState.labels ? stepState.labels[i] : stepState.hasSteps ? `Step ${i + 1}` : 'Caption';
+      tag.title = tag.textContent;
       const inp = document.createElement('input');
       inp.className = 'ed-input'; inp.type = 'text'; inp.spellcheck = false;
       inp.placeholder = 'optional · $…$ allowed';
@@ -1033,17 +1088,19 @@ function toggleTheme() {
     if (cur) scaleEl.value = draftScale(draft()).toFixed(2);
   });
 
-  function compileFigure(src, steps, gen) {
+  // gen null: never superseded by edits; quiet: leave the status line alone
+  // (both for compiling a history version for the compare window).
+  function compileFigure(src, steps, gen, quiet) {
     return new Promise((resolve) => {
       compileChain = compileChain.then(async () => {
         const t0 = performance.now();
         const out = [];
         let lastLog = [];
         for (let k = 1; k <= steps.n; k++) {
-          if (gen !== compileGen) return resolve(null);     // superseded by a newer edit
+          if (gen !== null && gen !== compileGen) return resolve(null);     // superseded by a newer edit
           const key = `${k}|${steps.hasSteps ? 1 : 0}|${src}`;
           if (svgCache.has(key)) { out.push(svgCache.get(key)); continue; }
-          if (steps.n > 1) setStatus(`compiling ${k}/${steps.n}…`, 'busy');
+          if (steps.n > 1 && !quiet) setStatus(`compiling ${k}/${steps.n}…`, 'busy');
           const r = await compileOne(src, k);
           lastLog = r.log;
           if (r.error) return resolve({ error: true, step: k, log: r.log, timeout: r.timeout });
@@ -1063,8 +1120,9 @@ function toggleTheme() {
   function scheduleCompile() {
     clearTimeout(compileTimer);
     const gen = ++compileGen;
+    if (cur && figKind(draft()) === 'svg') { scheduleSvgBuild(gen); return; }
     const src = tikzEl.value;
-    if (!src.trim()) { curSvgs = []; curSvgSrc = ''; clearStage('No figure'); showWarn(null); showLog(null); setStatus('', ''); renderViewer(); refreshState(); return; }
+    if (!src.trim()) { curSvgs = []; curSvgKey = ''; clearStage('No figure'); showWarn(null); showLog(null); setStatus('', ''); renderViewer(); refreshState(); return; }
     setStatus('typing…', '');
     compileTimer = setTimeout(async () => {
       if (gen !== compileGen) return;
@@ -1091,7 +1149,7 @@ function toggleTheme() {
         return;
       }
       showLog(null);
-      curSvgs = res.svgs; curSvgSrc = src;
+      curSvgs = res.svgs; curSvgKey = figKey({ kind: 'tikz', tikz: src });
       mountSteps(res.svgs);
       refreshState();
       setStatus(`ok · ${res.svgs.length} step${res.svgs.length > 1 ? 's' : ''} · ${(res.ms / 1000).toFixed(1)} s`, 'ok');
@@ -1103,6 +1161,362 @@ function toggleTheme() {
         showWarn([b, t, code, document.createTextNode(' (use the same numbers in every step).')], false);
       } else showWarn(null);
     }, 700);
+  }
+
+  /* SVG figures: no compiler, just editor/svg-figure.js — parsed, cleaned,
+     split into steps by layer and boxed, in a few milliseconds. */
+  function scheduleSvgBuild(gen) {
+    const d = draft();
+    const src = d.svgSrc || '';
+    showLog(null);
+    if (!src.trim()) { curSvgs = []; curSvgKey = ''; clearStage('No figure'); showWarn(null); setStatus('', ''); renderViewer(); refreshState(); return; }
+    setStatus('typing…', '');
+    compileTimer = setTimeout(async () => {
+      if (gen !== compileGen) return;
+      const key = figKey(d);
+      let res;
+      try { res = await svgfBuild(src, { box: d.svgBox }); }
+      catch (e) { res = { error: String((e && e.message) || e) }; }
+      if (gen !== compileGen) return;
+      if (res.error) {
+        setStatus('error', 'err');
+        const b = document.createElement('b'); b.textContent = 'This SVG could not be read: ';
+        showWarn([b, document.createTextNode(res.error)], true);
+        return;
+      }
+      if (res.empty) {
+        curSvgs = []; curSvgKey = '';
+        clearStage('Nothing is drawn yet');
+        setStatus('nothing drawn', 'err');
+        showWarn(null); renderViewer(); refreshState();
+        return;
+      }
+      curSvgs = res.svgs; curSvgKey = key;
+      mountSteps(res.svgs);
+      refreshState();
+      const n = res.svgs.length;
+      setStatus(`ok · ${n} step${n > 1 ? 's' : ''}${n > 1 ? ' · by layer' : ''}`, 'ok');
+      showSvgWarnings(src, res.notes);
+    }, 250);
+  }
+
+  // Notes from the build, plus colours that won't follow the reader's theme.
+  function showSvgWarnings(src, notes) {
+    const nodes = [];
+    const fixed = svgfFixedColors(src);
+    if (fixed.length) {
+      const b = document.createElement('b');
+      b.textContent = `${fixed.length} colour${fixed.length > 1 ? 's don’t' : ' doesn’t'} follow the theme: `;
+      nodes.push(b);
+      fixed.slice(0, 8).forEach((c) => {
+        const chip = document.createElement('span'); chip.className = 'ed-colchip';
+        const i = document.createElement('i'); i.style.background = c.css;
+        chip.append(i, document.createTextNode(c.key));
+        nodes.push(chip);
+      });
+      const go = document.createElement('button'); go.type = 'button'; go.className = 'ed-link'; go.textContent = 'Map them…';
+      go.addEventListener('click', openLayers);
+      nodes.push(go);
+    }
+    (notes || []).forEach((t) => { const div = document.createElement('div'); div.textContent = t; nodes.push(div); });
+    showWarn(nodes.length ? nodes : null, false);
+  }
+
+  /* ───────────────────────── Layers & colours (SVG figures) ─────────────────────────
+     A window over the editor showing the figure's structure: every layer
+     and every element in it, the step each one appears at, and the colours
+     that don't follow the theme yet. Each change is made to the SVG TEXT
+     (svgfOp* in editor/svg-figure.js) through the browser's own edit
+     command, so Ctrl+Z in the text box undoes it; the window then simply
+     re-reads the text. Hovering a row highlights that element in the
+     window's preview; the step buttons show the figure up to a step. */
+  let lcBack = null;           // the open window's backdrop, or null
+  let lcStep = 0;              // preview shows up to this step (0 = everything)
+  let lcHover = null;          // panel indexes highlighted in the preview
+  let lcGen = 0;               // stale preview builds stop early
+
+  const mk = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  };
+  const mkBtn = (cls, text, onClick) => {
+    const b = mk('button', cls, text); b.type = 'button';
+    b.addEventListener('click', onClick);
+    return b;
+  };
+  const mkSelect = (key, options, onChange) => {
+    const s = mk('select', 'ed-lc-select');
+    s.dataset.k = key;
+    options.forEach(([v, t]) => s.append(new Option(t, v)));
+    s.addEventListener('change', () => onChange(s.value));
+    return s;
+  };
+
+  // Replaces the whole SVG text as ONE undoable edit (falls back to a plain
+  // assignment where execCommand is unavailable). Fires the input event,
+  // which saves the draft and rebuilds the figure.
+  function svgSetSource(text) {
+    if (svgEl.value === text) return;
+    const back = document.activeElement;
+    let ok = false;
+    try {
+      svgEl.focus({ preventScroll: true });
+      svgEl.select();
+      ok = document.execCommand('insertText', false, text);
+    } catch (e) { ok = false; }
+    if (!ok || svgEl.value !== text) { svgEl.value = text; svgEl.dispatchEvent(new Event('input')); }
+    if (back && back !== svgEl && document.contains(back)) back.focus({ preventScroll: true });
+  }
+
+  function lcApply(op) {
+    const src = svgEl.value;
+    let out;
+    try { out = op(src); }
+    catch (e) { toast('Could not change the SVG: ' + ((e && e.message) || e), 'err'); return; }
+    if (typeof out !== 'string' || out === src) { lcRender(); return; }
+    svgSetSource(out);
+    lcRender();
+  }
+
+  function lcKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeLayers(); } }
+  function closeLayers() {
+    if (!lcBack) return;
+    lcBack.remove();
+    lcBack = null; lcHover = null;
+    lcGen++;
+    document.removeEventListener('keydown', lcKey, true);
+  }
+  function openLayers() {
+    if (!cur || figKind(draft()) !== 'svg' || lcBack) return;
+    closeFloat(); closeColorPop();
+    lcStep = 0; lcHover = null;
+    const back = mk('div', 'ed-lc-back');
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) closeLayers(); });
+    const box = mk('div', 'ed-lc');
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-labelledby', 'edLcTitle');
+    back.appendChild(box);
+    document.body.appendChild(back);
+    lcBack = back;
+    document.addEventListener('keydown', lcKey, true);
+    lcRender();
+    const x = box.querySelector('.ed-cp-close');
+    if (x) x.focus({ preventScroll: true });
+  }
+  $('edLayersBtn').addEventListener('click', openLayers);
+
+  // Highlight these elements in the preview while the pointer (or focus) is on node.
+  function lcHoverable(node, idxs) {
+    const on = () => { lcHover = idxs; lcPaint(); };
+    const off = () => { lcHover = null; lcPaint(); };
+    node.addEventListener('pointerenter', on);
+    node.addEventListener('pointerleave', off);
+    node.addEventListener('focusin', on);
+    node.addEventListener('focusout', off);
+  }
+
+  function lcPaint() {
+    if (!lcBack) return;
+    const prev = lcBack.querySelector('.ed-lc-prev');
+    if (prev) {
+      const hl = !!(lcHover && lcHover.length);
+      prev.classList.toggle('hl', hl);
+      prev.querySelectorAll('[data-ed-i]').forEach((el) => el.classList.toggle('lc-on', hl && lcHover.includes(+el.getAttribute('data-ed-i'))));
+      prev.querySelectorAll('[data-ed-gs]').forEach((el) => {
+        el.style.visibility = lcStep && +el.getAttribute('data-ed-gs') > lcStep ? 'hidden' : '';
+      });
+    }
+    lcBack.querySelectorAll('.ed-lc-stepbtn').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.step === lcStep)));
+  }
+
+  async function lcPreview(src, prev) {
+    const gen = ++lcGen;
+    let res = null;
+    try { res = await svgfBuild(src, { box: draft().svgBox, preview: true }); } catch (e) { res = null; }
+    if (gen !== lcGen || !lcBack || !prev.isConnected) return;
+    prev.textContent = '';
+    if (!res || res.empty || !res.svgs.length) { prev.append(mk('span', 'ed-empty', 'Nothing is drawn yet')); return; }
+    prev.innerHTML = figSanitizeSvg(res.svgs[0]);
+    figCropToContent(prev);
+    lcPaint();
+  }
+
+  function lcRender() {
+    if (!lcBack) return;
+    const box = lcBack.firstChild;
+    const src = svgEl.value;
+    const m = svgfModel(src);
+    if (lcStep > m.n) lcStep = 0;
+    lcHover = null;
+    const oldMain = box.querySelector('.ed-lc-main');
+    const scroll = oldMain ? oldMain.scrollTop : 0;
+    const act = document.activeElement;
+    const focusKey = act && box.contains(act) ? act.dataset.k : null;
+    const prevOld = box.querySelector('.ed-lc-prev');
+    box.textContent = '';
+
+    const head = mk('div', 'ed-lc-head');
+    const title = mk('span', 'ed-lc-title', 'Layers & colours'); title.id = 'edLcTitle';
+    const x = mkBtn('ed-cp-close', '✕', closeLayers); x.title = 'Close (Esc)';
+    head.append(title, mk('span', 'ed-badge', `${m.n} step${m.n > 1 ? 's' : ''}`), x);
+
+    const side = mk('div', 'ed-lc-side');
+    // The old preview stays up until the new one is built, so it doesn't flash.
+    const prev = prevOld || mk('div', 'ed-lc-prev fig');
+    prev.className = 'ed-lc-prev fig';
+    side.append(prev, lcStepStrip(m));
+    const main = mk('div', 'ed-lc-main');
+    main.append(lcColors(m), lcLayers(m));
+    const body = mk('div', 'ed-lc-body');
+    body.append(side, main);
+    const foot = mk('div', 'ed-lc-foot', 'Every change is written into the SVG text: Ctrl+Z there undoes it.');
+    box.append(head, body, foot);
+    main.scrollTop = scroll;
+    if (focusKey) {
+      const f = box.querySelector(`[data-k="${CSS.escape(focusKey)}"]`);
+      if (f) f.focus({ preventScroll: true });
+    }
+    lcPreview(src, prev);
+  }
+
+  function lcStepStrip(m) {
+    const w = mk('div', 'ed-lc-steps');
+    if (m.n <= 1) {
+      w.append(mk('span', 'ed-lc-hint', 'One step. Put elements in two or more layers to build the figure up step by step.'));
+      return w;
+    }
+    w.append(mk('span', 'ed-lc-hint', 'Show up to step'));
+    const all = mkBtn('ed-lc-stepbtn', 'All', () => { lcStep = 0; lcPaint(); });
+    all.dataset.step = '0';
+    w.append(all);
+    for (let k = 1; k <= m.n; k++) {
+      const b = mkBtn('ed-lc-stepbtn', String(k), () => { lcStep = k; lcPaint(); });
+      b.dataset.step = String(k);
+      b.title = m.labels[k - 1] || '';
+      w.append(b);
+    }
+    if (m.over) w.append(mk('div', 'ed-lc-hint warn', `More than ${MAX_STEPS} steps: the rest show at step ${MAX_STEPS}.`));
+    return w;
+  }
+
+  function lcColors(m) {
+    const sec = mk('section', 'ed-lc-sec');
+    sec.append(mk('h4', null, 'Colours'));
+    const { fixed, theme } = m.colors;
+    if (theme.length) {
+      const row = mk('div', 'ed-lc-chips');
+      theme.forEach((t) => {
+        const chip = mk('span', 'ed-colchip');
+        const i = mk('i'); i.style.background = t.css;
+        chip.append(i, document.createTextNode(`${t.label} ×${t.count}`));
+        row.append(chip);
+      });
+      sec.append(row);
+    }
+    if (!fixed.length) {
+      sec.append(mk('div', 'ed-lc-hint ok', theme.length ? 'Every colour follows the theme.' : 'No colours set: everything is drawn in the text colour.'));
+      return sec;
+    }
+    sec.append(mk('div', 'ed-lc-hint', 'These stay the same in every theme. Pick what each should become:'));
+    const opts = [['', 'Keep fixed'], ...SVGF_THEME.map((t) => [t.id, `${t.label} (${t.write})`])];
+    fixed.forEach((c) => {
+      const row = mk('div', 'ed-lc-color');
+      const sw = mk('i', 'ed-lc-sw'); sw.style.background = c.css;
+      const sel = mkSelect('c:' + c.key, opts, (v) => { if (v) lcApply((s) => svgfOpColor(s, c.key, v)); });
+      row.append(sw, mk('span', 'ed-lc-colname', c.key), mk('span', 'ed-lc-muted', `×${c.count}`), sel);
+      sec.append(row);
+    });
+    return sec;
+  }
+
+  function lcLayers(m) {
+    const sec = mk('section', 'ed-lc-sec');
+    const h = mk('h4', null, 'Layers');
+    h.append(mk('small', null, ' · first = step 1, each adds to the one before'));
+    sec.append(h);
+    const total = m.layers.reduce((a, L) => a + (L.hidden ? 0 : L.n), 0);
+    const targets = [['loose', 'Always shown'], ...m.layers.map((L) => [String(L.j), L.name]), ['new', '+ New layer']];
+
+    if (m.loose.length || !m.layers.length) {
+      const card = mk('div', 'ed-lc-layer loose');
+      const hd = mk('div', 'ed-lc-lhead');
+      hd.append(mk('b', 'ed-lc-lname', 'Always shown'),
+        mk('span', 'ed-lc-muted', m.layers.length ? 'outside every layer · in every step' : 'no layers yet: add one, then move elements into it'));
+      lcHoverable(hd, m.loose.map((it) => it.i));
+      card.append(hd);
+      m.loose.forEach((it) => card.append(lcItem(it, null, targets)));
+      if (!m.loose.length) card.append(mk('div', 'ed-lc-empty', 'Nothing drawn yet.'));
+      sec.append(card);
+    }
+    m.layers.forEach((L) => sec.append(lcLayer(L, m, targets, total)));
+    const add = mkBtn('ed-abtn ed-lc-add', '+ New layer', () => lcApply(svgfOpNewLayer));
+    add.dataset.k = 'add';
+    sec.append(add);
+    return sec;
+  }
+
+  function lcLayer(L, m, targets, total) {
+    const card = mk('div', 'ed-lc-layer' + (L.hidden ? ' off' : ''));
+    const hd = mk('div', 'ed-lc-lhead');
+    const eye = mkBtn('ed-lc-ibtn', L.hidden ? 'Show' : 'Hide', () => lcApply((s) => svgfOpLayerHidden(s, L.j, !L.hidden)));
+    eye.title = L.hidden ? 'This layer is left out of the figure. Bring it back.' : 'Leave this layer out of the figure';
+    eye.dataset.k = 'h:' + L.j;
+    const name = mk('input', 'ed-input ed-lc-name');
+    name.value = L.name; name.spellcheck = false; name.dataset.k = 'n:' + L.j;
+    name.setAttribute('aria-label', 'Layer name');
+    name.addEventListener('change', () => lcApply((s) => svgfOpLayerRename(s, L.j, name.value)));
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') name.blur(); });
+    const badge = mk('span', 'ed-badge', L.hidden ? 'hidden' : L.n > 1 ? `steps ${L.start}–${L.start + L.n - 1}` : `step ${L.start}`);
+    const stp = mk('span', 'ed-lc-stepper');
+    const minus = mkBtn('ed-lc-ibtn', '−', () => lcApply((s) => svgfOpLayerSteps(s, L.j, L.n - 1)));
+    minus.disabled = L.n <= 1; minus.title = 'One step fewer'; minus.dataset.k = 'sm:' + L.j;
+    const plus = mkBtn('ed-lc-ibtn', '+', () => lcApply((s) => svgfOpLayerSteps(s, L.j, L.n + 1)));
+    plus.disabled = L.n >= MAX_STEPS || (!L.hidden && total >= MAX_STEPS);
+    plus.title = 'Split this layer into one more step, then pick when each element appears';
+    plus.dataset.k = 'sp:' + L.j;
+    stp.append(mk('span', 'ed-lc-muted', 'steps'), minus, mk('b', null, String(L.n)), plus);
+    const up = mkBtn('ed-lc-ibtn', '↑', () => lcApply((s) => svgfOpLayerMove(s, L.j, -1)));
+    up.disabled = L.j === 0; up.title = 'Earlier (also drawn underneath)'; up.dataset.k = 'u:' + L.j;
+    const down = mkBtn('ed-lc-ibtn', '↓', () => lcApply((s) => svgfOpLayerMove(s, L.j, 1)));
+    down.disabled = L.j === m.layers.length - 1; down.title = 'Later (also drawn on top)'; down.dataset.k = 'd:' + L.j;
+    const del = mkBtn('ed-lc-ibtn danger', '✕', () => lcApply((s) => svgfOpLayerDelete(s, L.j)));
+    del.disabled = L.items.length > 0;
+    del.title = L.items.length ? 'Move its elements out first' : 'Delete this empty layer';
+    hd.append(eye, name, badge, stp, up, down, del);
+    lcHoverable(hd, L.items.map((it) => it.i));
+    card.append(hd);
+    L.items.forEach((it) => card.append(lcItem(it, L, targets)));
+    if (!L.items.length) card.append(mk('div', 'ed-lc-empty', 'Empty: move elements here with “Move to”.'));
+    return card;
+  }
+
+  function lcItem(it, L, targets) {
+    const row = mk('div', 'ed-lc-item');
+    const sws = mk('span', 'ed-lc-sws');
+    it.swatches.forEach((c) => { const i = mk('i'); i.style.background = c; sws.append(i); });
+    const what = mk('span', 'ed-lc-what');
+    what.append(mk('b', null, it.tag));
+    if (it.label) what.append(document.createTextNode(' ' + it.label));
+    row.append(sws, what);
+    if (L && L.n > 1) {
+      const opts = [];
+      for (let r = 1; r <= L.n; r++) opts.push([String(r), `step ${L.start + r - 1}`]);
+      const s = mkSelect('s:' + it.i, opts, (v) => lcApply((src) => svgfOpItemStep(src, it.i, +v)));
+      s.value = String(it.step);
+      s.title = 'The step it appears at';
+      row.append(s);
+    }
+    const here = L ? String(L.j) : 'loose';
+    const mv = mkSelect('m:' + it.i, [['', 'Move to…'], ...targets.filter(([v]) => v !== here)], (v) => {
+      if (v) lcApply((src) => svgfOpMove(src, it.i, v === 'loose' || v === 'new' ? v : +v));
+    });
+    mv.title = 'Move to another layer';
+    row.append(mv);
+    lcHoverable(row, [it.i]);
+    return row;
   }
 
   /* ───────────────────────── solution preview ───────────────────────── */
@@ -1123,16 +1537,55 @@ function toggleTheme() {
   }
 
   /* ───────────────────────── inputs ───────────────────────── */
-  tikzEl.addEventListener('input', () => {
-    if (!cur) return;
-    draft().tikz = tikzEl.value; persistDrafts(); markItem(); refreshState(); histMaybeAuto();
-    const next = detectSteps(tikzEl.value);
-    const changed = next.n !== stepState.n || next.hasSteps !== stepState.hasSteps;
+  // After the figure source changed (either kind): steps, captions, recompile.
+  function figSourceChanged() {
+    persistDrafts(); markItem(); refreshState(); histMaybeAuto();
+    const next = detectFig(draft());
+    const changed = next.n !== stepState.n || next.hasSteps !== stepState.hasSteps
+      || JSON.stringify(next.labels || null) !== JSON.stringify(stepState.labels || null);
     stepState = next;
     if (changed) renderCaptions();
     renderViewer();
     scheduleCompile();
+  }
+  tikzEl.addEventListener('input', () => {
+    if (!cur) return;
+    draft().tikz = tikzEl.value;
+    figSourceChanged();
   });
+  svgEl.addEventListener('input', () => {
+    if (!cur) return;
+    draft().svgSrc = svgEl.value;
+    figSourceChanged();
+  });
+  svgBoxEl.addEventListener('input', () => {
+    if (!cur) return;
+    draft().svgBox = svgBoxEl.value;
+    figSourceChanged();
+  });
+
+  /* ── TikZ / SVG switch ──
+     A view of which text is the figure. Both texts stay in the draft, so
+     switching back and forth loses nothing; only the selected kind is
+     saved (and a saved figure reopens in its kind). */
+  function showFigKind(kind) {
+    document.querySelectorAll('.ed-segbtn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === kind)));
+    $('edTikzPart').hidden = kind !== 'tikz';
+    $('edSvgPart').hidden = kind !== 'svg';
+  }
+  function setFigKind(kind) {
+    if (!cur) return;
+    const d = draft();
+    if (figKind(d) === kind) return;
+    d.kind = kind;
+    showFigKind(kind);
+    curSvgs = []; curSvgKey = '';
+    showWarn(null); showLog(null);
+    viewStep = 1;
+    stepState = { n: -1 };                      // force the captions to redraw
+    figSourceChanged();
+  }
+  document.querySelectorAll('.ed-segbtn').forEach((b) => b.addEventListener('click', () => setFigKind(b.dataset.kind)));
   solEl.addEventListener('input', () => {
     if (!cur) return;
     draft().solution = solEl.value; persistDrafts(); markItem(); refreshState(); histMaybeAuto();
@@ -1161,21 +1614,28 @@ function toggleTheme() {
 
   // What would be sent to the server for the problem on screen.
   function payloadOf(key) {
-    const d = drafts[key] || { tikz: '', captions: [], solution: '', scale: 1 };
-    const n = detectSteps(d.tikz).n;
+    const d = drafts[key] || emptyDraft();
+    const has = !!figSrc(d).trim();
+    const n = has ? detectFig(d).n : 0;
     const steps = [];
     // Freshly compiled SVGs when the figure in the window is what was
     // compiled; otherwise the ones already stored (so re-saving a problem
     // whose figure was never touched doesn't need a recompile).
+    const k = figKey(d);
     const stored = ((rowFigure(key) || {}).steps || []).map((s) => s.svg);
-    const fresh = (key === (cur && cur.key) && curSvgSrc === d.tikz) ? curSvgs : null;
-    const svgs = fresh || ((rowFigure(key) && rowFigure(key).tikz === d.tikz) ? stored : []);
-    for (let i = 0; i < (d.tikz.trim() ? n : 0); i++) {
-      steps.push({ svg: svgs[i] || '', caption: (d.captions[i] || '').trim() });
+    const fresh = (key === (cur && cur.key) && k && curSvgKey === k) ? curSvgs : null;
+    const svgs = fresh || ((rowFigure(key) && rowFigKey(rowFigure(key)) === k) ? stored : []);
+    for (let i = 0; i < n; i++) {
+      steps.push({ svg: svgs[i] || '', caption: ((d.captions || [])[i] || '').trim() });
     }
-    const figure = { tikz: d.tikz, steps };
+    // TikZ figures keep the shape rows always had (no kind field). The other
+    // kind's text rides along when there is any; readers only use steps.
+    const figure = { tikz: d.tikz || '', steps };
+    if (figKind(d) === 'svg') figure.kind = 'svg';
+    if (figKind(d) === 'svg' || (d.svgSrc || '').trim()) figure.svgSrc = d.svgSrc || '';
+    if (svgfBoxString(d.svgBox)) figure.svgBox = svgfBoxString(d.svgBox);
     const scale = draftScale(d);
-    if (d.tikz.trim() && scale !== 1) figure.scale = scale;
+    if (has && scale !== 1) figure.scale = scale;
     return { solution: d.solution, figure };
   }
   function rowFigure(key) {
@@ -1187,7 +1647,7 @@ function toggleTheme() {
     if (!row) return false;
     const p = payloadOf(key);
     return p.solution === row.solution &&
-           p.figure.tikz === (row.figure ? row.figure.tikz : '') &&
+           figSources(drafts[key]) === figSources(row.figure ? draftFromRow(row) : null) &&
            figScaleOf(p.figure) === figScaleOf(row.figure) &&
            JSON.stringify(p.figure.steps.map((s) => s.caption)) === JSON.stringify((row.figure ? row.figure.steps : []).map((s) => s.caption));
   };
@@ -1205,18 +1665,289 @@ function toggleTheme() {
   function setMsg(text, cls) { stMsg.textContent = text || ''; stMsg.className = 'ed-state-msg ' + (cls || ''); }
   function hideNote() { stNote.hidden = true; stNote.textContent = ''; }
 
-  // A confirmation that replaces the buttons' job: title text + Confirm/Cancel.
-  function askConfirm(text, confirmLabel, onYes) {
+  /* A confirmation that replaces the buttons' job: text + Confirm/Cancel.
+     opts.more: further actions [{ label, run }] next to Confirm.
+     opts.compare: () => the stored row (or a promise of it) this would
+       replace; adds "Preview", which opens both versions side by side with
+       the same actions at the bottom. */
+  function askConfirm(text, confirmLabel, onYes, opts = {}) {
     stNote.hidden = false;
     stNote.textContent = '';
     const p = document.createElement('div'); p.textContent = text;
     const row = document.createElement('div'); row.className = 'ed-state-actions';
-    const yes = document.createElement('button'); yes.className = 'ed-abtn danger'; yes.textContent = confirmLabel;
-    const no = document.createElement('button'); no.className = 'ed-abtn'; no.textContent = 'Cancel';
-    yes.addEventListener('click', () => { hideNote(); onYes(); });
-    no.addEventListener('click', hideNote);
-    row.append(yes, no);
+    const acts = [{ label: confirmLabel, run: onYes }, ...(opts.more || [])];
+    acts.forEach((a) => {
+      const b = mkBtn('ed-abtn danger', a.label, () => { hideNote(); a.run(); });
+      row.append(b);
+    });
+    if (opts.compare) row.append(mkBtn('ed-abtn', 'Preview', () => openCompare(opts.compare, acts)));
+    row.append(mkBtn('ed-abtn', 'Cancel', hideNote));
     stNote.append(p, row);
+  }
+
+  /* ───────────────────────── compare two versions ─────────────────────────
+     This window (left) against a stored version (right): whose it is and
+     when it was saved, then the figure with every step and its caption,
+     then the solution, each section marked same / different. Opened from a
+     confirmation's Preview; its actions are repeated at the bottom. */
+  let cmpBack = null;
+  function cmpKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeCompare(); } }
+  function closeCompare() {
+    if (!cmpBack) return;
+    cmpBack.remove(); cmpBack = null;
+    document.removeEventListener('keydown', cmpKey, true);
+  }
+
+  // A version reduced to what the window shows and compares. steps: its
+  // figure's SVGs with captions, or a promise of them (null = could not be
+  // built) — history versions keep only source, so theirs is built on demand.
+  function cmpVersion(d, steps) {
+    const kind = figKind(d);
+    const other = kind === 'svg' ? (d.tikz || '').trim() && 'TikZ' : (d.svgSrc || '').trim() && 'SVG';
+    const n = figSrc(d).trim() ? detectFig(d).n : 0;
+    const caps = Array.from({ length: n }, (_, i) => ((d.captions || [])[i] || '').trim());
+    return {
+      kind, other, n, steps, scale: draftScale(d), solution: d.solution || '',
+      figSame: figSources(d) + JSON.stringify(caps) + draftScale(d),
+    };
+  }
+
+  // The SVG steps of a draft that was never compiled (a history version).
+  async function stepsForDraft(d) {
+    if (!figSrc(d).trim()) return [];
+    const caps = d.captions || [];
+    let svgs = null;
+    try {
+      if (figKind(d) === 'svg') {
+        const r = await svgfBuild(d.svgSrc, { box: d.svgBox });
+        svgs = r.empty ? null : r.svgs;
+      } else {
+        const r = await compileFigure(d.tikz, detectSteps(d.tikz), null, true);
+        svgs = r && !r.error ? r.svgs : null;
+      }
+    } catch (e) { svgs = null; }
+    return svgs && svgs.map((svg, i) => ({ svg, caption: caps[i] || '' }));
+  }
+
+  // A stored row (or nothing stored) against this window.
+  async function openCompare(getTheirs, acts) {
+    if (!cur) return;
+    const key = cur.key;
+    let theirs;
+    try { theirs = await getTheirs(); } catch (e) { toast('Could not read the saved version.', 'err'); return; }
+    if (!cur || cur.key !== key) return;
+    showCompare(theirs ? {
+      d: draftFromRow(theirs),
+      steps: (theirs.figure && theirs.figure.steps) || [],
+      title: `${savedBy(theirs) ? '@' + savedBy(theirs) : 'Unknown editor'} · ${theirs.status === 'published' ? 'published' : 'draft'}`,
+      sub: `saved ${fmtWhen(theirs.updated_at)} · ${fmtAgo(Date.parse(theirs.updated_at))}`,
+    } : null, acts);
+  }
+
+  /* other: { d, steps, title, sub } — the right-hand version — or null for
+     "nothing stored". acts: [{ label, run }] for the bottom of the window. */
+  function showCompare(other, acts) {
+    if (!cur) return;
+    closeCompare();
+    const key = cur.key;
+    const mine = cmpVersion(drafts[key] || emptyDraft(), payloadOf(key).figure.steps);
+    const their = other ? cmpVersion(other.d, other.steps) : null;
+
+    const head = (title, sub) => {
+      const c = mk('div', 'ed-cmp-head');
+      c.append(mk('b', null, title), mk('span', null, sub));
+      return c;
+    };
+    const section = (label, same) => {
+      const s = mk('div', 'ed-cmp-sec');
+      s.append(mk('span', null, label));
+      if (same != null) s.append(mk('span', 'ed-cmp-diff ' + (same ? 'same' : 'differs'), same ? 'same' : 'different'));
+      return s;
+    };
+    // Fills a figure cell; measuring and typesetting need it in the page,
+    // which it is by the time a built figure arrives (and see the end).
+    const fillFig = (cell, v, steps, live) => {
+      cell.textContent = '';
+      const n = Array.isArray(steps) ? steps.length : v.n;
+      cell.append(mk('div', 'ed-cmp-meta', !v.n ? 'No figure'
+        : `${v.kind === 'svg' ? 'SVG' : 'TikZ'} figure · ${n} step${n > 1 ? 's' : ''}${v.scale !== 1 ? ` · scale ${v.scale.toFixed(2)}` : ''}`));
+      if (v.other) cell.append(mk('div', 'ed-cmp-meta', `Also kept, not shown: ${v.other} text`));
+      if (!v.n) return;
+      if (steps === undefined) { cell.append(mk('div', 'ed-cmp-meta', v.kind === 'svg' ? 'Building the figure…' : 'Compiling the figure (TeX)…')); return; }
+      if (!steps) { cell.append(mk('div', 'ed-cmp-meta', 'This figure could not be built.')); return; }
+      const box = mk('div', 'fig ed-cmp-fig');
+      box.style.setProperty('--fig-scale', String(v.scale));
+      const caps = [];
+      steps.forEach((s, i) => {
+        const st = mk('div', 'ed-cmp-step');
+        if (n > 1) st.append(mk('div', 'ed-cmp-stepno', `Step ${i + 1}`));
+        const holder = mk('div', 'fig-sized');
+        if (s.svg) holder.innerHTML = figSanitizeSvg(s.svg);
+        else holder.append(mk('span', 'ed-cmp-meta', 'not compiled yet'));
+        st.append(holder);
+        if ((s.caption || '').trim()) { const c = mk('div', 'sol-text ed-cmp-cap'); st.append(c); caps.push([c, s.caption]); }
+        box.append(st);
+      });
+      cell.append(box);
+      const finish = () => { figCropToContent(box); caps.forEach(([el, t]) => renderSolutionInto(el, t)); };
+      if (live) finish(); else later.push(finish);
+    };
+    const later = [];                                   // run once the window is in the page
+    const figCell = (v) => {
+      const cell = mk('div', 'ed-cmp-cell');
+      if (!v) { cell.append(mk('span', 'ed-cmp-meta', '—')); return cell; }
+      if (v.steps && typeof v.steps.then === 'function') {
+        fillFig(cell, v, undefined, false);
+        v.steps.then((steps) => { if (cell.isConnected) fillFig(cell, v, steps, true); });
+      } else fillFig(cell, v, v.steps || [], false);
+      return cell;
+    };
+    const solCell = (v) => {
+      const cell = mk('div', 'ed-cmp-cell');
+      if (!v || !v.solution.trim()) { cell.append(mk('span', 'ed-cmp-meta', v ? 'No solution text' : '—')); return cell; }
+      const t = mk('div', 'sol-text ed-cmp-sol');
+      cell.append(t); later.push(() => renderSolutionInto(t, v.solution));
+      return cell;
+    };
+
+    const back = mk('div', 'ed-lc-back');
+    back.addEventListener('pointerdown', (e) => { if (e.target === back) closeCompare(); });
+    const box = mk('div', 'ed-lc ed-cmp');
+    box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', 'edCmpTitle');
+    const top = mk('div', 'ed-lc-head');
+    const title = mk('span', 'ed-lc-title', `Compare versions · Q${cur.quiz} · ${cur.id}`); title.id = 'edCmpTitle';
+    const x = mkBtn('ed-cp-close', '✕', closeCompare); x.title = 'Close (Esc)';
+    top.append(title, x);
+
+    const grid = mk('div', 'ed-cmp-grid');
+    grid.append(
+      head(`Yours${editorName ? ` · @${editorName}` : ''}`, 'this window · not saved'),
+      other ? head(other.title, other.sub) : head('Database', 'nothing stored for this problem'),
+      section('Figure', their ? mine.figSame === their.figSame : null), figCell(mine), figCell(their),
+      section('Solution', their ? mine.solution === their.solution : null), solCell(mine), solCell(their),
+    );
+
+    const foot = mk('div', 'ed-cmp-foot');
+    acts.forEach((a) => foot.append(mkBtn('ed-abtn danger', a.label, () => { closeCompare(); hideNote(); a.run(); })));
+    foot.append(mkBtn('ed-abtn', 'Close', closeCompare));
+
+    box.append(top, grid, foot);
+    back.append(box);
+    document.body.append(back);
+    cmpBack = back;
+    document.addEventListener('keydown', cmpKey, true);
+    later.forEach((f) => f());
+    x.focus({ preventScroll: true });
+  }
+
+  /* Saving over a stored version that isn't simply your own draft: the
+     published one (replaced, or taken off the site by a draft save), or
+     another editor's draft. Null when no confirmation is needed. */
+  function overwriteWarning(status) {
+    if (!curRow || !isDirty(cur.key)) return null;
+    const by = savedBy(curRow);
+    const mineRow = !by || by === editorName;
+    const who = !by ? 'an unknown editor' : by === editorName ? 'you' : '@' + by;
+    const when = fmtWhen(curRow.updated_at);
+    if (curRow.status === 'published') {
+      return status === 'published'
+        ? { text: `This replaces the published version that readers see now (by ${who}, saved ${when}).`, label: 'Replace published' }
+        : { text: `This takes the published version (by ${who}, saved ${when}) off the site and saves yours as a draft.`, label: 'Unpublish and save' };
+    }
+    if (!mineRow) return { text: `This overwrites ${who}'s draft (saved ${when}).`, label: 'Overwrite' };
+    return null;
+  }
+
+  // Save draft (button and Ctrl+S): straight through, or ask first.
+  function requestSaveDraft() {
+    const ow = overwriteWarning('draft');
+    if (!ow) return doSave('draft');
+    setStateOpen(true);
+    askConfirm(ow.text, ow.label, () => doSave('draft'), { compare: () => curRow });
+    return Promise.resolve(false);
+  }
+
+  // Who saved a row last. `author` is who the site credits (chosen when
+  // publishing, see pickAuthor); rows from before saved_by existed (no such
+  // field at all) only have author, which then meant both.
+  const savedBy = (row) => (row ? ('saved_by' in row ? row.saved_by : row.author) : null) || null;
+
+  /* ── "Who wrote this solution?" ──
+     Asked on every publish, because one editor may polish another's
+     solution. The signed-in editor is preselected (Enter publishes), the
+     row's current credit comes next, then every other active editor.
+     Resolves '' for yourself, another editor's name, or null if cancelled. */
+  let authBack = null;
+  function pickAuthor() {
+    return new Promise(async (resolve) => {
+      if (authBack) authBack.remove();
+      let list = editorsCache;
+      if (!list) { try { list = editorsCache = await SolutionStore.editors(); } catch (e) { list = []; } }
+      const credit = curRow && curRow.author;
+      const opts = [{ v: '', name: editorName, note: 'you' }];
+      if (credit && credit !== editorName) opts.push({ v: credit, name: credit, note: curRow.status === 'published' ? 'latest publish' : 'credited so far' });
+      (list || []).forEach((ed) => { if (ed.name !== editorName && ed.name !== credit) opts.push({ v: ed.name, name: ed.name, note: '' }); });
+
+      const back = mk('div', 'ed-lc-back');
+      const box = mk('div', 'ed-lc ed-auth');
+      box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', 'edAuthTitle');
+      const head = mk('div', 'ed-lc-head');
+      const title = mk('span', 'ed-lc-title', 'Who wrote this solution?'); title.id = 'edAuthTitle';
+      head.append(title);
+      const body = mk('div', 'ed-auth-body');
+      body.append(mk('div', 'ed-lc-hint', 'Shown on the site as “Solution by @name”.'));
+      const group = mk('div', 'ed-auth-list'); group.setAttribute('role', 'radiogroup');
+      opts.forEach((o, i) => {
+        const lab = mk('label', 'ed-auth-opt');
+        const r = mk('input'); r.type = 'radio'; r.name = 'edAuth'; r.value = o.v; r.checked = i === 0;
+        const nm = mk('b', null, o.name ? '@' + o.name : 'You');
+        lab.append(r, nm);
+        if (o.note && o.name) lab.append(mk('span', 'ed-lc-muted', o.note));
+        group.append(lab);
+      });
+      body.append(group, mk('div', 'ed-lc-muted ed-auth-keys', 'Enter publishes · ↑↓ choose · Esc cancels'));
+      const foot = mk('div', 'ed-cmp-foot');
+      const done = (v) => {
+        document.removeEventListener('keydown', onKey, true);
+        back.remove(); if (authBack === back) authBack = null;
+        resolve(v);
+      };
+      const chosen = () => { const r = group.querySelector('input:checked'); return r ? r.value : ''; };
+      const cancel = mkBtn('ed-abtn', 'Cancel', () => done(null));
+      foot.append(mkBtn('ed-abtn primary', 'Publish', () => done(chosen())), cancel);
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); }
+        else if (e.key === 'Enter' && document.activeElement !== cancel) { e.preventDefault(); e.stopPropagation(); done(chosen()); }
+      };
+      back.addEventListener('pointerdown', (e) => { if (e.target === back) done(null); });
+      box.append(head, body, foot);
+      back.append(box);
+      document.body.append(back);
+      authBack = back;
+      document.addEventListener('keydown', onKey, true);
+      group.querySelector('input:checked').focus({ preventScroll: true });   // arrows move the choice
+    });
+  }
+
+  // Publish after asking who wrote it; false when cancelled or failed.
+  async function publishPicked() {
+    const who = await pickAuthor();
+    if (who === null) { setMsg('Publishing cancelled.', ''); return false; }
+    return doSave('published', undefined, who || undefined);
+  }
+
+  // The figure in a saved row, for "Current state". Published: the one
+  // readers see (the selected kind, if it has steps). Draft: which texts
+  // are stored, since both kinds are kept.
+  function savedFigLabel(row, shown) {
+    const f = (row && row.figure) || {};
+    const isSvg = f.kind === 'svg';
+    if (shown) {
+      const has = (f.steps || []).some((s) => s && s.svg);
+      return !has ? 'no figure' : isSvg ? 'SVG' : 'TikZ';
+    }
+    const t = !!(f.tikz || '').trim(), s = !!(f.svgSrc || '').trim();
+    return t && s ? 'TikZ + SVG' : s ? 'SVG' : t ? 'TikZ' : 'no figure';
   }
 
   function refreshState() {
@@ -1229,33 +1960,43 @@ function toggleTheme() {
     stPill.className = 'ed-pill ' + (status === 'published' ? 'pub' : status === 'draft' ? 'draft' : dirty ? 'dirty' : 'none');
     stPill.textContent = status === 'published' ? 'published' : status === 'draft' ? 'draft' : dirty ? 'unsaved' : 'empty';
 
-    $('edStCurrent').textContent = status === 'published' ? 'Published — visible on the site'
-      : status === 'draft' ? 'Draft — not visible on the site'
+    $('edStCurrent').textContent = status === 'published' ? `Published (${savedFigLabel(curRow, true)})`
+      : status === 'draft' ? `Draft (${savedFigLabel(curRow, false)})`
       : 'Nothing saved for this problem yet';
     $('edStSync').textContent = dirty ? (curRow ? 'Unsaved changes in this window' : 'Not saved yet')
       : curRow ? 'Matches the database' : 'Empty';
     $('edStWhen').textContent = curRow ? fmtWhen(curRow.updated_at) : '—';
-    $('edStAuthor').textContent = (curRow && curRow.author) || '—';
+    // Who saved it, and who the site credits when that is someone else.
+    const by = curRow && savedBy(curRow);
+    $('edStAuthor').textContent = !curRow ? '—'
+      : (by ? '@' + by : '—') + (curRow.author && curRow.author !== by ? ` · credited to @${curRow.author}` : '');
     $('edStStale').textContent = curRow ? (curRow.problem_hash && curStale === true ? 'the problem changed since this was written' : 'no') : '—';
     $('edStStale').className = (curRow && curStale === true) ? 'ed-stale' : '';
 
     const empty = !hasContent(drafts[key]);
     $('edBtnPublish').disabled = empty || missingSvg;
-    $('edBtnPublish').textContent = status === 'published' ? (dirty ? 'Publish changes' : 'Published') : 'Publish';
+    // Published and unchanged: nothing to publish, but the credit can still change.
+    $('edBtnPublish').textContent = status === 'published' ? (dirty ? 'Publish changes' : 'Change credit…') : 'Publish';
     $('edBtnSave').disabled = empty || !dirty;
     $('edBtnUnpublish').disabled = status !== 'published';
     $('edBtnReload').disabled = !curRow;
     $('edBtnClear').disabled = !curRow && empty;
-    if (missingSvg && !empty) setMsg('Waiting for the figure to compile before it can be published.', '');
+    if (missingSvg && !empty) setMsg(figKind(drafts[key]) === 'svg'
+      ? 'The figure has nothing to show yet, so it can’t be published.'
+      : 'Waiting for the figure to compile before it can be published.', '');
     else if (stMsg.className.indexOf('ok') === -1 && stMsg.className.indexOf('err') === -1) setMsg('');
   }
 
-  async function doSave(status) {
+  // expected: the stored version this save may replace (default: the one
+  // this window last saw); "Overwrite with mine" passes the newer one.
+  // author: who to credit when publishing (default: you).
+  async function doSave(status, expected, author) {
     const key = cur.key;
     setMsg('Saving…', '');
     try {
       const problem_hash = await problemHashOf(cur);
-      const row = await SolutionStore.save(key, Object.assign(payloadOf(key), { status, problem_hash }), curRow ? curRow.updated_at : null);
+      const exp = expected !== undefined ? expected : (curRow ? curRow.updated_at : null);
+      const row = await SolutionStore.save(key, Object.assign(payloadOf(key), { status, problem_hash, author }), exp);
       if (cur.key !== key) return;                           // moved on meanwhile
       curRow = row;
       curStale = false;
@@ -1267,9 +2008,15 @@ function toggleTheme() {
       return true;
     } catch (e) {
       if (e && e.conflict) {
+        const them = e.current || null;
+        const who = them && savedBy(them) ? '@' + savedBy(them) : 'Someone else';
         setMsg('', 'err');
-        askConfirm('Someone else saved this problem while you were editing it. Loading their version will erase what is in your window.',
-          'Load theirs', () => doReload());
+        setStateOpen(true);
+        askConfirm(`${who} saved this problem${them ? ` (${fmtWhen(them.updated_at)})` : ''} while you were editing it. Loading their version erases what is in your window; overwriting replaces theirs with yours.`,
+          'Load theirs', () => doReload(), {
+            compare: () => them || SolutionStore.get(key),
+            more: [{ label: 'Overwrite with mine', run: () => doSave(status, them ? them.updated_at : null, author) }],
+          });
       } else if (e && e.auth) {
         setMsg('Your access key was not accepted. Tap your @name at the top to sign out and enter it again.', 'err');
       } else {
@@ -1282,9 +2029,13 @@ function toggleTheme() {
 
   // The editable fields for a stored row.
   function draftFromRow(row) {
+    const f = row.figure || {};
     return {
-      tikz: (row.figure && row.figure.tikz) || '',
-      captions: ((row.figure && row.figure.steps) || []).map((s) => s.caption || ''),
+      kind: f.kind === 'svg' ? 'svg' : 'tikz',
+      tikz: f.tikz || '',
+      svgSrc: f.svgSrc || '',
+      svgBox: f.svgBox || '',
+      captions: (f.steps || []).map((s) => s.caption || ''),
       solution: row.solution || '',
       scale: figScaleOf(row.figure),
     };
@@ -1315,15 +2066,83 @@ function toggleTheme() {
     }
   }
 
-  $('edBtnPublish').addEventListener('click', () => requestPublish());
-  $('edBtnSave').addEventListener('click', () => doSave('draft'));
+  /* "Check state": reads this problem's row again and updates the state
+     panel and the sidebar dot. The fields are never touched — a newer
+     version shows up as "Unsaved changes in this window", and Load from
+     database takes it. */
+  async function checkState() {
+    const key = cur.key;
+    const before = curRow;
+    setMsg('Checking…', '');
+    try {
+      const row = await SolutionStore.get(key);
+      if (cur.key !== key) return;
+      curRow = row;
+      curStale = row && row.problem_hash ? (row.problem_hash !== await problemHashOf(cur)) : null;
+      if (cur.key !== key) return;
+      if (row) serverIndex[key] = { status: row.status, updated_at: row.updated_at };
+      else delete serverIndex[key];
+      markItem(key);
+      refreshState();
+      const by = row && savedBy(row) ? ` by @${savedBy(row)}` : '';
+      setMsg(!row ? (before ? 'Checked: it was deleted from the database.' : 'Checked: nothing is stored for this problem.')
+        : before && before.updated_at === row.updated_at ? 'Checked: nothing changed in the database.'
+        : `Checked: the database has a newer version (saved${by}, ${fmtWhen(row.updated_at)}).`, 'ok');
+    } catch (e) {
+      setMsg(e && e.auth ? 'Your access key was not accepted. Tap your @name at the top to sign out and enter it again.'
+        : 'Could not check: ' + (e && e.message ? e.message : e), 'err');
+    }
+  }
+  $('edBtnCheck').addEventListener('click', () => { if (cur) checkState(); });
+
+  $('edBtnPublish').addEventListener('click', () => {
+    if (curRow && curRow.status === 'published' && !isDirty(cur.key)) changeCredit();
+    else requestPublish();
+  });
+
+  // "Change credit…": the published version as it is, credited to someone
+  // else. Same question as publishing; nothing is saved if the answer is
+  // who is already credited. Only the credit is sent (set-credit), never
+  // this window's text — and if the row changed since it was loaded, the
+  // server refuses, so a newer version is never replaced by this copy.
+  async function changeCredit() {
+    const key = cur.key;
+    const who = await pickAuthor();
+    if (who === null || !cur || cur.key !== key) return;
+    const name = who || editorName;
+    if (name && name === curRow.author) { setMsg(`Already credited to @${name}.`, 'ok'); return; }
+    setMsg('Saving…', '');
+    try {
+      const row = await SolutionStore.setCredit(key, who || null, curRow.updated_at);
+      if (cur.key !== key) return;
+      curRow = row;
+      serverIndex[key] = { status: row.status, updated_at: row.updated_at };
+      markItem(key);
+      refreshState();
+      setMsg(name ? `Credit changed to @${name}.` : 'Credit changed.', 'ok');
+    } catch (e) {
+      if (e && e.conflict) {
+        const them = e.current || null;
+        const by = them && savedBy(them) ? '@' + savedBy(them) : 'Someone else';
+        setMsg('', 'err');
+        setStateOpen(true);
+        askConfirm(`${by} changed this solution${them ? ` (${fmtWhen(them.updated_at)})` : ''} after you opened it, so the credit was not changed. Load their version, check it, then change the credit.`,
+          'Load theirs', () => doReload(), { compare: () => them || SolutionStore.get(key) });
+      } else if (e && e.auth) {
+        setMsg('Your access key was not accepted. Tap your @name at the top to sign out and enter it again.', 'err');
+      } else {
+        setMsg('Could not change the credit: ' + (e && e.message ? e.message : e), 'err');
+      }
+    }
+  }
+  $('edBtnSave').addEventListener('click', () => requestSaveDraft());
   $('edBtnUnpublish').addEventListener('click', () => {
     askConfirm('Unpublishing hides this solution on the site immediately. The text stays here as a draft.',
       'Unpublish', () => doSave('draft'));
   });
   $('edBtnReload').addEventListener('click', () => {
     askConfirm('This loads the latest version from the database and erases everything in this window for this problem.',
-      'Load and erase', () => doReload());
+      'Load and erase', () => doReload(), { compare: () => SolutionStore.get(cur.key) });
   });
   $('edBtnClear').addEventListener('click', () => {
     askConfirm('This deletes the stored solution for this problem and empties the fields. It cannot be undone.',
@@ -1336,7 +2155,7 @@ function toggleTheme() {
           delete serverIndex[key];
           delete drafts[key];
           persistDrafts();
-          curRow = null; curStale = null; curSvgs = []; curSvgSrc = '';
+          curRow = null; curStale = null; curSvgs = []; curSvgKey = '';
           loadIntoFields();
           markItem(key);
           refreshState();
@@ -1358,22 +2177,26 @@ function toggleTheme() {
   // Puts the current draft into the fields and refreshes both previews.
   function loadIntoFields() {
     const d = draft();
-    tikzEl.disabled = solEl.disabled = scaleEl.disabled = false;
-    tikzEl.value = d.tikz;
+    if (lcBack) closeLayers();
+    tikzEl.disabled = svgEl.disabled = svgBoxEl.disabled = solEl.disabled = scaleEl.disabled = false;
+    tikzEl.value = d.tikz || '';
+    svgEl.value = d.svgSrc || '';
+    svgBoxEl.value = d.svgBox || '';
+    showFigKind(figKind(d));
     scaleEl.value = draftScale(d).toFixed(2);
     applyScale();
     // Per problem: figure fields open only when there is a figure. Runs
     // again after an automatic load from the database, which then opens them.
-    setFigOpen(!!d.tikz.trim());
+    setFigOpen(anyFigSrc(d));
     solEl.value = d.solution;
     viewStep = 1;
-    stepState = detectSteps(d.tikz);
+    stepState = detectFig(d);
     renderCaptions();
     renderSolPreview();
     showWarn(null); showLog(null);
-    curSvgs = []; curSvgSrc = '';
-    if (d.tikz.trim()) { renderViewer(); scheduleCompile(); }
-    else { clearStage('No figure'); setStatus('', ''); renderViewer(); }
+    curSvgs = []; curSvgKey = '';
+    if (figSrc(d).trim()) { renderViewer(); scheduleCompile(); }
+    else { clearTimeout(compileTimer); compileGen++; clearStage('No figure'); setStatus('', ''); renderViewer(); }
   }
 
   // reveal: expand the problem's quiz in the sidebar. Off only for the
@@ -1465,9 +2288,14 @@ function toggleTheme() {
     return out;
   }
   function prePublishIssues(key) {
-    const d = drafts[key] || { tikz: '', captions: [], solution: '' };
+    const d = drafts[key] || emptyDraft();
     const issues = [];
-    const n = d.tikz.trim() ? detectSteps(d.tikz).n : 0;
+    const n = figSrc(d).trim() ? detectFig(d).n : 0;
+    if (n && figKind(d) === 'svg') {
+      const fixed = svgfFixedColors(d.svgSrc);
+      if (fixed.length) issues.push(`${fixed.length} colour${fixed.length > 1 ? 's' : ''} in the figure won’t follow the reader’s theme (${fixed.slice(0, 4).map((c) => c.key).join(', ')}${fixed.length > 4 ? ', …' : ''}). Map them in Layers & colours.`);
+      if ((d.svgBox || '').trim() && !svgfBoxString(d.svgBox)) issues.push('The crop box is not four numbers, so the box is found automatically.');
+    }
     if (!d.solution.trim()) issues.push('The solution text is empty.');
     issues.push(...texIssues(d.solution, 'the solution'));
     (d.captions || []).forEach((c, i) => {
@@ -1492,9 +2320,11 @@ function toggleTheme() {
       return false;
     }
     const issues = prePublishIssues(key);
-    if (!issues.length) return doSave('published');
+    const ow = overwriteWarning('published');
+    if (!issues.length && !ow) return publishPicked();
     setStateOpen(true);
-    askConfirm('Before publishing, check:\n• ' + issues.join('\n• '), 'Publish anyway', () => doSave('published'));
+    const text = [ow && ow.text, issues.length && 'Before publishing, check:\n• ' + issues.join('\n• ')].filter(Boolean).join('\n\n');
+    askConfirm(text, ow ? ow.label : 'Publish anyway', () => publishPicked(), ow ? { compare: () => curRow } : {});
     return false;
   }
 
@@ -1510,22 +2340,26 @@ function toggleTheme() {
     if (!hasContent(drafts[key]) && !curRow) { toast('Nothing to save yet.'); return; }
     if (!isDirty(key)) { toast('Already saved.'); return; }
     const published = curRow && curRow.status === 'published';
+    // A confirmation waiting in the state panel is not a failure.
+    const asked = () => !stNote.hidden;
     if (published) {
       const ok = await requestPublish();
       if (ok) toast('Published changes.', 'ok');
+      else if (asked()) toast('Confirm in the state panel.');
       return;
     }
     toast('Saving…');
-    const ok = await doSave('draft');
+    const ok = await requestSaveDraft();
     if (ok) toast('Draft saved.', 'ok');
+    else if (asked()) toast('Confirm in the state panel.');
     else { toast('Could not save. See the state panel.', 'err'); setStateOpen(true); }
   });
 
   /* ───────────────────────── local version history ─────────────────────────
      Earlier versions of each problem, kept ONLY in this browser
      (localStorage) — nothing is added to the database. Figures are kept as
-     TikZ source, not SVG, so a restored version recompiles; that keeps the
-     store small.
+     source (TikZ or SVG text), not compiled SVG, so a restored version
+     recompiles; that keeps the store small.
 
      A version is kept: on every save/publish, before anything replaces the
      fields (load from database, delete, restoring another version), and
@@ -1557,7 +2391,8 @@ function toggleTheme() {
     }
   }
   const histBody = (d) => ({
-    tikz: d.tikz || '', captions: (d.captions || []).slice(), solution: d.solution || '', scale: draftScale(d),
+    kind: figKind(d), tikz: d.tikz || '', svgSrc: d.svgSrc || '', svgBox: d.svgBox || '',
+    captions: (d.captions || []).slice(), solution: d.solution || '', scale: draftScale(d),
   });
   const histSame = (a, b) => JSON.stringify(histBody(a)) === JSON.stringify(histBody(b));
   function histSnapshot(key, label) {
@@ -1608,6 +2443,18 @@ function toggleTheme() {
     closeFloat();
     toast(`Restored the version from ${fmtAgo(v.at)}. Save to keep it.`, 'ok');
   }
+  // A kept version next to the window. Its figure was kept as source, so it
+  // is built here (SVG at once, TikZ through the normal TeX queue).
+  function previewHistory(key, v) {
+    closeFloat();
+    const d = histBody(v);
+    showCompare({
+      d, steps: stepsForDraft(d),
+      title: `Local history · ${v.label}`,
+      sub: `kept ${new Date(v.at).toLocaleString()} · ${fmtAgo(v.at)} · this browser only`,
+    }, histSame(v, draft()) ? [] : [{ label: 'Restore', run: () => histRestore(key, v) }]);
+  }
+
   function openHistory() {
     if (!cur) return;
     const key = cur.key;
@@ -1632,15 +2479,21 @@ function toggleTheme() {
         const lbl = document.createElement('b'); lbl.textContent = v.label;
         const when = document.createElement('span'); when.textContent = ' · ' + fmtAgo(v.at); when.title = new Date(v.at).toLocaleString();
         top.append(lbl, when);
-        const peek = document.createElement('div'); peek.className = 'ed-hist-peek';
-        const steps = v.tikz.trim() ? detectSteps(v.tikz).n : 0;
-        const first = (v.solution.trim().split('\n')[0] || '(no solution text)').slice(0, 70);
-        peek.textContent = (steps ? `figure · ${steps} step${steps > 1 ? 's' : ''} · ` : '') + first;
-        info.append(top, peek);
+        // Just what kind of figure it had; Preview shows the rest.
+        const steps = figSrc(v).trim() ? detectFig(v).n : 0;
+        info.append(top);
+        if (steps) {
+          const peek = document.createElement('div'); peek.className = 'ed-hist-peek';
+          peek.textContent = `${figKind(v) === 'svg' ? 'SVG' : 'TikZ'} figure · ${steps} step${steps > 1 ? 's' : ''}`;
+          info.append(peek);
+        }
+        const same = histSame(v, now);
+        const pv = mkBtn('ed-abtn', 'Preview', () => previewHistory(key, v));
+        pv.title = 'This version next to what is in the window';
         const btn = document.createElement('button'); btn.className = 'ed-abtn';
-        if (histSame(v, now)) { btn.textContent = 'Current'; btn.disabled = true; }
+        if (same) { btn.textContent = 'Current'; btn.disabled = true; }
         else { btn.textContent = 'Restore'; btn.addEventListener('click', () => histRestore(key, v)); }
-        row.append(info, btn);
+        row.append(info, pv, btn);
         box.appendChild(row);
       });
       pop.appendChild(box);
@@ -1941,7 +2794,25 @@ function toggleTheme() {
     ta.addEventListener('mousedown', () => { close(); endStops(); });
     window.addEventListener('resize', close);
   }
+  // SVG box: the same start-of-line completion, for the usual shapes.
+  // Colours are the theme ones (#000 text, #f00 / #00f accents, #eee surface).
+  const SVG_SNIPPETS = [
+    { p: 'layer', d: 'Layer: appears at the next step', b: '<g data-layer="${1:Name}">\n  $0\n</g>' },
+    { p: 'layersteps', d: 'Layer with steps of its own (data-step="2" on an element inside)', b: '<g data-layer="${1:Name}" data-steps="${2:2}">\n  $0\n</g>' },
+    { p: 'line', d: 'Line', b: '<line x1="${1:0}" y1="${2:0}" x2="${3:100}" y2="${4:0}" stroke="${5:#000}" stroke-width="${6:2}"/>' },
+    { p: 'arrow', d: 'Arrow (uses an arrowhead marker)', b: '<line x1="${1:0}" y1="${2:0}" x2="${3:100}" y2="${4:0}" stroke="${5:#f00}" stroke-width="2" marker-end="url(#${6:head-red})"/>' },
+    { p: 'arrowhead', d: 'Arrowhead marker (one per colour)', b: '<defs>\n  <marker id="${1:head-red}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">\n    <path d="M0 0 10 5 0 10z" fill="${2:#f00}"/>\n  </marker>\n</defs>' },
+    { p: 'dashed', d: 'Dashed line', b: '<line x1="${1:0}" y1="${2:0}" x2="${3:100}" y2="${4:0}" stroke="${5:#000}" stroke-width="1.5" stroke-dasharray="6 4"/>' },
+    { p: 'rect', d: 'Rectangle (block)', b: '<rect x="${1:0}" y="${2:0}" width="${3:60}" height="${4:40}" fill="${5:#eee}" stroke="#000" stroke-width="2"/>' },
+    { p: 'circle', d: 'Circle', b: '<circle cx="${1:0}" cy="${2:0}" r="${3:20}" fill="none" stroke="${4:#000}" stroke-width="2"/>' },
+    { p: 'dot', d: 'Filled point', b: '<circle cx="${1:0}" cy="${2:0}" r="3" fill="${3:#000}"/>' },
+    { p: 'polygon', d: 'Polygon (incline, triangle…)', b: '<polygon points="${1:0,100 160,100 160,20}" fill="${2:#eee}" stroke="#000" stroke-width="2"/>' },
+    { p: 'path', d: 'Path', b: '<path d="M${1:0 0} L${2:100 0}" fill="none" stroke="${3:#000}" stroke-width="2"/>' },
+    { p: 'text', d: 'Text label', b: '<text x="${1:0}" y="${2:0}" font-size="${3:16}" font-style="italic" fill="${4:#000}">${5:F}</text>' },
+  ];
+
   attachSnippets(tikzEl, TIKZ_SNIPPETS, 'line');
+  attachSnippets(svgEl, SVG_SNIPPETS, 'line');
   attachSnippets(solEl, SOLUTION_SNIPPETS, 'cmd');
 
 
@@ -2116,6 +2987,8 @@ function toggleTheme() {
     $('edWho').append(lbl, who, face);
     showSiteIdenticon();
     try { serverIndex = await SolutionStore.index(); } catch (e) { serverIndex = {}; }
+    // For the "Who wrote this solution?" list, so publishing never waits on it.
+    SolutionStore.editors().then((l) => { editorsCache = editorsCache || l; }).catch(() => {});
     if (SolutionStore.isMock) {
       const w = $('edWho');
       const m = document.createElement('span'); m.className = 'ed-mock'; m.textContent = ' · offline stand-in';

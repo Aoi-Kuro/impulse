@@ -36,6 +36,51 @@ const SOLUTIONS_REST = `${SUPABASE_URL}/rest/v1/problem_solutions`;
 const SOLUTIONS_INDEX_CACHE_KEY = STORAGE_PREFIX + '-solutions-index';
 const SOLUTIONS_INDEX_TTL_MS = 5 * 60 * 1000;
 const SOLUTIONS_INDEX_POLL_MS = 60 * 60 * 1000;   // re-check while a tab stays open and visible
+// Columns of one published row — also what Go offline downloads (js/offline-mode.js).
+const SOLUTIONS_ROW_COLUMNS = 'problem_key,solution,figure,author,author_link,problem_hash,updated_at';
+
+// ── Full offline mode (js/offline-mode.js) ──
+// While the 24h window runs, every request to Supabase is refused by
+// sw.js, so solutions come from the copy "Go offline" stored in the
+// offline cache instead. Must match OFFLINE_SOLUTIONS_URL in
+// js/offline-mode.js. The window is read straight from flux_settings, since
+// settings.js/offline-mode.js load later (tier 2) than this file.
+const SOLUTIONS_OFFLINE_URL = 'offline-data/solutions.json';
+let solutionsOfflineRows = null;    // the downloaded rows, read once per window
+
+function solutionsOfflineActive() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('flux_settings') || 'null');
+    const until = raw && raw.offline && raw.offline.until;
+    return typeof until === 'number' && Date.now() < until;
+  } catch (e) {
+    return false;
+  }
+}
+
+/** The downloaded rows, or [] when there is no download to read. */
+async function loadOfflineSolutionRows() {
+  if (solutionsOfflineRows) return solutionsOfflineRows;
+  let rows = [];
+  try {
+    const res = typeof caches !== 'undefined' ? await caches.match(SOLUTIONS_OFFLINE_URL) : null;
+    if (res) rows = await res.json();
+  } catch (e) { /* missing or unreadable: no solutions offline */ }
+  solutionsOfflineRows = Array.isArray(rows) ? rows : [];
+  return solutionsOfflineRows;
+}
+
+/** Index rows ({ problem_key, updated_at }) from the network or, while
+    offline mode is active, from the download. null on a server error. */
+async function solutionsIndexRows() {
+  if (solutionsOfflineActive()) return loadOfflineSolutionRows();
+  solutionsOfflineRows = null;
+  const r = await fetch(`${SOLUTIONS_REST}?select=problem_key,updated_at&status=eq.published`, {
+    headers: solutionsRestHeaders(),
+    cache: 'no-store',
+  });
+  return r.ok ? r.json() : null;
+}
 
 let solutionsIndex = null;          // Set of problem_key with a published solution
 let solutionsIndexPromise = null;   // in-flight load, so parallel callers share one request
@@ -54,11 +99,7 @@ function solutionsRestHeaders() {
 function fetchSolutionsIndex() {
   if (solutionsIndexPromise) return solutionsIndexPromise;
 
-  solutionsIndexPromise = fetch(`${SOLUTIONS_REST}?select=problem_key,updated_at&status=eq.published`, {
-    headers: solutionsRestHeaders(),
-    cache: 'no-store',
-  })
-    .then((r) => (r.ok ? r.json() : null))
+  solutionsIndexPromise = solutionsIndexRows()
     .then((rows) => {
       if (!rows) return solutionsIndex || new Set();      // keep what we had on a server error
       const fresh = new Set(rows.map((r) => r.problem_key));

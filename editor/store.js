@@ -124,7 +124,9 @@ const SolutionStore = (function () {
   }
 
   /** Create or replace a row. expectedUpdatedAt guards against the other
-      editor having saved in the meantime (the server answers 409). */
+      editor having saved in the meantime (the server answers 409).
+      payload.author: who to credit when publishing (default: this key's
+      owner; the server checks it is an active editor). */
   async function save(problemKey, payload, expectedUpdatedAt) {
     const d = await call('save', {
       problem_key: problemKey,
@@ -132,6 +134,19 @@ const SolutionStore = (function () {
       figure: payload.figure,
       status: payload.status,
       problem_hash: payload.problem_hash || null,
+      expected_updated_at: expectedUpdatedAt || null,
+      author: payload.author || null,
+    });
+    return d.row;
+  }
+
+  /** Changes only who is credited on an existing row (never its content).
+      Rejects with err.conflict (and err.current) when the row changed after
+      expectedUpdatedAt. */
+  async function setCredit(problemKey, author, expectedUpdatedAt) {
+    const d = await call('set-credit', {
+      problem_key: problemKey,
+      author: author || null,
       expected_updated_at: expectedUpdatedAt || null,
     });
     return d.row;
@@ -158,5 +173,5 @@ const SolutionStore = (function () {
     return { name: d.name, key: d.key };
   }
 
-  return { whoami, editors, index, get, save, remove, exportAll, createEditor, isMock: false };
+  return { whoami, editors, index, get, save, setCredit, remove, exportAll, createEditor, isMock: false };
 })();

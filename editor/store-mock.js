@@ -64,13 +64,31 @@ const SolutionStore = (function () {
       solution: payload.solution,
       figure: payload.figure,
       status: payload.status,
-      author: payload.author || null,
-      author_link: payload.author_link || null,
+      // As on the server: publishing sets the credit, a draft keeps it;
+      // saved_by would be this key's owner (there is none here).
+      author: payload.status === 'published' ? (payload.author || null) : (cur ? cur.author : null),
+      author_link: null,
+      saved_by: null,
       updated_at: new Date().toISOString(),
     };
     all[problemKey] = row;
     write(all);
     return wait(row);
+  }
+
+  /** Only the credit of an existing row, as the server's set-credit. */
+  async function setCredit(problemKey, author, expectedUpdatedAt) {
+    const all = read();
+    const cur = all[problemKey];
+    if (!cur) return wait(Promise.reject(new Error('Nothing is stored for this problem.')));
+    if (expectedUpdatedAt && cur.updated_at !== expectedUpdatedAt) {
+      const err = new Error('Someone else saved this problem while you were editing it.');
+      err.conflict = true; err.current = cur;
+      return wait(Promise.reject(err));
+    }
+    Object.assign(cur, { author: author || null, author_link: null, saved_by: null, updated_at: new Date().toISOString() });
+    write(all);
+    return wait(cur);
   }
 
   /** Remove the row entirely (the problem goes back to "nothing stored"). */
@@ -88,5 +106,5 @@ const SolutionStore = (function () {
 
   async function createEditor() { throw new Error('Not available without the database.'); }
 
-  return { whoami, editors, index, get, save, remove, exportAll, createEditor, isMock: true };
+  return { whoami, editors, index, get, save, setCredit, remove, exportAll, createEditor, isMock: true };
 })();

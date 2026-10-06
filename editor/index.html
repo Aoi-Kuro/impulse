@@ -162,11 +162,11 @@
 
     <div class="ed-state" id="edState">
       <div class="ed-state-rows">
-        <div class="ed-state-row">Current state: <b id="edStCurrent">—</b></div>
-        <div class="ed-state-row">Sync state: <b id="edStSync">—</b></div>
-        <div class="ed-state-row">Last saved: <b id="edStWhen">—</b></div>
-        <div class="ed-state-row">By: <b id="edStAuthor">—</b></div>
-        <div class="ed-state-row">Problem changed since: <b id="edStStale">—</b></div>
+        <div class="ed-state-row"><span>Current state:</span> <b id="edStCurrent">—</b></div>
+        <div class="ed-state-row"><span>Sync state:</span> <b id="edStSync">—</b></div>
+        <div class="ed-state-row"><span>Last saved:</span> <b id="edStWhen">—</b></div>
+        <div class="ed-state-row"><span>By:</span> <b id="edStAuthor">—</b></div>
+        <div class="ed-state-row"><span>Problem changed since:</span> <b id="edStStale">—</b></div>
       </div>
       <div class="ed-state-actions">
         <button class="ed-abtn primary" id="edBtnPublish">Publish</button>
@@ -175,6 +175,7 @@
         <button class="ed-abtn danger" id="edBtnReload">Load from database…</button>
         <button class="ed-abtn danger" id="edBtnClear">Clear this problem…</button>
         <button class="ed-abtn" id="edBtnHistory" title="Earlier versions of this problem kept in this browser">History…</button>
+        <button class="ed-abtn" id="edBtnCheck" title="Read this problem from the database again and update the state above; the fields are left as they are">Check state</button>
         <button class="ed-abtn" id="edBtnExport">Export all as JSON</button>
       </div>
       <div class="ed-state-msg" id="edStMsg"></div>
@@ -190,17 +191,45 @@
       <!-- Left: inputs -->
       <section class="ed-left" id="edLeft">
         <div class="ed-field ed-figpart">
-          <div class="ed-label"><span>Figure · TikZ</span></div>
-          <div class="ed-preamble-row">
-            <details class="ed-preamble">
-              <summary>Preamble (added automatically)</summary>
-              <pre id="edPreamble"></pre>
-            </details>
-            <button type="button" class="ed-hintbtn" id="edColorHint"
-              title="How c1, c2, c3 and c4 look in every theme">🎨 Colors</button>
+          <div class="ed-label">
+            <span>Figure</span>
+            <!-- How this problem's figure is written. Each kind keeps its own
+                 text in the draft; only the selected one is saved. -->
+            <span class="ed-seg" role="group" aria-label="Figure kind">
+              <button type="button" class="ed-segbtn" data-kind="tikz" aria-pressed="true">TikZ</button>
+              <button type="button" class="ed-segbtn" data-kind="svg" aria-pressed="false">SVG</button>
+            </span>
           </div>
-          <textarea class="ed-input ed-code" id="edTikz" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off" disabled
-            placeholder="\begin{tikzpicture}&#10;  \useasboundingbox (0,0) rectangle (8,5);&#10;  \draw (0,0) rectangle (3,2);&#10;  \onstep{2}{\draw[c1,->] (1.5,1) -- (4,1);}&#10;\end{tikzpicture}"></textarea>
+          <div class="ed-figsrc" id="edTikzPart">
+            <div class="ed-preamble-row">
+              <details class="ed-preamble">
+                <summary>Preamble</summary>
+                <pre id="edPreamble"></pre>
+              </details>
+              <button type="button" class="ed-hintbtn" id="edColorHint"
+                title="How c1, c2, c3 and c4 look in every theme">🎨 Colors</button>
+            </div>
+            <textarea class="ed-input ed-code" id="edTikz" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off" disabled
+              placeholder="\begin{tikzpicture}&#10;  \useasboundingbox (0,0) rectangle (8,5);&#10;  \draw (0,0) rectangle (3,2);&#10;  \onstep{2}{\draw[c1,->] (1.5,1) -- (4,1);}&#10;\end{tikzpicture}"></textarea>
+          </div>
+          <div class="ed-figsrc" id="edSvgPart" hidden>
+            <div class="ed-preamble-row">
+              <details class="ed-preamble">
+                <summary>How SVG figures work</summary>
+                <pre id="edSvgHelp"></pre>
+              </details>
+              <button type="button" class="ed-hintbtn" id="edColorHintSvg"
+                title="How #000, #f00, #00f and #eee look in every theme">🎨 Colors</button>
+              <button type="button" class="ed-hintbtn" id="edLayersBtn" aria-haspopup="dialog"
+                title="Layers, steps and colours of this figure">Layers &amp; colours</button>
+            </div>
+            <textarea class="ed-input ed-code" id="edSvg" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off" disabled
+              placeholder="&lt;g data-layer=&quot;Block&quot;&gt;&#10;  &lt;rect x=&quot;0&quot; y=&quot;40&quot; width=&quot;60&quot; height=&quot;40&quot; fill=&quot;#eee&quot; stroke=&quot;#000&quot;/&gt;&#10;&lt;/g&gt;&#10;&lt;g data-layer=&quot;Force&quot;&gt;&#10;  &lt;line x1=&quot;60&quot; y1=&quot;60&quot; x2=&quot;140&quot; y2=&quot;60&quot; stroke=&quot;#f00&quot; stroke-width=&quot;3&quot;/&gt;&#10;&lt;/g&gt;"></textarea>
+            <label class="ed-svgbox" title="Leave empty to fit the box to what is drawn. Four numbers clip the figure to that box, like \useasboundingbox.">
+              <span>Crop box</span>
+              <input class="ed-input" id="edSvgBox" type="text" spellcheck="false" autocomplete="off" disabled placeholder="auto · or x y width height">
+            </label>
+          </div>
         </div>
 
         <div class="ed-field ed-figpart">
@@ -209,7 +238,7 @@
         </div>
 
         <div class="ed-field ed-field-grow">
-          <div class="ed-label"><span>Solution · text &amp; LaTeX</span></div>
+          <div class="ed-label"><span>Solution</span></div>
           <textarea class="ed-input ed-code ed-sol" id="edSol" spellcheck="false" autocapitalize="off" autocomplete="off" disabled
             placeholder="Write the solution here. Inline math: $F = ma$"></textarea>
         </div>
@@ -265,6 +294,7 @@
 <script src="/js/math-render.js"></script>
 <script src="/vendor/dompurify/purify.min.js"></script>
 <script src="/js/figure.js"></script>
+<script src="/editor/svg-figure.js"></script>
 <script src="/js/solution-render.js"></script>
 <script src="/vendor/tikzjax/tikzjax.js"></script>
 <!-- Swap this for /editor/store-mock.js to run the editor without a
