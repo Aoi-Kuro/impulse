@@ -245,10 +245,17 @@ function svgfOutline(src) {
 
 /* ───────────────────────── colours in a source ───────────────────────── */
 
-/** Calls fn(value, set) for every colour value in the source — presentation
-    attributes, style="", and <style> blocks — where set(newValue, alpha)
-    writes a replacement (alpha: the transparency the old value carried,
-    moved to the matching *-opacity so it isn't lost). */
+/** Calls fn(value, set, orig) for every colour value in the source —
+    presentation attributes, style="", and <style> blocks. set(newValue,
+    alpha, orig) writes a replacement (alpha: the transparency the old value
+    carried, moved to the matching *-opacity so it isn't lost).
+
+    orig is the colour a theme colour was mapped FROM in Layers & colours,
+    remembered in the source so the mapping can be changed or undone later:
+    data-was-<prop>="#ffe8cc" on the element, or a CSS comment reading
+    "was #ffe8cc" right after the value in a <style> block. set's orig: a colour to remember,
+    null to forget, undefined to leave as it is. (Stored figures never see
+    either: data- attributes and CSS are stripped when building.) */
 function svgfEachColor(wrap, fn) {
   const els = [wrap, ...wrap.querySelectorAll('*')].filter((el) => !el.localName.includes(':'));
   els.forEach((el) => {
@@ -259,9 +266,14 @@ function svgfEachColor(wrap, fn) {
       const v = String(svgfRound((isFinite(prev) ? prev : 1) * a));
       if (decls) decls.set(op, v); else el.setAttribute(op, v);
     };
+    const was = (p) => el.getAttribute('data-was-' + p);
+    const remember = (p, orig) => {
+      if (orig === undefined) return;
+      if (orig) el.setAttribute('data-was-' + p, orig); else el.removeAttribute('data-was-' + p);
+    };
     SVGF_COLOR_PROPS.forEach((p) => {
       if (!el.hasAttribute(p)) return;
-      fn(el.getAttribute(p), (nv, a) => { el.setAttribute(p, nv); setOpacity(p, a); });
+      fn(el.getAttribute(p), (nv, a, orig) => { el.setAttribute(p, nv); setOpacity(p, a); remember(p, orig); }, was(p));
     });
     const st = el.getAttribute('style');
     if (st) {
@@ -269,7 +281,7 @@ function svgfEachColor(wrap, fn) {
       let changed = false;
       SVGF_COLOR_PROPS.forEach((p) => {
         if (!decls.has(p)) return;
-        fn(decls.get(p), (nv, a) => { decls.set(p, nv); setOpacity(p, a, decls); changed = true; });
+        fn(decls.get(p), (nv, a, orig) => { decls.set(p, nv); setOpacity(p, a, decls); remember(p, orig); changed = true; }, was(p));
       });
       if (changed) el.setAttribute('style', svgfDeclText(decls));
     }
@@ -277,8 +289,14 @@ function svgfEachColor(wrap, fn) {
       let changed = false;
       const css = (el.textContent || '').replace(/([a-z-]+)(\s*:\s*)([^;}]+)/gi, (m, p, sep, v) => {
         if (!SVGF_COLOR_PROPS.includes(p.toLowerCase())) return m;
+        const memo = v.match(/\/\*\s*was\s+([^*]+?)\s*\*\//);
+        const clean = v.replace(/\/\*[\s\S]*?\*\//g, '').trim();
         let out = m;
-        fn(v.trim(), (nv) => { out = p + sep + nv; changed = true; });
+        fn(clean, (nv, a, orig) => {
+          const keep = orig === undefined ? (memo ? memo[1] : null) : orig;
+          out = p + sep + nv + (keep ? `/*was ${keep}*/` : '');
+          changed = true;
+        }, memo ? memo[1] : null);
         return out;
       });
       if (changed) el.textContent = css;
@@ -286,10 +304,14 @@ function svgfEachColor(wrap, fn) {
   });
 }
 
-/** Every distinct colour: { theme: [{ id, label, css, count }], fixed: [{ key, css, count }] }. */
+/** Every distinct colour:
+      theme:  [{ id, label, css, count }]   what follows the theme now
+      fixed:  [{ key, css, count }]         what does not
+      mapped: [{ key, css, count, theme }]  fixed colours mapped in Layers &
+                                            colours, by their original value */
 function svgfColorList(wrap) {
-  const fixed = new Map(), theme = new Map();
-  svgfEachColor(wrap, (v) => {
+  const fixed = new Map(), theme = new Map(), mapped = new Map();
+  svgfEachColor(wrap, (v, set, orig) => {
     const c = svgfColor(v);
     if (!c) return;
     const mk = svgfMarkerOf(c);
@@ -297,12 +319,18 @@ function svgfColorList(wrap) {
       const t = SVGF_THEME.find((x) => x.marker === mk) || { id: 'bg', label: 'Background', css: 'var(--bg)' };
       const e = theme.get(t.id) || { id: t.id, label: t.label, css: t.css, count: 0 };
       e.count++; theme.set(t.id, e);
+      const o = orig && svgfColor(orig);
+      if (o) {
+        const m = mapped.get(o.key) || { key: o.key, css: o.a < 1 ? o.key : o.rgb, count: 0, theme: t.id };
+        m.count++; mapped.set(o.key, m);
+      }
     } else {
       const e = fixed.get(c.key) || { key: c.key, css: c.a < 1 ? c.key : c.rgb, count: 0 };
       e.count++; fixed.set(c.key, e);
     }
   });
-  return { theme: Array.from(theme.values()), fixed: Array.from(fixed.values()).sort((a, b) => b.count - a.count) };
+  const byCount = (a, b) => b.count - a.count;
+  return { theme: Array.from(theme.values()), fixed: Array.from(fixed.values()).sort(byCount), mapped: Array.from(mapped.values()).sort(byCount) };
 }
 
 /** Colours that will NOT follow the theme (for the editor's warnings). */
@@ -700,13 +728,22 @@ function svgfOpLayerMove(src, j, dir) {
   });
 }
 
-/** Removes layer j; only an empty one (move its elements out first). */
+/** Removes layer j and everything in it. */
 function svgfOpLayerDelete(src, j) {
   return svgfEdit(src, ({ info }) => {
     const L = info.layers[j];
-    if (!L || L.items.length) return false;
+    if (!L) return false;
     svgfAdopt(info);
     svgfDetach(L.el);
+  });
+}
+
+/** Removes listed element i. */
+function svgfOpDeleteItem(src, i) {
+  return svgfEdit(src, ({ items }) => {
+    const it = items[i];
+    if (!it) return false;
+    svgfDetach(it.el);
   });
 }
 
@@ -714,15 +751,26 @@ function svgfOpNewLayer(src) {
   return svgfEdit(src, ({ root, info }) => { svgfAdopt(info); svgfNewLayer(root, info); });
 }
 
-/** Rewrites every use of a fixed colour (its svgfColor key) as theme colour themeId. */
+/** Maps a fixed colour (its svgfColor key) to theme colour themeId,
+    remembering the original. Also changes an earlier mapping of that colour
+    to another theme colour, and with themeId '' ("Keep fixed") puts the
+    original colour back. */
 function svgfOpColor(src, key, themeId) {
   const t = SVGF_THEME.find((x) => x.id === themeId);
-  if (!t) return src;
+  if (themeId && !t) return src;
   return svgfEdit(src, ({ wrap }) => {
     let hit = false;
-    svgfEachColor(wrap, (v, set) => {
+    svgfEachColor(wrap, (v, set, orig) => {
       const c = svgfColor(v);
-      if (c && c.key === key) { set(t.write, c.a); hit = true; }
+      if (!c) return;
+      const o = orig && svgfMarkerOf(c) && svgfColor(orig);
+      if (o && o.key === key) {                    // mapped earlier: re-map or restore
+        if (t) set(t.write, 1); else set(orig, 1, null);
+        hit = true;
+      } else if (t && !svgfMarkerOf(c) && c.key === key) {
+        set(t.write, c.a, c.key);
+        hit = true;
+      }
     });
     return hit;
   });

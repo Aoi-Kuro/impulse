@@ -88,7 +88,7 @@ function toggleTheme() {
     'box — fitted to what is drawn; type x y width height to clip instead',
   ].join('\n');
 
-  document.title = `${COURSE_CODE_DISPLAY} Solutions editor`;
+  document.title = 'Editorial';
   $('edGateEyebrow').textContent = `${COURSE_CODE_DISPLAY} · Solutions editor`;
   $('edPreamble').textContent = PREAMBLE_SHOWN;
   $('edSvgHelp').textContent = SVG_HELP;
@@ -1270,17 +1270,39 @@ function toggleTheme() {
     if (back && back !== svgEl && document.contains(back)) back.focus({ preventScroll: true });
   }
 
+  // Undo / redo inside the window (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, and the
+  // buttons at the bottom): the source before each change. Starts empty
+  // every time the window opens; the text box keeps its own Ctrl+Z too.
+  let lcUndo = [], lcRedo = [];
   function lcApply(op) {
     const src = svgEl.value;
     let out;
     try { out = op(src); }
     catch (e) { toast('Could not change the SVG: ' + ((e && e.message) || e), 'err'); return; }
     if (typeof out !== 'string' || out === src) { lcRender(); return; }
+    lcUndo.push(src); lcRedo = [];
     svgSetSource(out);
     lcRender();
   }
+  function lcHistory(back) {
+    const from = back ? lcUndo : lcRedo, to = back ? lcRedo : lcUndo;
+    if (!from.length) { toast(back ? 'Nothing to undo.' : 'Nothing to redo.'); return; }
+    to.push(svgEl.value);
+    svgSetSource(from.pop());
+    lcRender();
+  }
 
-  function lcKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeLayers(); } }
+  function lcKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeLayers(); return; }
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = (e.key || '').toLowerCase();
+    if (k !== 'z' && k !== 'y') return;
+    const t = e.target;
+    // While typing (a layer name, a caption) the field's own undo applies.
+    if (t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type === 'text'))) return;
+    e.preventDefault(); e.stopPropagation();
+    lcHistory(k === 'z' && !e.shiftKey);
+  }
   function closeLayers() {
     if (!lcBack) return;
     lcBack.remove();
@@ -1291,7 +1313,7 @@ function toggleTheme() {
   function openLayers() {
     if (!cur || figKind(draft()) !== 'svg' || lcBack) return;
     closeFloat(); closeColorPop();
-    lcStep = 0; lcHover = null;
+    lcStep = 0; lcHover = null; lcUndo = []; lcRedo = [];
     const back = mk('div', 'ed-lc-back');
     back.addEventListener('pointerdown', (e) => { if (e.target === back) closeLayers(); });
     const box = mk('div', 'ed-lc');
@@ -1367,12 +1389,17 @@ function toggleTheme() {
     // The old preview stays up until the new one is built, so it doesn't flash.
     const prev = prevOld || mk('div', 'ed-lc-prev fig');
     prev.className = 'ed-lc-prev fig';
-    side.append(prev, lcStepStrip(m));
+    side.append(prev, lcStepStrip(m), lcCaptions());
     const main = mk('div', 'ed-lc-main');
     main.append(lcColors(m), lcLayers(m));
     const body = mk('div', 'ed-lc-body');
     body.append(side, main);
-    const foot = mk('div', 'ed-lc-foot', 'Every change is written into the SVG text: Ctrl+Z there undoes it.');
+    const foot = mk('div', 'ed-lc-foot');
+    const undo = mkBtn('ed-lc-ibtn', 'Undo', () => lcHistory(true));
+    undo.disabled = !lcUndo.length; undo.title = 'Ctrl+Z'; undo.dataset.k = 'undo';
+    const redo = mkBtn('ed-lc-ibtn', 'Redo', () => lcHistory(false));
+    redo.disabled = !lcRedo.length; redo.title = 'Ctrl+Shift+Z'; redo.dataset.k = 'redo';
+    foot.append(mk('span', null, 'Every change is written into the SVG text.'), undo, redo);
     box.append(head, body, foot);
     main.scrollTop = scroll;
     if (focusKey) {
@@ -1382,6 +1409,53 @@ function toggleTheme() {
     lcPreview(src, prev);
   }
 
+  function lcSetStep(k) {
+    lcStep = k;
+    lcPaint();
+    const old = lcBack && lcBack.querySelector('.ed-lc-caps');
+    if (old) old.replaceWith(lcCaptions());
+  }
+
+  /* Captions, under the preview: every step's (All), or the chosen step's
+     with its rendering. The same draft captions as the Captions fields in
+     the editor, which follow along. */
+  function lcCaptions() {
+    const d = draft();
+    d.captions = d.captions || [];
+    const st = detectFig(d);
+    const n = st.n;
+    const idxs = n === 1 ? [0] : lcStep ? [lcStep - 1] : Array.from({ length: n }, (_, i) => i);
+    const w = mk('div', 'ed-lc-caps');
+    w.append(mk('h4', null, n === 1 ? 'Caption' : lcStep ? `Caption · step ${lcStep}` : 'Captions'));
+    idxs.forEach((i) => {
+      const row = mk('label', 'ed-lc-cap');
+      if (n > 1) row.append(mk('span', 'ed-lc-muted', st.labels ? st.labels[i] : `Step ${i + 1}`));
+      const inp = mk('input', 'ed-input');
+      inp.type = 'text'; inp.spellcheck = false; inp.placeholder = 'optional · $…$ allowed';
+      inp.value = d.captions[i] || ''; inp.dataset.k = 'cap:' + i;
+      row.append(inp);
+      w.append(row);
+      const view = idxs.length === 1 ? mk('div', 'sol-text ed-lc-capview') : null;
+      if (view) w.append(view);
+      let timer = null;
+      const show = () => {
+        if (!view || !view.isConnected) return;
+        if (inp.value.trim()) renderSolutionInto(view, inp.value); else view.textContent = '';
+      };
+      inp.addEventListener('input', () => {
+        d.captions[i] = inp.value;
+        persistDrafts(); markItem(); refreshState(); histMaybeAuto();
+        const main = capsEl.querySelectorAll('input')[i];
+        if (main) main.value = inp.value;
+        renderCaption();
+        clearTimeout(timer); timer = setTimeout(show, 200);
+      });
+      if (view) setTimeout(show, 0);             // typeset once it is in the page
+    });
+    if (n > 1 && !lcStep) w.append(mk('div', 'ed-lc-hint', 'Pick a step above to see its caption rendered.'));
+    return w;
+  }
+
   function lcStepStrip(m) {
     const w = mk('div', 'ed-lc-steps');
     if (m.n <= 1) {
@@ -1389,11 +1463,11 @@ function toggleTheme() {
       return w;
     }
     w.append(mk('span', 'ed-lc-hint', 'Show up to step'));
-    const all = mkBtn('ed-lc-stepbtn', 'All', () => { lcStep = 0; lcPaint(); });
+    const all = mkBtn('ed-lc-stepbtn', 'All', () => lcSetStep(0));
     all.dataset.step = '0';
     w.append(all);
     for (let k = 1; k <= m.n; k++) {
-      const b = mkBtn('ed-lc-stepbtn', String(k), () => { lcStep = k; lcPaint(); });
+      const b = mkBtn('ed-lc-stepbtn', String(k), () => lcSetStep(k));
       b.dataset.step = String(k);
       b.title = m.labels[k - 1] || '';
       w.append(b);
@@ -1405,7 +1479,7 @@ function toggleTheme() {
   function lcColors(m) {
     const sec = mk('section', 'ed-lc-sec');
     sec.append(mk('h4', null, 'Colours'));
-    const { fixed, theme } = m.colors;
+    const { fixed, theme, mapped } = m.colors;
     if (theme.length) {
       const row = mk('div', 'ed-lc-chips');
       theme.forEach((t) => {
@@ -1416,17 +1490,28 @@ function toggleTheme() {
       });
       sec.append(row);
     }
-    if (!fixed.length) {
+    if (!fixed.length && !mapped.length) {
       sec.append(mk('div', 'ed-lc-hint ok', theme.length ? 'Every colour follows the theme.' : 'No colours set: everything is drawn in the text colour.'));
       return sec;
     }
-    sec.append(mk('div', 'ed-lc-hint', 'These stay the same in every theme. Pick what each should become:'));
+    sec.append(fixed.length
+      ? mk('div', 'ed-lc-hint', 'Fixed colours stay the same in every theme. Pick what each should become (it can be changed again later):')
+      : mk('div', 'ed-lc-hint ok', 'Every colour follows the theme. Mapped colours can still be changed, or set back with Keep fixed:'));
     const opts = [['', 'Keep fixed'], ...SVGF_THEME.map((t) => [t.id, `${t.label} (${t.write})`])];
-    fixed.forEach((c) => {
-      const row = mk('div', 'ed-lc-color');
+    // Mapped colours stay listed by their original value, set to what they
+    // became, so a wrong pick is one more pick (or Keep fixed) away.
+    [...fixed.map((c) => Object.assign({ theme: '' }, c)), ...mapped].forEach((c) => {
+      const row = mk('div', 'ed-lc-color' + (c.theme ? ' mapped' : ''));
       const sw = mk('i', 'ed-lc-sw'); sw.style.background = c.css;
-      const sel = mkSelect('c:' + c.key, opts, (v) => { if (v) lcApply((s) => svgfOpColor(s, c.key, v)); });
-      row.append(sw, mk('span', 'ed-lc-colname', c.key), mk('span', 'ed-lc-muted', `×${c.count}`), sel);
+      row.append(sw, mk('span', 'ed-lc-colname', c.key), mk('span', 'ed-lc-muted', `×${c.count}`));
+      if (c.theme) {
+        const t = SVGF_THEME.find((x) => x.id === c.theme);
+        const to = mk('i', 'ed-lc-sw'); to.style.background = t ? t.css : 'var(--bg)';
+        row.append(mk('span', 'ed-lc-muted', '→'), to);
+      }
+      const sel = mkSelect('c:' + c.key + (c.theme ? ':m' : ''), opts, (v) => { if (v !== c.theme) lcApply((s) => svgfOpColor(s, c.key, v)); });
+      sel.value = c.theme;
+      row.append(sel);
       sec.append(row);
     });
     return sec;
@@ -1483,8 +1568,8 @@ function toggleTheme() {
     const down = mkBtn('ed-lc-ibtn', '↓', () => lcApply((s) => svgfOpLayerMove(s, L.j, 1)));
     down.disabled = L.j === m.layers.length - 1; down.title = 'Later (also drawn on top)'; down.dataset.k = 'd:' + L.j;
     const del = mkBtn('ed-lc-ibtn danger', '✕', () => lcApply((s) => svgfOpLayerDelete(s, L.j)));
-    del.disabled = L.items.length > 0;
-    del.title = L.items.length ? 'Move its elements out first' : 'Delete this empty layer';
+    del.title = L.items.length ? 'Delete this layer and everything in it (Ctrl+Z brings it back)' : 'Delete this empty layer';
+    del.dataset.k = 'dl:' + L.j;
     hd.append(eye, name, badge, stp, up, down, del);
     lcHoverable(hd, L.items.map((it) => it.i));
     card.append(hd);
@@ -1514,7 +1599,9 @@ function toggleTheme() {
       if (v) lcApply((src) => svgfOpMove(src, it.i, v === 'loose' || v === 'new' ? v : +v));
     });
     mv.title = 'Move to another layer';
-    row.append(mv);
+    const rm = mkBtn('ed-lc-ibtn danger', '✕', () => lcApply((src) => svgfOpDeleteItem(src, it.i)));
+    rm.title = 'Delete this element (Ctrl+Z brings it back)'; rm.dataset.k = 'x:' + it.i;
+    row.append(mv, rm);
     lcHoverable(row, [it.i]);
     return row;
   }

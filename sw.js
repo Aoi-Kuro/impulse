@@ -31,7 +31,7 @@
 // no `document`, so it can't read the data-course attribute the way every
 // other file here does. This is a manual swap item at release time —
 // change the 'phys162' prefix by hand alongside the data-course attribute.
-const CACHE_NAME = 'phys161-offline-v8';
+const CACHE_NAME = 'phys161-offline-v9';
 
 // ── Phase 4: full offline mode (js/offline-mode.js) ──
 // OFFLINE_MODE_CACHE_NAME must match that file's own copy of the same
@@ -200,16 +200,20 @@ const PRECACHE_URLS = [
   'vendor/mathjax/fonts/woff/mjx-stx-zero.woff',
 ];
 
+// cache: 'reload' skips the browser's HTTP cache, so a precache run right
+// after an update stores the new files rather than older HTTP-cached copies.
+function precacheAll() {
+  return caches.open(CACHE_NAME)
+    .then((cache) => Promise.all(
+      PRECACHE_URLS.map((url) =>
+        cache.add(new Request(url, { cache: 'reload' }))
+          .catch((err) => console.warn('[sw] precache failed:', url, err))
+      )
+    ));
+}
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => Promise.all(
-        PRECACHE_URLS.map((url) =>
-          cache.add(url).catch((err) => console.warn('[sw] precache failed:', url, err))
-        )
-      ))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(precacheAll().then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -245,9 +249,16 @@ self.addEventListener('activate', (event) => {
 // is completely unaffected.
 self.addEventListener('message', (event) => {
   if (!event.data || event.data.type !== 'purge-update-cache') return;
+  // Refill the cache right after wiping it. Without this, the purge left
+  // offline.html, its art and offline-laws.json uncached until the worker
+  // itself was next reinstalled (the page never requests them, so the
+  // revalidate path below never brings them back), and a reload with no
+  // connection then had nothing to fall back to: Chrome's ERR_FAILED page.
+  // The page is answered first so its reload isn't held up by the refill.
   event.waitUntil(
     caches.delete(CACHE_NAME).then(() => {
       if (event.ports && event.ports[0]) event.ports[0].postMessage({ ok: true });
+      return precacheAll();
     })
   );
 });
@@ -294,7 +305,15 @@ function respondDefault(event) {
   // per the comment above), cache-first can't serve something stale forever
   // — a version bump always repopulates it on the next install.
   if (event.request.mode === 'navigate') {
-    return fetch(event.request).catch(() => caches.match(OFFLINE_URL));
+    // Resolving respondWith() with undefined (offline.html missing from the
+    // cache) is what Chrome shows as ERR_FAILED, so keep a bare fallback.
+    return fetch(event.request).catch(() =>
+      caches.match(OFFLINE_URL).then((cached) => cached || new Response(
+        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        + '<title>Offline</title><p style="font-family:sans-serif;padding:2em">You are offline. Reconnect and reload.</p>',
+        { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      ))
+    );
   }
 
   if (isPrecached) {

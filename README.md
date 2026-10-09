@@ -935,10 +935,16 @@ a saved figure reopens in its kind. The logic is in `editor/svg-figure.js`.
 - **Layers & colours** (button next to 🎨 Colors): a window listing every
   layer and element with a preview (hovering a row highlights it, step buttons
   show the figure up to a step). It can hide, rename, reorder, add and delete
-  layers, set a layer's step count and each element's step, move elements
-  between layers (keeping their position and inherited styling) and map
-  fixed colours. Every change is written into the SVG text as one edit, so
-  Ctrl+Z in the text box undoes it.
+  layers (a layer with everything in it), set a layer's step count and each
+  element's step, move or delete elements (moving keeps their position and
+  inherited styling) and map fixed colours. A mapped colour stays listed,
+  set to what it became, so it can be re-mapped or put back with *Keep
+  fixed*: the original is remembered in the source (`data-was-fill="…"`, or
+  a `was …` comment in a `<style>` block; stripped from stored figures).
+  Captions can be edited under the preview (all steps, or the chosen step's
+  with its rendering). Every change is written into the SVG text as one
+  edit; Ctrl+Z / Ctrl+Shift+Z (and Undo / Redo) step back and forth inside
+  the window, and the text box's own Ctrl+Z works too.
 - Stored as `figure = { kind: "svg", svgSrc, svgBox?, tikz, steps, scale? }`
   (a TikZ figure has no `kind`, and carries `svgSrc` only when there is SVG
   text too); the site uses only `steps`, whichever kind made them.
@@ -1238,7 +1244,7 @@ Course-scoped keys start with `STORAGE_PREFIX` (shown as `<p>`).
 | IndexedDB | `mathRenderCache` | Typeset Solve-All problem HTML + CSS. |
 | IndexedDB | `flux-notif-mute` | "Go silent" flag for `sw.js`. |
 | IndexedDB | `flux-offline-mode` | Offline-mode expiry for `sw.js`. |
-| Cache Storage | `CACHE_NAME` (e.g. `phys161-offline-v8`) | offline.html and its assets. |
+| Cache Storage | `CACHE_NAME` (e.g. `phys161-offline-v9`) | offline.html and its assets. |
 | Cache Storage | `flux-offline-mode-v1` | Full offline-mode download. |
 | BroadcastChannel | `<p>-solve-all-sync` | Same-browser Solve-All coordination. |
 
