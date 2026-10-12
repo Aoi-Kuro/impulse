@@ -2635,6 +2635,8 @@ function toggleTheme() {
     // math modes / structure
     { p: 'display', d: 'Display math block $$ … $$', b: '$$\n${1:}\n$$' },
     { p: 'inline', d: 'Inline math $ … $', b: '$${1:x}$' },
+    { p: 'equation', d: 'Display equation (same as $$ … $$)', b: '\\begin{equation}\n  ${1:}\n\\end{equation}' },
+    { p: 'align', d: 'Aligned equations, no $$ needed', b: '\\begin{align}\n  ${1:a} &= ${2:b} \\\\\n  &= ${3:c}\n\\end{align}' },
     { p: 'aligned', d: 'Aligned equations (inside $$)', b: '$$\n\\begin{aligned}\n  ${1:a} &= ${2:b} \\\\\n  &= ${3:c}\n\\end{aligned}\n$$' },
     { p: 'cases', d: 'Piecewise / cases', b: '\\begin{cases}\n  ${1:a}, & ${2:x > 0} \\\\\n  ${3:b}, & ${4:x \\le 0}\n\\end{cases}' },
     { p: 'boxed', d: 'Boxed final answer', b: '\\boxed{${1:answer}}' },
@@ -2736,6 +2738,7 @@ function toggleTheme() {
   /** Attaches completion + tab stops to a textarea.
       mode 'line': word at the start of a line, backslash optional, 2+ letters.
       mode 'cmd' : a \command anywhere, 1+ letters after the backslash. */
+  const INDENT = '  ';      // what Tab inserts in the code boxes (matches the snippets' indent)
   function attachSnippets(ta, list, mode) {
     let pop = null;          // { start, end, items, index, el }
     let stops = null;        // { list: [{s,e}], i, len }
@@ -2832,6 +2835,39 @@ function toggleTheme() {
       stops = { list: abs, i: 0, len: ta.value.length };
       ta.setSelectionRange(abs[0].s, abs[0].e);
     }
+    // Tab / Shift+Tab, as in a code editor: Tab inserts INDENT at the caret;
+    // with several lines selected (or with Shift) it indents / outdents each
+    // whole line and keeps them selected. Goes through execCommand like
+    // insert() so Ctrl+Z undoes it in one step.
+    function indent(out) {
+      const v = ta.value, s = ta.selectionStart, e = ta.selectionEnd;
+      const multi = v.slice(s, e).includes('\n');
+      inserting = true;
+      if (!out && !multi) { replaceRange(s, e, INDENT); inserting = false; return; }
+      const ls = v.lastIndexOf('\n', s - 1) + 1;
+      // A selection ending at the very start of a line doesn't include it.
+      let le = v.indexOf('\n', multi && v[e - 1] === '\n' ? e - 1 : e);
+      if (le < 0) le = v.length;
+      let first = 0, total = 0;
+      const lines = v.slice(ls, le).split('\n').map((l, i) => {
+        let d = 0;
+        if (out) { const m = l.match(/^(\t| {1,2})/); if (m) { d = -m[0].length; l = l.slice(m[0].length); } }
+        else if (l.length) { d = INDENT.length; l = INDENT + l; }
+        if (i === 0) first = d;
+        total += d;
+        return l;
+      });
+      if (total) replaceRange(ls, le, lines.join('\n'));
+      inserting = false;
+      const ns = Math.max(ls, s + first);
+      ta.setSelectionRange(ns, s === e ? ns : Math.max(ns, e + total));
+    }
+    function replaceRange(start, end, text) {
+      ta.setSelectionRange(start, end);
+      let ok = false;
+      try { ok = document.execCommand('insertText', false, text); } catch (err) { ok = false; }
+      if (!ok) { ta.setRangeText(text, start, end, 'end'); ta.dispatchEvent(new Event('input')); }
+    }
     function goStop(dir) {
       const n = stops.i + dir;
       if (n < 0) return;
@@ -2875,6 +2911,7 @@ function toggleTheme() {
         if (e.key === 'Tab') { e.preventDefault(); goStop(e.shiftKey ? -1 : 1); return; }
         if (e.key === 'Escape') { e.preventDefault(); endStops(); }
       }
+      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); indent(e.shiftKey); }
     });
     ta.addEventListener('blur', () => { close(); endStops(); });
     ta.addEventListener('scroll', close);

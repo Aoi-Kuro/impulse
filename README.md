@@ -958,9 +958,11 @@ choose, Tab or Enter to insert, Esc to close, Ctrl+Space lists everything),
 with `${1:…}` tab stops visited by Tab/Shift+Tab. The TikZ list covers
 pictures, bounding boxes, arrows, nodes, blocks, axes, inclines, angles,
 ground/wall hatching, springs, braces, dimensions, `\onstep`, loops and
-scopes; the solution list covers math blocks, `aligned`, `cases`, fractions,
-roots, the derivative macros, integrals, accents, brackets, units, relations
-and Greek letters.
+scopes; the solution list covers math blocks (`$$`, `equation`, `align`),
+`aligned`, `cases`, fractions, roots, the derivative macros, integrals,
+accents, brackets, units, relations and Greek letters. Outside a suggestion
+list or tab stops, Tab indents like a code editor (two spaces at the caret,
+or every selected line) and Shift+Tab outdents.
 
 ### Saving, publishing and conflicts
 
