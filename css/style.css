@@ -203,8 +203,10 @@
     display: flex;
     justify-content: center;
   }
+  /* --user-fig-scale: Settings > Display > Figure size (js/settings.js). */
   .fig-svg-wrap svg {
-    width: 220px;
+    width: calc(220px * var(--user-fig-scale, 1));
+    max-width: 100%;
     height: auto;
     --svg-fill-white: var(--surface);
     color: var(--text);
@@ -215,7 +217,11 @@
     display: flex;
     justify-content: center;
   }
+  /* 350px matches the width="350px" every problem image carries; the CSS
+     width wins over that attribute, so the Figure size setting scales all
+     of them. max-width keeps a scaled-up figure inside the card on phones. */
   .fig-img-wrap img {
+    width: calc(350px * var(--user-fig-scale, 1));
     max-width: 100%;
     height: auto;
   }
@@ -3135,6 +3141,10 @@
     user-select: none;
   }
   .changelog-trigger-wrap:hover .changelog-btn-label { color: var(--accent); }
+  /* License name after "changelog" (see README's License section). */
+  .changelog-license-link { color: inherit; text-decoration: none; }
+  .changelog-license-link:hover,
+  .changelog-license-link:focus-visible { text-decoration: underline; }
 
   /* ── Changelog panel ── */
   .changelog-panel {

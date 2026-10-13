@@ -82,7 +82,7 @@
     { screen: 'landingScreen', ref: '.landing-box' },
   ];
   // Tip never shows while either of these is the active screen.
-  const HIDDEN_ON_SCREENS = ['manualScreen', 'settingsScreen'];
+  const HIDDEN_ON_SCREENS = ['manualScreen', 'settingsScreen', 'licenseScreen'];
 
   let tipEl = null, textEl = null;
   let tipIndex = -1;

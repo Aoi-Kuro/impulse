@@ -117,7 +117,8 @@ body.sb-closed .ed-sidebar { margin-left: calc(var(--sb-w) * -1); }
 .ed-field { display: flex; flex-direction: column; gap: .4rem; min-width: 0; }
 .ed-field-grow { flex: 1; min-height: 14rem; }
 .ed-label {
-  display: flex; justify-content: space-between; align-items: center; gap: .6rem;
+  /* Wraps instead of overflowing its card when the panel is narrow. */
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .35rem .6rem;
   font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
 }
 .ed-badge { color: var(--accent); background: var(--accent-dim); border-radius: calc(10px * var(--radius-mult)); padding: .1rem .5rem; letter-spacing: .04em; text-transform: none; }
@@ -170,13 +171,25 @@ body.sb-closed .ed-sidebar { margin-left: calc(var(--sb-w) * -1); }
 .ed-dots i { width: .5rem; height: .5rem; border-radius: 50%; background: var(--border); }
 .ed-dots i.on { background: var(--accent); }
 .ed-stepno { font-family: var(--mono); font-size: .68rem; color: var(--muted); }
-.ed-label-right { display: flex; align-items: center; gap: .6rem; }
-.ed-scale { display: flex; align-items: center; gap: .35rem; }
-.ed-scale input {
-  width: 4.2rem; background: var(--bg); color: var(--text); border: 1px solid var(--border);
-  border-radius: calc(6px * var(--radius-mult)); padding: .15rem .35rem;
-  font-family: var(--mono); font-size: .75rem; letter-spacing: 0;
+.ed-label-right {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .35rem .6rem;
+  min-width: 0; margin-left: auto;
 }
+/* A long status ("ok · 3 steps · 1.2 s") shortens with … rather than
+   pushing the scale field out of the card. */
+.ed-label-right .ed-status { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-scale { display: flex; align-items: center; gap: .35rem; flex: none; line-height: 1; }
+/* Fixed height, centred text and no native spinner (it shifted the text
+   off the label's centre line); arrow keys and typing still step it. */
+.ed-scale input {
+  box-sizing: border-box; width: 3.6rem; height: 1.55rem; margin: 0;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult)); padding: 0 .35rem;
+  font-family: var(--mono); font-size: .75rem; line-height: 1; letter-spacing: 0; text-align: center;
+  -moz-appearance: textfield; appearance: textfield;
+}
+.ed-scale input::-webkit-outer-spin-button,
+.ed-scale input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .ed-scale input:focus { outline: none; border-color: var(--accent); }
 .ed-capshow { min-height: 2.6em; text-align: center; font-size: .95rem; }
 
@@ -199,6 +212,7 @@ body.sb-closed .ed-sidebar { margin-left: calc(var(--sb-w) * -1); }
 .ed-gate-sub { color: var(--muted); font-size: .84rem; }
 .ed-gate-input { font-family: var(--mono); letter-spacing: .08em; }
 .ed-gate-err { min-height: 1.1em; color: var(--wrong); font-size: .78rem; }
+.ed-gate-consent { color: var(--muted); font-size: .72rem; line-height: 1.5; margin-top: .2rem; }
 
 /* narrow screens: sidebar becomes a drawer, split stacks vertically */
 @media (max-width: 720px) {
@@ -402,6 +416,11 @@ body.state-closed .ed-state { display: none; }
 .ed-check-row.stale .why { color: var(--wrong); }
 .ed-check-empty { font-family: var(--mono); font-size: .68rem; color: var(--muted); }
 .ed-check-note { margin-top: .45rem; font-family: var(--mono); font-size: .62rem; color: var(--muted); line-height: 1.45; }
+/* "Rebuild N figures" under the old-figure list in the Check report. */
+.ed-check-rebuild { margin-top: .5rem; width: 100%; }
+/* "Rebuild figure" after the state panel's "Figure setup" value. */
+.ed-st-rebuild { margin-left: .4rem; }
+.ed-st-rebuild[hidden] { display: none; }
 
 /* ── Colour hint (next to the preamble) ──
    A floating card showing the five figure colours rendered in every theme,
@@ -430,6 +449,44 @@ body.state-closed .ed-state { display: none; }
 .ed-colorpop[hidden] { display: none; }
 .ed-float { min-width: 14rem; max-width: min(22rem, calc(100vw - 1.6rem)); }
 /* Ctrl+S / restore feedback */
+/* Full preview overlay: the practice site in an iframe, over the editor. */
+/* Fades in and out (PREVIEW_FADE_MS in editor.js matches the .26s). The
+   frame only fades in once the overlay is fully shown and the site inside
+   reports the solution is drawn (.ready). */
+.ed-preview {
+  position: fixed; inset: 0; z-index: 9000;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  opacity: 0; transition: opacity .26s ease;
+}
+.ed-preview.shown { opacity: 1; }
+.ed-preview-frame {
+  flex: 1; width: 100%; border: 0; background: var(--bg);
+  opacity: 0; visibility: hidden;
+  transition: opacity .26s ease, visibility 0s linear .26s;
+}
+.ed-preview.ready .ed-preview-frame {
+  opacity: 1; visibility: visible;
+  transition: opacity .26s ease, visibility 0s;
+}
+/* Shown until the site inside reports the solution is drawn. */
+/* It sits over the frame, so it must never take clicks or scrolling (that
+   made the revealed preview look frozen), and it is hidden outright once
+   faded. */
+.ed-preview-wait {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: .8rem; color: var(--muted);
+  pointer-events: none;
+  transition: opacity .26s ease, visibility 0s;
+}
+.ed-preview.ready .ed-preview-wait {
+  opacity: 0; visibility: hidden;
+  transition: opacity .26s ease, visibility 0s linear .26s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ed-preview, .ed-preview-frame, .ed-preview-wait { transition: none; }
+}
+
 .ed-toast {
   position: fixed; left: 50%; bottom: 1.4rem; z-index: 1200;
   transform: translate(-50%, .6rem); opacity: 0; pointer-events: none;
@@ -731,4 +788,200 @@ body.state-closed .ed-state { display: none; }
   .ed-lc-main { overflow: visible; flex: none; }
   .ed-lc-item { flex-wrap: wrap; }
   .ed-lc-what { flex-basis: 8rem; }
+}
+
+/* ── Syntax colours (editor/highlight.js) ──
+   A coloured copy of the text (.ed-hl, same classes as the textarea) sits
+   behind the textarea, whose own text is transparent. Colours are theme
+   colours softened toward the text colour, so they stay calm and readable
+   in every theme, night and day. */
+.ed-hl-wrap { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.ed-field-grow > .ed-hl-wrap { flex: 1; min-height: 0; }
+.ed-hl-wrap > textarea {
+  position: relative; z-index: 1; flex: 1 1 auto;
+  background: transparent !important; color: transparent; caret-color: var(--text);
+}
+.ed-hl-wrap > textarea::placeholder { color: var(--muted); }
+.ed-hl-wrap > textarea::selection { color: transparent; background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.ed-hl-wrap > pre.ed-hl {
+  position: absolute; inset: 0; z-index: 0; margin: 0; overflow: hidden; pointer-events: none; resize: none;
+  border-color: transparent !important; box-shadow: none !important; overflow-wrap: break-word; color: var(--text);
+  --hl-cmd:  color-mix(in srgb, var(--accent) 85%, var(--text));
+  --hl-env:  color-mix(in srgb, var(--accent2) 80%, var(--text));
+  --hl-opt:  color-mix(in srgb, var(--accent2) 40%, var(--text));
+  --hl-num:  color-mix(in srgb, var(--partial) 80%, var(--text));
+  --hl-math: color-mix(in srgb, var(--correct) 55%, var(--text));
+  --hl-punc: color-mix(in srgb, var(--muted) 70%, var(--text));
+}
+.ed-hl.off { opacity: .5; }
+.ed-hl .hl-cmd  { color: var(--hl-cmd); }
+.ed-hl .hl-env, .ed-hl .hl-del, .ed-hl .hl-op { color: var(--hl-env); }
+.ed-hl .hl-opt  { color: var(--hl-opt); }
+.ed-hl .hl-num  { color: var(--hl-num); }
+.ed-hl .hl-math, .ed-hl .hl-str { color: var(--hl-math); }
+.ed-hl .hl-punc { color: var(--hl-punc); }
+.ed-hl .hl-com  { color: var(--muted); }
+
+/* ── Editor manual (📖, editor/manual.js) ──
+   The practice site's manual layout (css/manual.css) in a scrolling layer
+   under the top bar, over the app and the key gate. */
+.ed-manual {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 950;
+  top: calc(var(--top-bar-h) + env(safe-area-inset-top, 0px));
+  overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg); font-family: var(--sans);
+  animation: fadeInPage .3s ease forwards;
+}
+.ed-manual[hidden] { display: none; }
+.ed-manual.fading-out { animation: fadeOutPage .2s ease forwards; pointer-events: none; }
+.ed-manual .manual-wrap { padding-top: 1.4rem; }
+.ed-manual .manual-sidebar { top: 1rem; }
+body.man-open #edManualBtn { opacity: 1; transform: scale(1.1); }
+.manual-content-body kbd {
+  font-family: var(--mono); font-size: .76em; white-space: nowrap; color: var(--text);
+  padding: .05em .4em; border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: calc(4px * var(--radius-mult)); background: var(--bg);
+}
+.edm-sw {
+  display: inline-block; width: .95rem; height: .95rem; vertical-align: -.15rem;
+  border: 1px solid var(--border); border-radius: calc(3px * var(--radius-mult));
+}
+.edm-dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: var(--muted); vertical-align: .05rem; }
+.edm-dot.pub   { background: var(--correct); }
+.edm-dot.draft { background: var(--partial); }
+.edm-dot.ring  { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent2) 70%, transparent); }
+.edm-tip {
+  margin: 1rem 0; padding: .6rem .85rem; font-size: .88rem;
+  border-left: 3px solid var(--accent); border-radius: calc(6px * var(--radius-mult));
+  background: rgba(var(--accent-rgb), .08);
+}
+
+/* static code window */
+.edm-code { margin: .9rem 0 1.2rem; border: 1px solid var(--border); border-radius: calc(10px * var(--radius-mult)); overflow: hidden; background: var(--bg); }
+.edm-code-bar, .edm-bar {
+  display: flex; align-items: center; gap: .5rem; padding: .4rem .7rem;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: .62rem; letter-spacing: .06em; color: var(--muted);
+}
+.edm-code-bar { text-transform: uppercase; }
+.edm-code pre { margin: 0; padding: .7rem .85rem; overflow-x: auto; font-family: var(--mono); font-size: .76rem; line-height: 1.55; color: var(--text); }
+.edm-code pre b { color: var(--accent); font-weight: 600; }
+
+/* live example: code box, then what the editor makes of it */
+.edm-demo {
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  margin: 1.1rem 0 1.5rem; border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult)); overflow: hidden; background: var(--bg);
+}
+.edm-demo > .edm-bar { grid-column: 1 / -1; }
+.edm-bar-label { text-transform: uppercase; }
+.edm-status { margin-left: auto; text-transform: none; }
+.edm-status.ok { color: var(--correct); }
+.edm-status.busy { color: var(--accent); }
+.edm-status.err { color: var(--wrong); }
+.edm-btn {
+  cursor: pointer; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: calc(5px * var(--radius-mult)); padding: .2rem .55rem; font-family: var(--mono); font-size: .66rem;
+}
+.edm-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.edm-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent, var(--chrome-dark)); font-weight: 600; }
+.edm-btn.primary:hover:not(:disabled) { color: var(--on-accent, var(--chrome-dark)); filter: brightness(1.08); }
+.edm-btn:disabled { opacity: .5; cursor: default; }
+.edm-in { min-width: 0; }
+.edm-src {
+  display: block; width: 100%; min-height: 9.5rem; resize: vertical; box-sizing: border-box;
+  margin: 0; padding: .7rem .85rem; border: 0; border-bottom: 1px solid var(--border); outline: none;
+  background: var(--bg); color: var(--text); white-space: pre; overflow: auto; tab-size: 2;
+  scrollbar-color: var(--border) transparent;
+  font-family: var(--mono); font-size: .76rem; line-height: 1.55;
+}
+.edm-src:focus { box-shadow: inset 0 0 0 1px var(--accent); }
+.edm-out { min-width: 0; display: flex; flex-direction: column; gap: .55rem; padding: 1rem; background: var(--surface); }
+.edm-stage { min-height: 6.5rem; display: flex; align-items: center; justify-content: center; }
+.edm-stage .fig-steps { width: 100%; }
+.edm-empty { font-family: var(--mono); font-size: .72rem; color: var(--muted); text-align: center; }
+.edm-empty.err { color: var(--wrong); }
+.edm-nav { display: flex; align-items: center; justify-content: center; gap: .7rem; font-family: var(--mono); font-size: .68rem; color: var(--muted); }
+.edm-nav[hidden] { display: none; }
+.edm-navbtn {
+  width: 1.8rem; height: 1.8rem; cursor: pointer; font-size: 1rem; line-height: 1;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 50%;
+}
+.edm-navbtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.edm-navbtn:disabled { opacity: .35; cursor: default; }
+.edm-cap { text-align: center; font-size: .95rem; }
+.edm-cap:empty, .edm-warn:empty { display: none; }
+.edm-warn { font-family: var(--mono); font-size: .68rem; line-height: 1.6; color: var(--muted); }
+.edm-warn b { color: var(--partial); font-weight: 600; }
+.edm-solout { display: block; padding: 1rem 1.2rem; font-size: 1rem; }
+.manual-content-body .edm-note {
+  grid-column: 1 / -1; margin: 0; padding: .6rem .9rem .8rem;
+  border-top: 1px dashed var(--border); background: var(--surface);
+  font-family: var(--mono); font-size: .7rem; line-height: 1.5; color: var(--muted);
+}
+/* mock windows: inert copies built from the editor's own dialog classes */
+.edm-mock {
+  margin: 1rem 0 1.4rem; border: 1px solid var(--border); border-radius: calc(12px * var(--radius-mult));
+  overflow: hidden; background: var(--surface); font-family: var(--sans);
+  pointer-events: none; user-select: none;
+}
+.edm-mock-body { padding: .7rem .9rem; display: flex; flex-direction: column; gap: .4rem; }
+.edm-mock .ed-lc-sec { padding: .2rem 0 .4rem; }
+.edm-mock .ed-lc-layer { margin-bottom: 0; }
+.edm-mock .ed-badge { font-family: var(--mono); font-size: .64rem; white-space: nowrap; }
+.edm-mock .ed-cmp-grid { padding: 0; overflow: visible; }
+.edm-mock .ed-cmp-cell { font-family: var(--mono); font-size: .7rem; color: var(--muted); }
+.edm-mock .ed-snip { position: static; box-shadow: none; max-width: 22rem; }
+.edm-mock-cap {
+  padding: .55rem .9rem .75rem; border-top: 1px dashed var(--border);
+  font-family: var(--mono); font-size: .68rem; line-height: 1.5; color: var(--muted);
+}
+.edm-n {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 1.1rem; height: 1.1rem; border-radius: 50%; margin-right: .3rem;
+  background: var(--accent); color: var(--on-accent, var(--chrome-dark));
+  font-family: var(--mono); font-size: .6rem; font-weight: 700; font-style: normal; letter-spacing: 0;
+}
+
+/* the workspace map (Getting started) */
+.edm-ws { font-family: var(--mono); font-size: .62rem; color: var(--muted); background: var(--bg); }
+.edm-ws-top { display: flex; align-items: center; gap: .5rem; padding: .45rem .6rem; background: var(--surface); border-bottom: 1px solid var(--border); }
+.edm-ws-top b { color: var(--text); font-weight: 600; letter-spacing: .08em; }
+.edm-ws-right { margin-left: auto; letter-spacing: .2em; }
+.edm-ws-body { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); min-height: 15rem; }
+.edm-ws-side { padding: .45rem .5rem; border-right: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; gap: .25rem; }
+.edm-ws-q { color: var(--accent); display: flex; align-items: center; letter-spacing: .06em; }
+.edm-ws-q small { margin-left: auto; }
+.edm-ws-item { display: flex; align-items: center; justify-content: space-between; padding: .1rem .3rem; border-radius: calc(4px * var(--radius-mult)); color: var(--text); }
+.edm-ws-item.on { background: var(--accent-dim); }
+.edm-ws-foot { margin-top: auto; color: var(--accent); }
+.edm-ws-main { display: flex; flex-direction: column; min-width: 0; }
+.edm-ws-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .4rem .6rem; border-bottom: 1px solid var(--border); color: var(--text); }
+.edm-ws-chip { border: 1px solid var(--border); border-radius: calc(5px * var(--radius-mult)); padding: .05rem .4rem; color: var(--muted); }
+.edm-ws-bar .edm-ws-chip:first-of-type { margin-left: auto; }
+.edm-ws-split { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.edm-ws-pane { padding: .45rem .6rem; display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.edm-ws-pane + .edm-ws-pane { border-left: 3px double var(--border); }
+.edm-ws-field { display: flex; align-items: center; justify-content: space-between; letter-spacing: .06em; text-transform: uppercase; font-size: .56rem; }
+.edm-ws-box { height: 1.6rem; border: 1px solid var(--border); border-radius: calc(5px * var(--radius-mult)); background: var(--surface); }
+.edm-ws-box.tall { height: 3.4rem; display: flex; align-items: center; justify-content: center; color: var(--accent); letter-spacing: .25em; }
+
+/* previous / next page */
+.edm-pager { display: flex; gap: .8rem; margin-top: 2rem; padding-top: 1.1rem; border-top: 1px solid var(--border); }
+.edm-pager-btn {
+  flex: 0 1 48%; display: flex; flex-direction: column; gap: .15rem; cursor: pointer;
+  background: none; border: 1px solid var(--border); border-radius: calc(8px * var(--radius-mult));
+  padding: .55rem .8rem; color: var(--text); font-family: var(--sans); text-align: left;
+  transition: border-color .15s;
+}
+.edm-pager-btn.next { margin-left: auto; text-align: right; }
+.edm-pager-btn small { font-family: var(--mono); font-size: .64rem; color: var(--muted); }
+.edm-pager-btn span { font-size: .85rem; font-weight: 600; }
+.edm-pager-btn:hover { border-color: var(--accent); }
+
+@media (max-width: 760px) {
+  .edm-ws-body { grid-template-columns: 5.5rem minmax(0, 1fr); }
+  .edm-ws-split { grid-template-columns: minmax(0, 1fr); }
+  .edm-ws-pane + .edm-ws-pane { border-left: 0; border-top: 3px double var(--border); }
+  .manual-content-body table { display: block; overflow-x: auto; }
 }

@@ -160,9 +160,13 @@ function parseUnitToMap(raw) {
   if (s === "" || s === "(none)" || s === "none" || s === "rad")
     return { map: new Map(), valid: true, scale: 1 };
   if (/[*·×⋅]/.test(s)) return { map: null, valid: false, scale: 1 };
-  const stripped = s.replace(/\^\([+-]?\d+\)/g, "");
-  if (/[()]/.test(stripped)) return { map: null, valid: false, scale: 1 };
   s = s.replace(/\^\(([+-]?\d+)\)/g, "^$1");
+  // Brackets may also wrap the whole denominator: "J/(kg K)" is read the
+  // same as "J/kg K" (everything after "/" divides). Any other bracket use,
+  // e.g. "5 (m)", "(kg m)/s" or "m/(s) kg", stays invalid, as in Moodle.
+  const group = s.match(/^([^()]*)\/\s*\(([^()]*\S[^()]*)\)$/);
+  if (group) s = group[1] + "/" + group[2];
+  if (/[()]/.test(s)) return { map: null, valid: false, scale: 1 };
   const slashIdx = s.indexOf("/");
   const numStr = slashIdx === -1 ? s : s.slice(0, slashIdx);
   const denStr = slashIdx === -1 ? "" : s.slice(slashIdx + 1);
@@ -171,7 +175,8 @@ function parseUnitToMap(raw) {
   let scale = 1;
   function applyTokens(tokenStr, sign) {
     for (const tok of tokenStr.trim().split(/\s+/).filter(Boolean)) {
-      const m = tok.match(/^([A-Za-z]+)(?:\^([+-]?\d+))?$/);
+      // "%" is an opaque symbol like "days": it only ever matches "%".
+      const m = tok.match(/^([A-Za-z]+|%)(?:\^([+-]?\d+))?$/);
       if (!m) return false;
       const exp = m[2] !== undefined ? parseInt(m[2], 10) : 1;
       const { base, scale: pfxScale } = decomposeUnitToken(m[1]);
@@ -2502,6 +2507,15 @@ function startSelected() {
 }
 
 function goToMainMenu() {
+  // The Solution screen sits on top of whatever it was opened from (which
+  // it hides), so it has to be checked first: none of the checks below can
+  // see it, and the landing screen used to appear with the solution still
+  // showing underneath.
+  if (typeof isSolutionScreenOpen === 'function' && isSolutionScreenOpen()) {
+    closeSolutionScreen(true);
+    return;
+  }
+
   // Forum and Stats screens used to only ever be opened from the landing
   // screen, so if either was open, closing it *was* going to the main menu —
   // nothing else could be active underneath it. That's no longer quite true
@@ -2537,6 +2551,13 @@ function goToMainMenu() {
   // the moment open/close was actually decided instead.
   if (typeof isSettingsScreenOpen === 'function' && isSettingsScreenOpen()) {
     closeSettingsScreen(true);
+    return;
+  }
+
+  // Checked after Manual/Settings: either can be open on top of it, and
+  // closing them with forceLanding already goes home.
+  if (typeof isLicenseScreenOpen === 'function' && isLicenseScreenOpen()) {
+    closeLicenseScreen(true);
     return;
   }
 
@@ -2682,7 +2703,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '12.1.3';
+const CURRENT_VERSION = '12.2.1';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

@@ -82,6 +82,23 @@ async function solutionsIndexRows() {
   return r.ok ? r.json() : null;
 }
 
+/** Published { problem_key, author } rows, for the solution authors list
+    on the Copyright screen (js/license.js). null when it can't be loaded. */
+async function fetchSolutionAuthorRows() {
+  try {
+    if (solutionsOfflineActive()) {
+      return (await loadOfflineSolutionRows()).map((r) => ({ problem_key: r.problem_key, author: r.author }));
+    }
+    const r = await fetch(`${SOLUTIONS_REST}?select=problem_key,author&status=eq.published`, {
+      headers: solutionsRestHeaders(),
+      cache: 'no-store',
+    });
+    return r.ok ? await r.json() : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 let solutionsIndex = null;          // Set of problem_key with a published solution
 let solutionsIndexPromise = null;   // in-flight load, so parallel callers share one request
 const solutionsRowCache = new Map();
@@ -264,10 +281,28 @@ function restoreHostScreen() {
   else window.scrollTo(0, scrollY || 0);
 }
 
-function closeSolutionScreen() {
+function isSolutionScreenOpen() { return solutionOpen; }
+
+// forceLanding: the site logo (goToMainMenu in quiz-engine.js) means "all
+// the way home", not "back to where the solution was opened from". The
+// host screen is NOT restored then; it is unwound the way the logo unwinds
+// it when no solution is open. Without this the logo showed the landing
+// screen while #solutionScreen stayed visible, stacked under it.
+function closeSolutionScreen(forceLanding) {
   const screen = solutionScreenEl();
   if (!screen || !solutionOpen) return;
+  forceLanding = forceLanding === true;
+  // The editor's Full preview shows this page in an overlay (an iframe):
+  // Close, Escape and the logo all ask the editor to close that overlay,
+  // rather than revealing the landing screen inside it.
+  if (solutionPreviewMode && window.parent !== window) {
+    notifyPreviewParent('solution-preview-close');
+    return;
+  }
   solutionOpen = false;
+  setSolutionPreviewMode(false);
+  const hostId = solutionHost ? solutionHost.id : null;
+  if (forceLanding) solutionHost = null;
 
   const body = document.getElementById('solutionBody');
   const cap  = document.getElementById('solutionCaption');
@@ -283,8 +318,19 @@ function closeSolutionScreen() {
     screen.classList.remove('visible', 'fading-out');
     if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(true);
     if (typeof syncForumFabVisibility === 'function') syncForumFabVisibility();
-    restoreHostScreen();
+    if (!forceLanding) { restoreHostScreen(); return; }
+    // Forum and Stats unwind through their own close below, which shows
+    // the landing screen on the tick right after this one.
+    if (hostId !== 'forumScreen' && hostId !== 'statsScreen' && typeof exitAppOrChoiceToLanding === 'function') {
+      exitAppOrChoiceToLanding();
+    }
   }, 280);
+  // Started after the timer above, so with the same 280ms delay they finish
+  // just after #solutionScreen is gone and the two screens never stack.
+  // Their own close does the cleanup a plain hide would skip (forum live
+  // polling and read marks, Stats polling and idle timer).
+  if (forceLanding && hostId === 'forumScreen' && typeof closeForumScreen === 'function') closeForumScreen(true);
+  if (forceLanding && hostId === 'statsScreen' && typeof closeStatsScreen === 'function') closeStatsScreen();
 }
 // Kept so an older call site (or a browser back gesture wired to it) still works.
 const closeSolution = closeSolutionScreen;
@@ -367,26 +413,58 @@ function drawSolutionStep() {
   }
 }
 
-async function openSolution(quizNum, problemId) {
+// Bumped on every openSolution() call. Each call checks it after every
+// await, so tapping Previous/Next quickly never lets a slower, older
+// response paint over the solution that was asked for last.
+let solutionOpenToken = 0;
+// What is on screen, for the Share button and the Previous/Next buttons.
+let solutionCurrent = null;   // { quizNum, problemId }
+// True while showing the editor's "Full preview" (see openSolutionFromURL):
+// the row comes from the editor, not the database.
+let solutionPreviewMode = false;
+
+// previewRow: a row built by the editor's Full preview — shown instead of
+// fetching the published one.
+async function openSolution(quizNum, problemId, previewRow) {
   const key = solutionKeyFor(quizNum, problemId);
   const screen = solutionScreenEl();
   if (!screen) return;
+  const token = ++solutionOpenToken;
+  const stale = () => token !== solutionOpenToken || !solutionOpen;
+  solutionCurrent = { quizNum, problemId };
+  setSolutionPreviewMode(!!previewRow);
+
+  // Switching from one solution to another (Previous/Next) while the
+  // screen stays open: stop the old figure's autoplay and release the old
+  // typeset math before reusing the same elements.
+  if (solutionOpen) {
+    stopSolutionAutoplay();
+    solutionViewer = null;
+    ['solutionBody', 'solutionCaption'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && window.MathJax && MathJax.typesetClear) { try { MathJax.typesetClear([el]); } catch (e) {} }
+    });
+  }
 
   const label = problemLabel(quizNum, problemId);
-  document.getElementById('solutionTitle').textContent = `📘 Solution · ${label}`;
 
   // Problem first — the student should see what is being solved without
   // leaving the page. The accepted answer is deliberately NOT shown: in
   // Solve-them-all the solution is reachable before an attempt.
   const p = getQuizProblem(quizNum, problemId);
+  // The Problem box below already shows the number; the title only carries
+  // it when that box is hidden (a problem that can no longer be found).
+  document.getElementById('solutionTitle').textContent =
+    (p ? '📘 Solution' : `📘 Solution · ${label}`) + (solutionPreviewMode ? ' · Preview' : '');
   const probBox = document.getElementById('solutionProblem');
+  let probMath = Promise.resolve();   // typesetting of the problem text
   if (p) {
     document.getElementById('solutionProblemNum').textContent = label;
     document.getElementById('solutionProblemTopic').textContent = p.topic || '';
     const pt = document.getElementById('solutionProblemText');
     pt.innerHTML = p.text;            // the site's own trusted problem text
     probBox.hidden = false;
-    renderMathIn(pt);
+    probMath = renderMathIn(pt);
   } else {
     probBox.hidden = true;
   }
@@ -399,6 +477,7 @@ async function openSolution(quizNum, problemId) {
   document.getElementById('solutionStale').hidden = true;
   const credit = document.getElementById('solutionCredit');
   credit.hidden = true;
+  renderSolutionPager(quizNum, problemId);
   const loading = document.getElementById('solutionLoading');
   loading.hidden = false;
 
@@ -411,25 +490,29 @@ async function openSolution(quizNum, problemId) {
     if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(false);
     screen.classList.add('visible');
     solutionOpen = true;
+    document.documentElement.classList.remove('solution-preview-boot');
     if (typeof syncForumFabVisibility === 'function') syncForumFabVisibility();
   }
   window.scrollTo(0, 0);
 
   let row;
   try {
-    row = await fetchSolution(key);
+    row = previewRow || await fetchSolution(key);
   } catch (e) {
+    if (stale()) return;
     loading.hidden = true;
     document.getElementById('solutionMain').hidden = false;
     body.textContent = 'Could not load this solution. Check your connection and try again.';
+    if (solutionPreviewMode) notifyPreviewParent('solution-preview-ready');
     return;
   }
-  if (!solutionOpen) return;                       // closed while loading
+  if (stale()) return;                             // closed, or another solution asked for
   loading.hidden = true;
 
   if (!row) {
     document.getElementById('solutionMain').hidden = false;
     body.textContent = 'This solution is no longer published.';
+    if (solutionPreviewMode) notifyPreviewParent('solution-preview-ready');
     return;
   }
 
@@ -463,11 +546,12 @@ async function openSolution(quizNum, problemId) {
   }
 
   document.getElementById('solutionMain').hidden = false;
-  renderSolutionInto(body, row.solution || '');
+  const bodyMath = renderSolutionInto(body, row.solution || '');
 
+  credit.textContent = '';
   if (row.author) {
-    credit.textContent = '';
-    credit.append(document.createTextNode('Solution by '));
+    const by = document.createElement('div');
+    by.append(document.createTextNode('Solution by '));
     const b = document.createElement('b');
     b.textContent = '@' + String(row.author).replace(/^@/, '');
     // The editor's own link, if they set one. http(s) only: anything else
@@ -479,19 +563,200 @@ async function openSolution(quizNum, problemId) {
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       a.appendChild(b);
-      credit.appendChild(a);
+      by.appendChild(a);
     } else {
-      credit.appendChild(b);
+      by.appendChild(b);
     }
-    credit.hidden = false;
+    credit.appendChild(by);
+  }
+  const updated = formatSolutionDate(row.updated_at);
+  if (updated) {
+    const up = document.createElement('div');
+    up.className = 'solution-updated';
+    up.textContent = 'Updated ' + updated;
+    credit.appendChild(up);
+  }
+  // Every published solution (text and figure) is all rights reserved — see
+  // the License section of README.md and the Copyright screen. Shown even
+  // without an author line.
+  const lic = document.createElement('div');
+  lic.className = 'solution-license';
+  lic.textContent = 'All rights reserved.';
+  credit.appendChild(lic);
+  credit.hidden = false;
+
+  // Editor Full preview: the overlay keeps this page invisible until now,
+  // so none of the start-up screens flicker past. It waits for the problem
+  // and solution math to be typeset, then two frames for layout to settle.
+  if (solutionPreviewMode) {
+    Promise.all([probMath, bodyMath]).finally(() => {
+      if (stale()) return;
+      requestAnimationFrame(() => requestAnimationFrame(() => notifyPreviewParent('solution-preview-ready')));
+    });
   }
 
   // The problem may have been edited after the solution was written.
   if (row.problem_hash && p) {
     const now = await solutionProblemHash(p);
-    if (solutionOpen && now !== row.problem_hash) document.getElementById('solutionStale').hidden = false;
+    if (!stale() && now !== row.problem_hash) document.getElementById('solutionStale').hidden = false;
+  }
+
+  // The published list may not have arrived yet (a shared link opened on a
+  // fresh page load): fill the Previous/Next buttons in once it has.
+  if (!solutionsIndex && !solutionPreviewMode) {
+    await loadSolutionsIndex();
+    if (!stale()) renderSolutionPager(quizNum, problemId);
   }
 }
+
+/** "12 Oct 2026" for a stored timestamp, or '' if there is none. */
+function formatSolutionDate(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d)) return '';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/* ── Previous / Next solution ─────────────────────────────────────────
+   Steps through the problems of the same quiz that have a published
+   solution, in the order students see them (active problems only, so a
+   retired one has no neighbours and the buttons stay hidden). */
+function solutionNeighbours(quizNum, problemId) {
+  const quiz = typeof QUIZZES !== 'undefined' ? QUIZZES[quizNum - 1] : null;
+  if (!quiz) return { prev: null, next: null };
+  const ids = (quiz.problems || [])
+    .map((q) => q.id)
+    .filter((id) => id === problemId || hasPublishedSolution(quizNum, id));
+  const i = ids.indexOf(problemId);
+  if (i < 0) return { prev: null, next: null };
+  return { prev: ids[i - 1] || null, next: ids[i + 1] || null };
+}
+
+function renderSolutionPager(quizNum, problemId) {
+  const pager = document.getElementById('solutionPager');
+  if (!pager) return;
+  if (solutionPreviewMode) { pager.hidden = true; return; }   // would lead to published solutions
+  const { prev, next } = solutionNeighbours(quizNum, problemId);
+  [['solutionPrevProblem', prev, (l) => `‹ ${l}`], ['solutionNextProblem', next, (l) => `${l} ›`]]
+    .forEach(([id, target, text]) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      // visibility, not display: the other button keeps its side.
+      btn.style.visibility = target ? '' : 'hidden';
+      btn.textContent = target ? text(problemLabel(quizNum, target)) : '';
+      btn.onclick = target ? () => openSolution(quizNum, target) : null;
+      btn.title = target ? (id === 'solutionPrevProblem' ? 'Previous solution' : 'Next solution') : '';
+    });
+  pager.hidden = !prev && !next;
+}
+
+/* ── Share ────────────────────────────────────────────────────────────
+   Copies a link that opens this solution directly (?solution=q4_P16, read
+   back by openSolutionFromURL below). Falls back to the share sheet, then
+   to a prompt the link can be copied from by hand. */
+let solutionShareTimer = null;
+async function shareSolutionLink() {
+  if (!solutionCurrent) return;
+  const url = new URL(window.location.pathname, window.location.origin);
+  url.searchParams.set('solution', solutionKeyFor(solutionCurrent.quizNum, solutionCurrent.problemId));
+  const link = url.href;
+  const btn = document.getElementById('solutionShareBtn');
+  const flash = (text) => {
+    if (!btn) return;
+    btn.textContent = text;
+    clearTimeout(solutionShareTimer);
+    solutionShareTimer = setTimeout(() => { btn.textContent = '🔗 Share'; }, 1600);
+  };
+  try {
+    await navigator.clipboard.writeText(link);
+    flash('✓ Copied');
+    return;
+  } catch (e) { /* no clipboard access: try the next way */ }
+  if (navigator.share) {
+    try { await navigator.share({ url: link }); } catch (e) { /* cancelled */ }
+    return;
+  }
+  window.prompt('Copy this link:', link);
+}
+
+/* ── Editor "Full preview" ─────────────────────────────────────────────
+   The editor (editor/editor.js, openFullPreview) loads this page as
+   /?solutionPreview=1 in an overlay (an iframe) over itself. The page asks
+   it for the solution it has on screen — saved or not — by postMessage,
+   then shows it on the real Solution screen, exactly as readers will see
+   it, credited to that editor and dated now. Share and Previous/Next are
+   hidden there, Close asks the editor to close the overlay, and the visit
+   is not counted (js/site-visits.js). Nothing goes through storage.
+
+   Messages to the editor: 'solution-preview-request' (send the solution),
+   'solution-preview-ready' (show me), 'solution-preview-failed' (nothing
+   usable to preview) and 'solution-preview-close'. No-op outside an
+   iframe. The editor answers with 'solution-preview-data'. */
+function notifyPreviewParent(type) {
+  if (window.parent !== window) window.parent.postMessage({ type }, window.location.origin);
+}
+
+function setSolutionPreviewMode(on) {
+  solutionPreviewMode = on;
+  const share = document.getElementById('solutionShareBtn');
+  if (share) share.hidden = on;
+  const close = document.getElementById('solutionCloseBtn');
+  if (close) close.textContent = on ? '✕ Close preview' : '✕ Close';
+}
+
+// A shared link (?solution=q4_P16) opens that solution once the page has
+// loaded, then the parameter is dropped from the address bar so a reload
+// does not reopen it. Unknown keys, disabled quizzes and problems that no
+// longer exist are ignored.
+(function openSolutionFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const key = params.get('solution');
+  const preview = params.get('solutionPreview') === '1';
+  if (!key && !preview) return;
+  params.delete('solution');
+  params.delete('solutionPreview');
+  const rest = params.toString();
+  history.replaceState(history.state, '', window.location.pathname + (rest ? '?' + rest : '') + window.location.hash);
+  const whenLoaded = (fn) => {
+    if (document.readyState === 'complete') fn();
+    else window.addEventListener('load', fn, { once: true });
+  };
+
+  if (preview) {
+    // Opened on its own (not inside the editor): nothing to preview.
+    if (window.parent === window) return;
+    // Not a reader's visit (js/site-visits.js skips it), and the landing
+    // screen stays hidden until the solution is up, so it doesn't flash.
+    window.__solutionPreview = true;
+    document.documentElement.classList.add('solution-preview-boot', 'solution-preview');
+    window.addEventListener('message', function onPreviewData(e) {
+      if (e.source !== window.parent || e.origin !== window.location.origin) return;
+      if (!e.data || e.data.type !== 'solution-preview-data') return;
+      window.removeEventListener('message', onPreviewData);
+      const data = e.data.data;
+      // Disabled quizzes are fine here: editors write ahead of a quiz going live.
+      const pm = data && /^q([1-9][0-9]?)_([A-Za-z][A-Za-z0-9_-]{0,30})$/.exec(data.problem_key || '');
+      if (!pm) { notifyPreviewParent('solution-preview-failed'); return; }
+      const row = {
+        problem_key: data.problem_key,
+        solution: typeof data.solution === 'string' ? data.solution : '',
+        figure: data.figure && typeof data.figure === 'object' ? data.figure : null,
+        author: data.author || null,
+        author_link: data.author_link || null,
+        updated_at: data.updated_at || new Date().toISOString(),
+      };
+      whenLoaded(() => openSolution(+pm[1], pm[2], row));
+    });
+    notifyPreviewParent('solution-preview-request');
+    return;
+  }
+
+  const m = /^q([1-9][0-9]?)_([A-Za-z][A-Za-z0-9_-]{0,30})$/.exec(key);
+  if (!m) return;
+  const quizNum = +m[1], problemId = m[2];
+  const quiz = typeof QUIZZES !== 'undefined' ? QUIZZES[quizNum - 1] : null;
+  if (!quiz || quiz.enabled === false || !getQuizProblem(quizNum, problemId)) return;
+  whenLoaded(() => openSolution(quizNum, problemId));
+})();
 
 function safeAuthorLink(raw) {
   if (typeof raw !== 'string' || !raw) return null;

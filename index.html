@@ -66,6 +66,14 @@
         toAdd.push('settings-hide-daylight-btn');
       }
       if (toAdd.length) document.documentElement.classList.add.apply(document.documentElement.classList, toAdd);
+      // Figure size slider (display.figureScale, percent) — same clamp as
+      // clampFigureScale() in js/settings.js, so figures never paint at the
+      // default size first and then jump.
+      var figPct = Number(d.figureScale);
+      if (isFinite(figPct) && d.figureScale != null) {
+        figPct = Math.min(200, Math.max(50, Math.round(figPct)));
+        document.documentElement.style.setProperty('--user-fig-scale', String(figPct / 100));
+      }
     } catch (e) {
       // Corrupted/foreign localStorage value — fail open (everything
       // shown, today's default) rather than block page load.
@@ -133,6 +141,7 @@
 <link rel="stylesheet" href="css/stats.css">
 <link rel="stylesheet" href="css/forum.css">
 <link rel="stylesheet" href="css/manual.css">
+<link rel="stylesheet" href="css/license.css">
 <link rel="stylesheet" href="css/settings.css">
 <link rel="stylesheet" href="css/solve-all-nav.css">
 <!-- Solution figures (shared with the authoring tool) + the solution screen -->
@@ -406,7 +415,7 @@
       <button class="changelog-btn" id="changelogBtn" onclick="toggleChangelog()" title="Changelog">
         <canvas id="chargeCanvas" width="32" height="32"></canvas>
       </button>
-      <span class="changelog-btn-label" id="changelogBtnLabel">v<span id="changelogBtnVersion">—</span> · changelog</span>
+      <span class="changelog-btn-label" id="changelogBtnLabel">v<span id="changelogBtnVersion">—</span> · changelog · <a class="changelog-license-link" href="https://github.com/Aoi-Kuro/impulse/blob/main/LICENSE" target="_blank" rel="noopener license" title="Copyright and licenses" onclick="if (typeof openLicenseScreen === 'function') { openLicenseScreen(); return false; }">copyright</a></span>
     </div>
 
     <!-- ── Changelog panel ── -->
@@ -965,6 +974,64 @@
   </div>
 </div>
 
+<!-- ── License screen (js/license.js, css/license.css) ──
+     Opened from the "Copyright" link under the changelog button. Statements
+     first, then the two full license texts behind tabs. Keep the wording in
+     sync with the License section of README.md. -->
+<div id="licenseScreen">
+  <div class="license-wrap">
+    <div class="license-header">
+      <div class="license-title">⚖️ Copyright</div>
+      <button class="stats-close-btn" onclick="closeLicenseScreen()">✕ Close</button>
+    </div>
+
+    <div class="license-statements">
+      <section class="license-card">
+        <h2>Non-Commercial Project</h2>
+        <p>This site is a free, non-commercial study project. It has no ads, no paid features and no fees, and nobody earns money from it.</p>
+      </section>
+
+      <section class="license-card">
+        <h2>Problems and Figures</h2>
+        <p>The problem statements, numerical data, answers and figures used on this site are the intellectual property of Nazarbayev University, or of the original sources from which Nazarbayev University obtained them. They are not covered by the licenses below, and this project claims no rights to them.</p>
+        <p>All legal inquiries concerning this material should be addressed directly to Nazarbayev University.</p>
+      </section>
+
+      <section class="license-card">
+        <h2>Worked Solutions <span class="license-badge">All rights reserved</span></h2>
+        <p>Solutions written for this site, including their figures, are © their authors, who are credited under each solution, and are published here with their permission. All rights reserved.</p>
+        <p>They may not be copied, republished, adapted or used commercially without permission. To ask for permission, contact <a href="https://t.me/Aoi_Kuro" target="_blank" rel="noopener">@Aoi_Kuro on Telegram</a>.</p>
+        <!-- Filled by renderLicenseSolutionAuthors() in js/license.js. -->
+        <div class="license-authors" id="licenseSolutionAuthors" hidden></div>
+      </section>
+
+      <section class="license-card">
+        <h2>Site Code <span class="license-badge">AGPL-3.0</span></h2>
+        <p>The source code of this site is © 2026 Ansar Seitkali and contributors, licensed under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener license">GNU Affero General Public License v3.0</a>.</p>
+        <p>You may use, modify and share it, as long as modified versions stay under the same license and keep their source code available, including to people who use a modified version over a network, such as a hosted copy of this site. Copyright and attribution notices must be kept. The source code is on <a href="https://github.com/Aoi-Kuro/impulse" target="_blank" rel="noopener">GitHub</a>.</p>
+      </section>
+
+      <section class="license-card">
+        <h2>Third-Party Components</h2>
+        <p>Bundled libraries and fonts keep their own licenses: MathJax, DOMPurify and SheetJS (Apache 2.0), jsPDF (MIT), IBM Plex fonts (SIL Open Font License 1.1) and TikZJax. Their license files are kept with them in <code>vendor/</code>.</p>
+      </section>
+
+      <section class="license-card license-card-contact">
+        <h2>Copyright Holders</h2>
+        <p>If you hold the rights to any material on this site and believe it is used without permission, or want it removed, please contact <a href="https://t.me/Aoi_Kuro" target="_blank" rel="noopener">@Aoi_Kuro on Telegram</a>.</p>
+      </section>
+    </div>
+
+    <div class="license-texts-heading">Full License Text: GNU AGPL v3.0</div>
+    <nav class="settings-tabs" id="licenseTabs">
+      <!-- Rendered by renderLicenseTabs() in js/license.js -->
+    </nav>
+    <div class="license-text-box">
+      <pre class="license-text" id="licenseText"></pre>
+    </div>
+  </div>
+</div>
+
 <!-- ── Forum: hover preview for $...$/$$...$$ typed directly in the message box ── -->
 <div class="forum-eq-hover-preview" id="forumEqHoverPreview"></div>
 
@@ -1324,6 +1391,7 @@
       'js/solve-all-nav.js',
       'js/changelog.js',
       'js/manual.js',
+      'js/license.js',
       'js/settings.js',
       'js/offline-mode.js',
       'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
@@ -1361,7 +1429,8 @@
         <div class="solution-title" id="solutionTitle">📘 Solution</div>
       </div>
       <div class="solution-header-right">
-        <button class="solution-close-btn" onclick="closeSolutionScreen()">✕ Close</button>
+        <button class="solution-close-btn" id="solutionShareBtn" onclick="shareSolutionLink()" title="Copy a link to this solution">🔗 Share</button>
+        <button class="solution-close-btn" id="solutionCloseBtn" onclick="closeSolutionScreen()">✕ Close</button>
       </div>
     </div>
 
@@ -1397,6 +1466,13 @@
     <div class="solution-main" id="solutionMain">
       <div class="solution-section-label">Solution</div>
       <div class="sol-text" id="solutionBody"></div>
+    </div>
+
+    <!-- Previous / next problem with a published solution in this quiz
+         (renderSolutionPager in js/solutions.js). -->
+    <div class="solution-pager" id="solutionPager" hidden>
+      <button type="button" class="solution-close-btn solution-pager-btn" id="solutionPrevProblem"></button>
+      <button type="button" class="solution-close-btn solution-pager-btn" id="solutionNextProblem"></button>
     </div>
 
     <div class="solution-credit" id="solutionCredit"></div>

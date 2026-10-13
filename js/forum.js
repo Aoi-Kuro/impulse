@@ -4349,6 +4349,10 @@ function syncForumFabVisibility() {
 
   const onLanding = !landing.classList.contains('hidden');
   const inForum   = forum && forum.classList.contains('visible');
+  // The License screen (js/license.js) is a landing-screen page, not one of
+  // FORUM_FAB_HOSTS, so the FAB stays hidden there like on landing itself.
+  const license   = document.getElementById('licenseScreen');
+  const inLicense = !!license && license.classList.contains('visible');
   // `checked` (quiz-engine.js) flips true once "Check answers" runs on a
   // plain Random 6 attempt — at that point there's a result to discuss, so
   // this no longer counts as "plain" and the FAB (plus each card's own
@@ -4371,11 +4375,11 @@ function syncForumFabVisibility() {
   // forumFabHostId stays null and the FAB is hidden exactly like before.
   const keepFabWhileInForum = inForum && !!forumFabHostId;
 
-  wrap.classList.toggle('forum-fab-visible', keepFabWhileInForum || (!onLanding && !inForum && !inPlainRandom6));
+  wrap.classList.toggle('forum-fab-visible', keepFabWhileInForum || (!onLanding && !inForum && !inLicense && !inPlainRandom6));
 }
 
 function initForumFabWatcher() {
-  const watchIds = ['landingScreen', 'forumScreen', 'appPage', 'solveAllMode', 'mistakesMode', 'statsScreen', 'reviewScreen', 'choicePage'];
+  const watchIds = ['landingScreen', 'forumScreen', 'appPage', 'solveAllMode', 'mistakesMode', 'statsScreen', 'reviewScreen', 'choicePage', 'licenseScreen'];
   watchIds.forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;

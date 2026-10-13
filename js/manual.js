@@ -125,6 +125,14 @@ const MANUAL_HOSTS = [
     show:      el => el.classList.remove('hidden', 'fading-out'),
     scrollY: 0,
   },
+  {
+    // js/license.js — the manual button is reachable from it too.
+    id: 'licenseScreen',
+    isVisible: el => el.classList.contains('visible'),
+    hide:      el => el.classList.remove('visible', 'fading-out'),
+    show:      el => el.classList.add('visible'),
+    scrollY: 0,
+  },
 ];
 
 // Set for the duration of a manual visit opened on top of one of

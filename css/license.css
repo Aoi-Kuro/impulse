@@ -1,0 +1,188 @@
+/* ─── License screen ─────────────────────────────────────────────────────── */
+/* Same open/close animation and header as #manualScreen (css/manual.css);
+   see js/license.js. One reading column: statements, then the tabbed full
+   license texts. The tab buttons reuse .settings-tabs/.settings-tab-btn
+   from css/settings.css. */
+
+#licenseScreen {
+  display: none;
+  min-height: 100vh;
+  background: var(--bg);
+  font-family: var(--sans);
+  z-index: 200;
+}
+#licenseScreen.visible {
+  display: block;
+  animation: fadeInPage 0.38s ease forwards;
+}
+#licenseScreen.fading-out {
+  animation: fadeOutPage 0.28s ease forwards;
+  pointer-events: none;
+}
+
+.license-wrap {
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 2rem 1.4rem calc(3rem + env(safe-area-inset-bottom, 0px));
+}
+
+.license-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.6rem;
+}
+/* Header and heading styles follow the manual's (.manual-title,
+   .manual-content-title, .manual-content-body h3 in css/manual.css). */
+.license-title {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.license-statements {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.license-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+  padding: 1rem 1.1rem;
+}
+.license-card h2 {
+  margin: 0 0 0.6rem;
+  font-family: var(--sans);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.license-card p {
+  margin: 0 0 0.7rem;
+  font-family: var(--sans);
+  font-size: 0.94rem;
+  line-height: 1.65;
+  color: var(--text);
+}
+.license-card p:last-child { margin-bottom: 0; }
+.license-card a { color: var(--accent); }
+.license-card code {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  color: var(--muted);
+}
+.license-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.1rem 0.45rem;
+  margin-left: 0.4rem;
+  vertical-align: 0.1em;
+}
+/* Solution authors list inside the Worked Solutions card (js/license.js). */
+/* Same look as the manual's reference tables (.manual-content-body table in
+   css/manual.css). Rows of one author have no line between them; the line
+   runs under each author's last row. */
+.license-authors { margin-top: 0.9rem; }
+.license-authors[hidden] { display: none; }
+.license-authors-scroll { overflow-x: auto; }
+.license-authors-table {
+  /* As wide as its content, centred in the card. */
+  width: auto;
+  margin: 0 auto;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+.license-authors-table th,
+.license-authors-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.7rem;
+}
+.license-authors-table th {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.license-authors-table tr.license-author-last td,
+.license-authors-table td.license-author-cell { border-bottom: 1px solid var(--border); }
+.license-authors-table tbody tr:last-child td,
+.license-authors-table td.license-author-cell.is-final { border-bottom: none; }
+.license-author-name {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.license-author-count {
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+  white-space: nowrap;
+}
+.license-author-quiz {
+  font-family: var(--mono);
+  color: var(--text);
+  white-space: nowrap;
+}
+.license-author-problems {
+  font-family: var(--mono);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.license-card-contact {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.license-texts-heading {
+  margin: 2rem 0 0.8rem;
+  font-family: var(--sans);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+}
+/* The box spans the column; the plain-text license inside (72 columns
+   wide) shrinks to its longest line and is centred in it, instead of
+   hugging the left edge. Narrower screens still wrap it. */
+.license-text-box {
+  margin: 1rem 0 0;
+  padding: 1rem 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+}
+.license-text {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.license-text a { color: var(--accent); }
+/* .settings-tabs is display:flex, which would otherwise beat [hidden]
+   (renderLicenseTabs hides the bar while there is only one license). */
+#licenseTabs[hidden] { display: none; }
+
+@media (max-width: 600px) {
+  .license-wrap { padding: 1.4rem 1rem calc(2.5rem + env(safe-area-inset-bottom, 0px)); }
+  .license-card { padding: 0.85rem 0.9rem; }
+  .license-text-box { padding: 0.85rem 0.8rem; }
+  .license-text { font-size: 0.68rem; }
+}

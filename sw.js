@@ -308,7 +308,7 @@ function respondDefault(event) {
     // Resolving respondWith() with undefined (offline.html missing from the
     // cache) is what Chrome shows as ERR_FAILED, so keep a bare fallback.
     return fetch(event.request).catch(() =>
-      caches.match(OFFLINE_URL).then((cached) => cached || new Response(
+      caches.match(OFFLINE_URL, { ignoreVary: true }).then((cached) => cached ? withScopeBase(cached) : new Response(
         '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         + '<title>Offline</title><p style="font-family:sans-serif;padding:2em">You are offline. Reconnect and reload.</p>',
         { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
@@ -317,7 +317,10 @@ function respondDefault(event) {
   }
 
   if (isPrecached) {
-    return caches.match(event.request).then((cached) => {
+    // ignoreVary: the precache request (Accept: */*) and the page's own
+    // request (e.g. Accept: text/css) differ in headers, so a server that
+    // sends `Vary: Accept` would otherwise make every lookup here miss.
+    return caches.match(event.request, { ignoreVary: true }).then((cached) => {
       const revalidate = fetch(event.request).then((response) => {
         if (response && response.ok) {
           // Clone synchronously, right here, before any async work — if
@@ -343,6 +346,28 @@ function respondDefault(event) {
   // event.respondWith() at all (job 1's original behavior): just do the
   // normal network fetch.
   return fetch(event.request);
+}
+
+// offline.html is served at whatever URL failed to load, not at
+// /offline.html — so a reload of e.g. /editor/ with no connection would
+// resolve its relative css/style.css, js/themes.js, images/offline/*.png,
+// course/offline-laws.json and MathJax font URLs against /editor/, none of
+// which are cached, and the page came up completely unstyled. Pinning a
+// <base> to this worker's scope (where sw.js, offline.html and everything
+// in PRECACHE_URLS live) makes them resolve to the precached copies no
+// matter which page was being loaded. location.reload() ("Try again" and
+// the 'online' listener) is unaffected — it reloads the document URL, not
+// the base.
+async function withScopeBase(response) {
+  const html = await response.text();
+  const base = '<base href="' + self.registration.scope + '">';
+  const patched = /<head\b[^>]*>/i.test(html)
+    ? html.replace(/<head\b[^>]*>/i, (tag) => tag + base)
+    : base + html;
+  return new Response(patched, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
 }
 
 // ── Push notifications (forum @mentions) ──

@@ -45,6 +45,10 @@ const SETTINGS_DEFAULTS = {
     showForumFab:    true,
     hideFieldLinesByDefault: false,
     showTopBarTip:   true,
+    // Percent applied to every figure (problem images/SVGs and solution
+    // figures) through the --user-fig-scale CSS variable. See
+    // applyFigureScale() below.
+    figureScale:     100,
   },
   notifications: {
     hideUpdateReminder: false,
@@ -198,6 +202,14 @@ const SETTINGS_HOSTS = [
     isVisible: el => !el.classList.contains('hidden'),
     hide:      el => el.classList.add('hidden'),
     show:      el => el.classList.remove('hidden', 'fading-out'),
+    scrollY: 0,
+  },
+  {
+    // js/license.js — the settings gear is reachable from it too.
+    id: 'licenseScreen',
+    isVisible: el => el.classList.contains('visible'),
+    hide:      el => el.classList.remove('visible', 'fading-out'),
+    show:      el => el.classList.add('visible'),
     scrollY: 0,
   },
 ];
@@ -779,7 +791,46 @@ function renderSettingsDisplayTab() {
       </div>
     `);
   }
+  const figPct = clampFigureScale(getSetting('display', 'figureScale'));
+  html.push(`
+    <div class="settings-row" data-row-key="figureScale">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Figure size</div>
+        <div class="settings-row-desc">Scales every figure in problems and solutions. Double-click the slider to reset to 100%.</div>
+      </div>
+      <div class="settings-slider">
+        <input type="range" min="${FIGURE_SCALE_MIN}" max="${FIGURE_SCALE_MAX}" step="10" value="${figPct}"
+               aria-label="Figure size" oninput="setFigureScale(this.value)"
+               ondblclick="this.value = 100; setFigureScale(100)">
+        <span class="settings-slider-value" id="figureScaleValue">${figPct}%</span>
+      </div>
+    </div>
+  `);
   return html.join('');
+}
+
+// ── Figure size ──
+// One percent value scales every figure on the site. The CSS reads it as
+// --user-fig-scale on <html> (css/style.css for problem figures,
+// css/figure.css for solution figures); index.html's anti-flicker script
+// sets the same variable before first paint — keep its clamp in sync.
+const FIGURE_SCALE_MIN = 50;
+const FIGURE_SCALE_MAX = 200;
+function clampFigureScale(v) {
+  const n = Number(v);
+  if (!isFinite(n)) return 100;
+  return Math.min(FIGURE_SCALE_MAX, Math.max(FIGURE_SCALE_MIN, Math.round(n)));
+}
+function applyFigureScale() {
+  const pct = clampFigureScale(getSetting('display', 'figureScale'));
+  document.documentElement.style.setProperty('--user-fig-scale', String(pct / 100));
+}
+function setFigureScale(v) {
+  const pct = clampFigureScale(v);
+  setSetting('display', 'figureScale', pct);
+  applyFigureScale();
+  const label = document.getElementById('figureScaleValue');
+  if (label) label.textContent = pct + '%';
 }
 
 // In-place counterpart to a full renderSettingsBody() for followDeviceTheme
@@ -1178,6 +1229,7 @@ function applyDisplaySettings() {
     }
     document.documentElement.classList.toggle(cls, !shown);
   }
+  applyFigureScale();
 }
 
 // ── Notifications ───────────────────────────────────────────────────────

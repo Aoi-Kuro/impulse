@@ -28,7 +28,7 @@ const QUIZZES = [
   { name: "Kinematics & Dynamics", problems: Quiz_1_Problems, retired: (typeof Quiz_1_Retired !== "undefined" ? Quiz_1_Retired : []), enabled: true  },
   { name: "Energy, Momentum & Rotation", problems: Quiz_2_Problems, retired: (typeof Quiz_2_Retired !== "undefined" ? Quiz_2_Retired : []), enabled: true },
   { name: "Gravity and Waves",       problems: Quiz_3_Problems, retired: (typeof Quiz_3_Retired !== "undefined" ? Quiz_3_Retired : []), enabled: true },
-  { name: "",       problems: Quiz_4_Problems, retired: (typeof Quiz_4_Retired !== "undefined" ? Quiz_4_Retired : []), enabled: false },
+  { name: "Heat and Thermodynamics", problems: Quiz_4_Problems, retired: (typeof Quiz_4_Retired !== "undefined" ? Quiz_4_Retired : []), enabled: true },
 ];
 
 // ─── Problem lookup + display helpers ────────────────────────────────────────

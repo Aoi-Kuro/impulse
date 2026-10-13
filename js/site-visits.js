@@ -26,6 +26,9 @@ function getSiteDeviceId() {
 
 function recordSiteVisit() {
   if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_PUBLISHABLE_KEY === 'undefined') return;
+  // The editor's Full preview loads the site in an overlay; that is not a
+  // reader's visit (flag set by js/solutions.js).
+  if (window.__solutionPreview) return;
   // Fire-and-forget: a page load should never wait on, or fail because of,
   // this. Any error is swallowed — it's a stats side-effect, not something
   // the person is doing.

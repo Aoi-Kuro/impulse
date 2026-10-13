@@ -7,6 +7,7 @@ window.TOP_BAR_TIPS = [
   "Have any suggestions or want a new feature? Ask us on Telegram! Even if it's something very specific, we can add it as an optional setting. (If we have time, though!)",
   "New in Settings, Display: turn on Follow device theme to match your system's light or dark mode automatically.",
   "New in Settings, Display: turn on Hide field lines by default to start every visit with them off.",
+  "New in Settings, Display: make figures bigger or smaller with the Figure size slider.",
   "New in Settings, Notifications: hide the update reminder, with an option to still update automatically once you're not mid-quiz.",
   "New in Settings, Notifications: hide the try-new-theme or bug report reminders individually.",
   "New in Settings, Study: turn on Reduce motion to cut down on animations across the app.",

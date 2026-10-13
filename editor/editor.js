@@ -271,6 +271,7 @@ function toggleTheme() {
      It also refreshes serverIndex, so it doubles as the answer to "did my
      collaborator publish anything since I opened this?" */
   let checking = false;
+  let rebuilding = false;                // a figure rebuild is running (Check all waits)
 
   function closeCheckReport() {
     const box = $('edCheck');
@@ -291,8 +292,28 @@ function toggleTheme() {
     parent.appendChild(b);
   }
 
+  // Always leaves the button usable again, whatever happens inside.
   async function runCheckAll() {
-    if (checking) return;
+    if (checking || rebuilding) return;
+    try {
+      await runCheckAllInner();
+    } catch (e) {
+      const box = $('edCheck');
+      box.hidden = false;
+      box.textContent = '';
+      const err = document.createElement('div');
+      err.className = 'ed-check-empty';
+      err.textContent = 'The check stopped: ' + ((e && e.message) || e);
+      box.appendChild(err);
+    } finally {
+      checking = false;
+      $('edCheckAll').textContent = 'Check all';
+      $('edCheckAll').disabled = rebuilding;
+      if (cur) refreshState();
+    }
+  }
+
+  async function runCheckAllInner() {
     checking = true;
     const btn = $('edCheckAll');
     const box = $('edCheck');
@@ -318,7 +339,8 @@ function toggleTheme() {
     }
 
     const keys = Object.keys(serverIndex);
-    const stale = [], published = [], drafted = [], orphan = [], unsaved = [];
+    const stale = [], published = [], drafted = [], orphan = [], unsaved = [], oldFigs = [];
+    await figBuildReady;
 
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
@@ -335,9 +357,14 @@ function toggleTheme() {
       if (!row) continue;
       const bucket = row.status === 'published' ? published : drafted;
       bucket.push(p);
-      if (row.problem_hash && row.problem_hash !== await problemHashOf(p)) {
+      // problemHashOf needs crypto.subtle (https:// or localhost); without it
+      // the comparison is skipped rather than stopping the whole check.
+      let hashNow = null;
+      try { hashNow = await problemHashOf(p); } catch (e) { /* plain http:// */ }
+      if (row.problem_hash && hashNow && row.problem_hash !== hashNow) {
         stale.push({ p, status: row.status });
       }
+      if (figureBuildState(row) === 'older') oldFigs.push({ p, status: row.status });
       if (key === (cur && cur.key)) {           // keep the open problem in step
         curRow = row;
         curStale = row.problem_hash ? stale.some((s) => s.p.key === key) : null;
@@ -373,6 +400,7 @@ function toggleTheme() {
     addCount('pub', `${published.length} published`);
     addCount('draft', `${drafted.length} draft`);
     if (stale.length) addCount('stale', `${stale.length} out of date`);
+    if (oldFigs.length) addCount('stale', `${oldFigs.length} old figure${oldFigs.length === 1 ? '' : 's'}`);
     if (unsaved.length) addCount('local', `${unsaved.length} unsaved here`);
     box.appendChild(counts);
 
@@ -382,6 +410,22 @@ function toggleTheme() {
       g.textContent = 'Problem changed since written';
       box.appendChild(g);
       stale.forEach(({ p, status }) => checkRow(box, p, status === 'published' ? 'published' : 'draft', true));
+    }
+    if (oldFigs.length) {
+      const g = document.createElement('div');
+      g.className = 'ed-check-group';
+      g.textContent = 'Figure not built with the current setup';
+      box.appendChild(g);
+      oldFigs.forEach(({ p, status }) => checkRow(box, p, status === 'published' ? 'published' : 'draft', true));
+      const rb = document.createElement('button');
+      rb.className = 'ed-abtn ed-check-rebuild';
+      rb.textContent = `Rebuild ${oldFigs.length} figure${oldFigs.length === 1 ? '' : 's'}`;
+      rb.title = 'Recompile each figure from its saved TikZ with the current setup and save it back, keeping its status, text, captions and credit';
+      const rn = document.createElement('div');
+      rn.className = 'ed-check-note';
+      rn.textContent = 'These figures were compiled under an earlier TikZ setup (packages, libraries, preamble or figure processing), or before setups were recorded, so readers may still see older output. Rebuild recompiles them from their saved TikZ and saves them back with the same status, text and credit.';
+      rb.addEventListener('click', () => rebuildFigures(oldFigs, rb, rn));
+      box.append(rb, rn);
     }
     if (unsaved.length) {
       const g = document.createElement('div');
@@ -404,7 +448,7 @@ function toggleTheme() {
         box.appendChild(b);
       });
     }
-    if (!stale.length && !unsaved.length && !orphan.length) {
+    if (!stale.length && !unsaved.length && !orphan.length && !oldFigs.length) {
       const ok = document.createElement('div');
       ok.className = 'ed-check-empty';
       ok.textContent = keys.length ? 'Everything matches its problem.' : 'No solutions stored yet.';
@@ -423,6 +467,99 @@ function toggleTheme() {
   }
 
   $('edCheckAll').addEventListener('click', runCheckAll);
+
+  // Rebuilds one stored row's figure: recompiles its saved TikZ under the
+  // current setup (as a background job, so the live preview isn't held up)
+  // and saves it back otherwise unchanged — same status, text, captions,
+  // credit and problem_hash. Resolves 'rebuilt' or 'skipped' (already
+  // current, or nothing to rebuild); throws with a readable message. Never
+  // runs from an outdated editor window, and skips a figure whose step
+  // count changed rather than shifting its captions onto the wrong steps.
+  async function rebuildRow(p) {
+    if (await editorIsOutdated()) {
+      const err = new Error('a newer editor version is out; reload first (drafts are kept)');
+      err.outdated = true;
+      throw err;
+    }
+    const row = await SolutionStore.get(p.key);
+    if (figureBuildState(row) !== 'older') return 'skipped';
+    const src = row.figure.tikz;
+    const steps = detectSteps(src);
+    const stored = row.figure.steps || [];
+    if (steps.n !== stored.length) {
+      throw new Error(`its step count changed (${stored.length} saved, ${steps.n} now); open it, check the captions, then publish`);
+    }
+    const res = await compileFigure(src, steps, null, true, true);
+    if (!res || res.error) throw new Error(res && res.step ? `TeX error in step ${res.step}` : 'TeX could not compile it');
+    const figure = Object.assign({}, row.figure, {
+      steps: res.svgs.map((svg, k) => ({ svg, caption: (stored[k] && stored[k].caption) || '' })),
+      build: figBuild,
+    });
+    const saved = await SolutionStore.save(p.key, {
+      solution: row.solution, figure, status: row.status, problem_hash: row.problem_hash, author: row.author,
+    }, row.updated_at);
+    serverIndex[p.key] = { status: saved.status, updated_at: saved.updated_at };
+    if (cur && cur.key === p.key) { curRow = saved; refreshState(); }
+    return 'rebuilt';
+  }
+  const rebuildError = (e) => (e && e.conflict) ? 'saved by someone else meanwhile' : ((e && e.message) || String(e));
+
+  // While a rebuild runs, Check all is disabled (it would clear the report
+  // holding the rebuild's progress) and so is the other rebuild button.
+  function setRebuilding(on) {
+    rebuilding = on;
+    $('edCheckAll').disabled = on || checking;
+    if (cur) refreshState();
+  }
+
+  // "Rebuild N figures" in the Check report.
+  async function rebuildFigures(list, btn, note) {
+    if (rebuilding || checking) return;
+    setRebuilding(true);
+    btn.disabled = true;
+    let rebuilt = 0;
+    const failed = [];
+    try {
+      for (let i = 0; i < list.length; i++) {
+        const { p } = list[i];
+        btn.textContent = `Rebuilding ${i + 1} / ${list.length}…`;
+        try {
+          if (await rebuildRow(p) === 'rebuilt') rebuilt++;
+        } catch (e) {
+          failed.push(`Q${p.quiz} · ${p.id}: ${rebuildError(e)}`);
+          if (e && e.outdated) break;                 // every later one would fail the same way
+        }
+      }
+    } finally {
+      setRebuilding(false);
+    }
+    btn.textContent = failed.length ? `Rebuilt ${rebuilt} · ${failed.length} failed` : `Rebuilt ${rebuilt}`;
+    note.textContent = failed.length
+      ? 'Not rebuilt: ' + failed.join('; ') + '.'
+      : 'Done. Readers now see the rebuilt figures.';
+    renderList();
+    if (cur) markItem(cur.key);
+  }
+
+  // "Rebuild figure" next to the state panel's "Figure setup" row: the same
+  // rebuild for the open problem, from its stored version (unsaved changes
+  // in this window stay as they are).
+  $('edStBuildBtn').addEventListener('click', async () => {
+    if (!cur || rebuilding || checking) return;
+    const p = cur;
+    const btn = $('edStBuildBtn');
+    setRebuilding(true);
+    btn.textContent = 'Rebuilding…';
+    try {
+      const r = await rebuildRow(p);
+      toast(r === 'rebuilt' ? 'Figure rebuilt.' : 'Nothing to rebuild.', r === 'rebuilt' ? 'ok' : '');
+    } catch (e) {
+      toast('Not rebuilt: ' + rebuildError(e), 'err');
+    } finally {
+      btn.textContent = 'Rebuild figure';
+      setRebuilding(false);
+    }
+  });
 
   /* ───────────────────────── colour hint ─────────────────────────
      Shows the five figure colours as they will actually render, in every
@@ -715,9 +852,18 @@ function toggleTheme() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flushDrafts, 500);
   }
+  let draftQuotaWarnedAt = 0;
   function flushDrafts() {
     clearTimeout(saveTimer); saveTimer = null;
-    try { localStorage.setItem(LS.drafts, JSON.stringify(drafts)); } catch (e) { /* quota: ignore */ }
+    try { localStorage.setItem(LS.drafts, JSON.stringify(drafts)); }
+    catch (e) {
+      // Storage full: drafts in this browser stop updating. Say so (at most
+      // once a minute) rather than losing typed work without a word.
+      if (Date.now() - draftQuotaWarnedAt > 60000) {
+        draftQuotaWarnedAt = Date.now();
+        toast('This browser’s storage is full, so drafts are not being kept here. Save to the database to keep your work.', 'err');
+      }
+    }
   }
   // The write above is debounced; without this, a reload or tab close within
   // half a second of typing would drop the last keystrokes.
@@ -886,6 +1032,116 @@ function toggleTheme() {
   setFigOpen(true);
   $('edFigToggle').addEventListener('click', () => setFigOpen(document.body.classList.contains('fig-closed')));
 
+  /* Full preview: the solution on screen, saved or not, on the practice
+     site's real Solution screen, so it looks exactly as readers will see it,
+     credited to the signed-in editor and dated now. The site is loaded as
+     /?solutionPreview=1 in an overlay over the editor (an iframe, rebuilt on
+     each open); once it starts it asks for the solution
+     ('solution-preview-request') and gets it back by postMessage — nothing
+     is written to storage, so a large figure can't fill localStorage (which
+     the drafts share) and two editor tabs can't swap each other's preview.
+     The site's own "Close preview" button or Escape end it. */
+  let previewData = null;                // what the open overlay shows
+  // Earlier versions handed the preview over in localStorage and never
+  // removed it; clear what may be left so it stops taking up space.
+  try { localStorage.removeItem(P + '-solution-preview'); } catch (e) { /* ignore */ }
+  function openFullPreview() {
+    if (!cur) return;
+    const pl = payloadOf(cur.key);
+    if (pl.figure.steps.some((s) => !s.svg)) {
+      toast('The figure is still compiling. Try again in a moment.', 'err');
+      return;
+    }
+    const me = editorName && (editorsCache || []).find((ed) => ed.name === editorName);
+    const data = {
+      problem_key: cur.key,
+      solution: pl.solution || '',
+      figure: pl.figure,
+      author: editorName,
+      author_link: (me && me.link) || null,
+      updated_at: new Date().toISOString(),
+    };
+    previewData = data;
+    showPreviewOverlay();
+  }
+
+  function showPreviewOverlay() {
+    closePreviewOverlay();
+    const ov = document.createElement('div');
+    ov.className = 'ed-preview';
+    ov.id = 'edPreview';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-label', 'Full preview');
+    // The overlay fades in with "Loading preview…" while the site starts up
+    // inside the frame (landing screen, then the switch to the Solution
+    // screen). The frame stays invisible until BOTH the fade-in has finished
+    // and the site says the solution is drawn ('solution-preview-ready'),
+    // then fades in itself — so nothing flickers past or appears
+    // mid-animation. A fallback reveals it after 10 s regardless.
+    const wait = document.createElement('div');
+    wait.className = 'ed-preview-wait';
+    wait.textContent = 'Loading preview…';
+    const frame = document.createElement('iframe');
+    frame.className = 'ed-preview-frame';
+    frame.title = `Full preview · ${cur.key}`;
+    frame.src = '/?solutionPreview=1';
+    ov.append(wait, frame);
+    document.body.appendChild(ov);
+    previewState = { faded: false, ready: false };
+    // Two frames so the starting opacity is painted before the transition.
+    requestAnimationFrame(() => requestAnimationFrame(() => ov.classList.add('shown')));
+    previewFadeTimer = setTimeout(() => { previewState.faded = true; maybeRevealPreview(); }, PREVIEW_FADE_MS);
+    previewRevealTimer = setTimeout(() => { previewState.faded = previewState.ready = true; maybeRevealPreview(); }, 10000);
+  }
+  const PREVIEW_FADE_MS = 260;          // keep in step with .ed-preview's transition
+  let previewState = { faded: false, ready: false };
+  let previewFadeTimer = null, previewRevealTimer = null;
+  function maybeRevealPreview() {
+    const ov = $('edPreview');
+    if (!ov || ov.classList.contains('ready') || !previewState.faded || !previewState.ready) return;
+    clearTimeout(previewRevealTimer);
+    ov.classList.add('ready');
+    // Keyboard focus inside the preview, so Escape reaches the site there.
+    const frame = ov.querySelector('iframe');
+    try { frame.contentWindow.focus(); } catch (e) { /* ignore */ }
+  }
+  function revealPreviewOverlay() {
+    previewState.ready = true;
+    maybeRevealPreview();
+  }
+  function closePreviewOverlay() {
+    clearTimeout(previewFadeTimer);
+    clearTimeout(previewRevealTimer);
+    const ov = $('edPreview');
+    if (!ov) return;
+    previewData = null;
+    ov.id = '';                          // a new preview can open while this one fades out
+    ov.classList.remove('shown');
+    ov.style.pointerEvents = 'none';
+    setTimeout(() => ov.remove(), PREVIEW_FADE_MS);
+  }
+  $('edFullPreview').addEventListener('click', openFullPreview);
+  // The site inside asks to close (its Close button, Escape or logo).
+  window.addEventListener('message', (e) => {
+    if (e.origin !== window.location.origin || !e.data) return;
+    if (e.data.type === 'solution-preview-request') {
+      // Only the frame of the overlay that is open now gets the solution.
+      const frame = $('edPreview') && $('edPreview').querySelector('iframe');
+      if (frame && e.source === frame.contentWindow && previewData) {
+        e.source.postMessage({ type: 'solution-preview-data', data: previewData }, window.location.origin);
+      }
+    } else if (e.data.type === 'solution-preview-ready') revealPreviewOverlay();
+    else if (e.data.type === 'solution-preview-close') closePreviewOverlay();
+    else if (e.data.type === 'solution-preview-failed') {
+      closePreviewOverlay();
+      toast('Could not open the preview.', 'err');
+    }
+  });
+  // Escape while focus is in the editor page (not inside the preview).
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('edPreview')) { e.stopPropagation(); closePreviewOverlay(); }
+  }, true);
+
   function showProblem(p) {
     $('edProbKey').textContent = `Q${p.quiz} · ${p.id}`;
     // Problem text is the site's own trusted content (HTML + $math$), rendered exactly like on the site.
@@ -967,6 +1223,127 @@ function toggleTheme() {
   const logWrap = $('edLogWrap'), logEl = $('edLog');
   const svgCache = new Map();            // "k|tikz" -> normalized svg string
   let compileChain = Promise.resolve();  // TeX runs one at a time
+
+  /* ── Figure build stamp + persistent compile cache ──
+     figBuild identifies everything that shapes a compiled TikZ figure apart
+     from its own source, and is worked out automatically from:
+       • the packages, libraries and preamble in TZ (top of this file);
+       • the SVG clean-up code: figNormalizeSvg and the helpers it uses
+         (_figCanonColor, FIG_COLOR_ATTRS) in js/figure.js;
+       • TikZJax's own scripts (TIKZJAX_FILES), read back as loaded;
+       • FIG_BUILD_VERSION, bumped by hand only for what none of the above
+         can see — TikZJax's TeX data (core.dump.gz, tex.wasm.gz, tex_files).
+     It is used twice, the same way js/math-cache.js uses MATH_CACHE_SCHEMA:
+       • in every persistent cache key below, so any of those changes simply
+         misses the cache and recompiles — a fix to the clean-up code takes
+         effect without anyone remembering to bump a number;
+       • saved on each TikZ figure as figure.build, so figures published
+         under another setup can be found ("Check all", the state panel)
+         and rebuilt — readers only ever get the stored SVGs.
+     If the TikZJax scripts can't be read, figBuild stays null ("unknown"):
+     nothing is stamped or flagged and the persistent cache is skipped, so a
+     guess is never recorded as the current setup.
+     Note: js/figure.js is minified for deployment, so a local copy of the
+     editor and the deployed one have different stamps. */
+  const FIG_BUILD_VERSION = 1;
+  const TIKZJAX_FILES = ['/vendor/tikzjax/tikzjax.js', '/vendor/tikzjax/run-tex.js'];
+  let figBuild = null;                   // 16 hex chars once known
+  const figBuildReady = Promise.all(TIKZJAX_FILES.map((url) =>
+    fetch(url).then((r) => (r.ok ? r.text() : null)).catch(() => null)))
+    .then((texts) => {
+      if (texts.some((t) => !t)) return null;
+      const normalizer = [
+        typeof figNormalizeSvg === 'function' ? String(figNormalizeSvg) : '',
+        typeof _figCanonColor === 'function' ? String(_figCanonColor) : '',
+        typeof FIG_COLOR_ATTRS !== 'undefined' ? JSON.stringify(FIG_COLOR_ATTRS) : '',
+      ];
+      figBuild = hashText(JSON.stringify([FIG_BUILD_VERSION, TZ.packages, TZ.libraries, TZ.preamble,
+        normalizer, texts.map(hashText)])).slice(0, 16);
+      if (cur) refreshState();           // the "Figure setup" row waits for it
+      return figBuild;
+    })
+    .catch(() => null);
+
+  // Fast, dependency-free 106-bit text hash (two cyrb53 runs). Used for the
+  // build stamp and cache keys instead of crypto.subtle, which only exists
+  // on https:// and localhost: on a plain http:// address (a phone testing
+  // over the local network) it is missing, and depending on it stopped
+  // every figure from compiling.
+  function hashText(str) {
+    const run = (seed) => {
+      let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+      for (let i = 0; i < str.length; i++) {
+        const ch = str.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+      }
+      h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+      h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+      return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
+    };
+    return run(1) + run(2);
+  }
+
+  // Compiled steps survive reloads in IndexedDB: reopening a problem, a
+  // reload, or the manual's examples show the figure without running TeX.
+  // Keyed by a hash of (build, step, steps flag, source); the newest
+  // TIKZ_CACHE_MAX entries are kept. Any failure just means "not cached".
+  const TIKZ_DB = P + '-tikz-cache', TIKZ_STORE = 'svgs', TIKZ_CACHE_MAX = 300;
+  let tikzDbPromise = null;
+  function tikzDb() {
+    if (!tikzDbPromise) {
+      tikzDbPromise = new Promise((resolve) => {
+        try {
+          const req = indexedDB.open(TIKZ_DB, 1);
+          req.onupgradeneeded = () => req.result.createObjectStore(TIKZ_STORE).createIndex('at', 'at');
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => resolve(null);
+        } catch (e) { resolve(null); }
+      });
+    }
+    return tikzDbPromise;
+  }
+  // null while the build is unknown: the persistent cache is then skipped.
+  async function tikzCacheId(k, hasSteps, src) {
+    const build = await figBuildReady;
+    return build ? hashText(`${build}|${k}|${hasSteps ? 1 : 0}|${src}`) : null;
+  }
+  async function tikzCacheGet(id) {
+    const db = await tikzDb();
+    if (!db) return null;
+    return new Promise((resolve) => {
+      try {
+        const st = db.transaction(TIKZ_STORE, 'readwrite').objectStore(TIKZ_STORE);
+        const r = st.get(id);
+        r.onsuccess = () => {
+          const hit = r.result;
+          if (hit) st.put({ svg: hit.svg, at: Date.now() }, id);   // most recently used
+          resolve(hit ? hit.svg : null);
+        };
+        r.onerror = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+  }
+  async function tikzCachePut(id, svg) {
+    const db = await tikzDb();
+    if (!db) return;
+    try {
+      const st = db.transaction(TIKZ_STORE, 'readwrite').objectStore(TIKZ_STORE);
+      st.put({ svg, at: Date.now() }, id);
+      const count = st.count();
+      count.onsuccess = () => {
+        let extra = count.result - TIKZ_CACHE_MAX;
+        if (extra <= 0) return;
+        const cur = st.index('at').openCursor();             // oldest first
+        cur.onsuccess = () => {
+          const c = cur.result;
+          if (!c || extra-- <= 0) return;
+          c.delete();
+          c.continue();
+        };
+      };
+    } catch (e) { /* quota or private mode: just not cached */ }
+  }
   let compileGen = 0;                    // bumped on every edit; stale runs stop early
 
   function setStatus(text, cls) { statusEl.textContent = text; statusEl.className = 'ed-status ' + (cls || ''); }
@@ -1090,31 +1467,86 @@ function toggleTheme() {
 
   // gen null: never superseded by edits; quiet: leave the status line alone
   // (both for compiling a history version for the compare window).
-  function compileFigure(src, steps, gen, quiet) {
-    return new Promise((resolve) => {
-      compileChain = compileChain.then(async () => {
+  // Every TeX run goes through compileChain, one at a time. A job must
+  // never leave the chain rejected — every later job would then never run
+  // and all compiles would hang — so the chain only ever continues from a
+  // settled promise, and each job turns its own exceptions into an error.
+  function enqueueCompile(job) {
+    const run = compileChain.then(job);
+    compileChain = run.catch(() => {});
+    return run;
+  }
+  function rememberSvg(key, svg) {
+    svgCache.set(key, svg);
+    if (svgCache.size > 60) svgCache.delete(svgCache.keys().next().value);
+  }
+  // One step: memory, then IndexedDB, then TeX. Resolves {svg, log} or
+  // {error, log, timeout}, or {superseded} when beforeTex() returns false.
+  async function buildStep(src, steps, k, beforeTex) {
+    const key = `${k}|${steps.hasSteps ? 1 : 0}|${src}`;
+    if (svgCache.has(key)) return { svg: svgCache.get(key) };
+    const cacheId = await tikzCacheId(k, steps.hasSteps, src);
+    const saved = cacheId ? await tikzCacheGet(cacheId) : null;
+    if (saved) { rememberSvg(key, saved); return { svg: saved }; }
+    if (beforeTex && beforeTex() === false) return { superseded: true };
+    const r = await compileOne(src, k);
+    if (r.error) return { error: true, log: r.log, timeout: r.timeout };
+    let norm;
+    try { norm = figNormalizeSvg(r.svg, `f${k}-`); }
+    catch (e) { return { error: true, log: [String(e.message || e)] }; }
+    rememberSvg(key, norm);
+    if (cacheId) tikzCachePut(cacheId, norm);
+    return { svg: norm, log: r.log };
+  }
+
+  // Resolves {svgs, ms, log}, {error, step, log, timeout}, or null when a
+  // newer edit superseded it (gen). background (Rebuild): each step takes
+  // its own place in the queue, so a preview compile asked for meanwhile
+  // runs after the current step instead of after the whole figure.
+  function compileFigure(src, steps, gen, quiet, background) {
+    const superseded = () => gen !== null && gen !== compileGen;
+    const fail = (k, e) => ({ error: true, step: k, log: [String((e && e.message) || e)] });
+    if (background) {
+      return (async () => {
         const t0 = performance.now();
         const out = [];
         let lastLog = [];
         for (let k = 1; k <= steps.n; k++) {
-          if (gen !== null && gen !== compileGen) return resolve(null);     // superseded by a newer edit
-          const key = `${k}|${steps.hasSteps ? 1 : 0}|${src}`;
-          if (svgCache.has(key)) { out.push(svgCache.get(key)); continue; }
-          if (steps.n > 1 && !quiet) setStatus(`compiling ${k}/${steps.n}…`, 'busy');
-          const r = await compileOne(src, k);
-          lastLog = r.log;
-          if (r.error) return resolve({ error: true, step: k, log: r.log, timeout: r.timeout });
-          let norm;
-          try { norm = figNormalizeSvg(r.svg, `f${k}-`); }
-          catch (e) { return resolve({ error: true, step: k, log: [String(e.message || e)] }); }
-          svgCache.set(key, norm);
-          if (svgCache.size > 60) svgCache.delete(svgCache.keys().next().value);
-          out.push(norm);
+          let r;
+          try { r = await enqueueCompile(() => buildStep(src, steps, k)); } catch (e) { return fail(k, e); }
+          if (r.error) return { error: true, step: k, log: r.log, timeout: r.timeout };
+          out.push(r.svg);
+          if (r.log) lastLog = r.log;
         }
-        resolve({ svgs: out, ms: performance.now() - t0, log: lastLog });
-      });
-    });
+        return { svgs: out, ms: performance.now() - t0, log: lastLog };
+      })();
+    }
+    return enqueueCompile(async () => {
+      const t0 = performance.now();
+      const out = [];
+      let lastLog = [];
+      for (let k = 1; k <= steps.n; k++) {
+        if (superseded()) return null;                                   // superseded by a newer edit
+        let r;
+        try {
+          r = await buildStep(src, steps, k, () => {
+            if (superseded()) return false;                              // superseded while reading the cache
+            if (steps.n > 1 && !quiet) setStatus(`compiling ${k}/${steps.n}…`, 'busy');
+            return true;
+          });
+        } catch (e) { return fail(k, e); }
+        if (r.superseded) return null;
+        if (r.error) return { error: true, step: k, log: r.log, timeout: r.timeout };
+        out.push(r.svg);
+        if (r.log) lastLog = r.log;
+      }
+      return { svgs: out, ms: performance.now() - t0, log: lastLog };
+    }).catch((e) => fail(0, e));
   }
+
+  // The manual's live TikZ examples (editor/manual.js) compile through this
+  // same queue, preamble and cache; quiet, so the status line is untouched.
+  window.edCompileTikz = (src) => compileFigure(src, detectSteps(src), null, true);
 
   let compileTimer = null;
   function scheduleCompile() {
@@ -1723,6 +2155,12 @@ function toggleTheme() {
     if (svgfBoxString(d.svgBox)) figure.svgBox = svgfBoxString(d.svgBox);
     const scale = draftScale(d);
     if (has && scale !== 1) figure.scale = scale;
+    // Build stamp (see figBuild): the current one only when these SVGs were
+    // compiled under the current setup; reused stored SVGs keep theirs.
+    if (has && figKind(d) !== 'svg' && steps.length) {
+      const build = fresh ? figBuild : ((rowFigure(key) || {}).build || null);
+      if (build) figure.build = build;
+    }
     return { solution: d.solution, figure };
   }
   function rowFigure(key) {
@@ -2037,6 +2475,16 @@ function toggleTheme() {
     return t && s ? 'TikZ + SVG' : s ? 'SVG' : t ? 'TikZ' : 'no figure';
   }
 
+  // 'current' / 'older' for a stored row's TikZ figure, null when it has
+  // none (no figure, or one drawn as SVG, which TikZ settings don't affect)
+  // or the current stamp isn't computed yet. A figure saved before build
+  // stamps existed has none, so it counts as older until rebuilt once.
+  function figureBuildState(row) {
+    const f = row && row.figure;
+    if (!figBuild || !f || f.kind === 'svg' || !(f.tikz || '').trim() || !(f.steps || []).length) return null;
+    return f.build && f.build === figBuild ? 'current' : 'older';
+  }
+
   function refreshState() {
     const key = cur && cur.key;
     if (!key) return;
@@ -2059,6 +2507,12 @@ function toggleTheme() {
       : (by ? '@' + by : '—') + (curRow.author && curRow.author !== by ? ` · credited to @${curRow.author}` : '');
     $('edStStale').textContent = curRow ? (curRow.problem_hash && curStale === true ? 'the problem changed since this was written' : 'no') : '—';
     $('edStStale').className = (curRow && curStale === true) ? 'ed-stale' : '';
+    const build = figureBuildState(curRow);
+    $('edStBuild').textContent = build === 'current' ? 'current'
+      : build === 'older' ? 'not built with the current setup' : '—';
+    $('edStBuild').className = build === 'older' ? 'ed-stale' : '';
+    $('edStBuildBtn').hidden = build !== 'older';
+    $('edStBuildBtn').disabled = rebuilding || checking;
 
     const empty = !hasContent(drafts[key]);
     $('edBtnPublish').disabled = empty || missingSvg;
@@ -2079,6 +2533,11 @@ function toggleTheme() {
   // author: who to credit when publishing (default: you).
   async function doSave(status, expected, author) {
     const key = cur.key;
+    if (await editorIsOutdated()) {
+      setStateOpen(true);
+      setMsg('A newer version of the editor is out. Tap the red version label at the top to reload (your drafts are kept), then save again.', 'err');
+      return false;
+    }
     setMsg('Saving…', '');
     try {
       const problem_hash = await problemHashOf(cur);
@@ -2865,8 +3324,26 @@ function toggleTheme() {
     function replaceRange(start, end, text) {
       ta.setSelectionRange(start, end);
       let ok = false;
-      try { ok = document.execCommand('insertText', false, text); } catch (err) { ok = false; }
+      try { ok = document.execCommand(text ? 'insertText' : 'delete', false, text); } catch (err) { ok = false; }
       if (!ok) { ta.setRangeText(text, start, end, 'end'); ta.dispatchEvent(new Event('input')); }
+    }
+    // Enter, as in a code editor: the new line keeps this line's indentation.
+    // On a line that is only indentation (nothing after the caret), Enter
+    // steps one level back instead, until none is left; then it makes a new
+    // line again. Not wrapped in `inserting`, so tab stops follow the edit.
+    function newline() {
+      const v = ta.value, s = ta.selectionStart, e = ta.selectionEnd;
+      const ls = v.lastIndexOf('\n', s - 1) + 1;
+      let le = v.indexOf('\n', e);
+      if (le < 0) le = v.length;
+      const before = v.slice(ls, s);
+      const lead = before.match(/^[ \t]*/)[0];
+      if (s === e && lead && before === lead && !v.slice(e, le).trim()) {
+        const cut = lead.endsWith('\t') ? 1 : (lead.length % INDENT.length || INDENT.length);
+        replaceRange(s - cut, s, '');
+        return;
+      }
+      replaceRange(s, e, '\n' + lead);
     }
     function goStop(dir) {
       const n = stops.i + dir;
@@ -2912,6 +3389,8 @@ function toggleTheme() {
         if (e.key === 'Escape') { e.preventDefault(); endStops(); }
       }
       if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); indent(e.shiftKey); }
+      // Shift+Enter stays a plain line break, without indentation.
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.isComposing) { e.preventDefault(); newline(); }
     });
     ta.addEventListener('blur', () => { close(); endStops(); });
     ta.addEventListener('scroll', close);
@@ -2938,6 +3417,10 @@ function toggleTheme() {
   attachSnippets(tikzEl, TIKZ_SNIPPETS, 'line');
   attachSnippets(svgEl, SVG_SNIPPETS, 'line');
   attachSnippets(solEl, SOLUTION_SNIPPETS, 'cmd');
+  // Syntax colours (editor/highlight.js).
+  edHighlight(tikzEl, 'tikz');
+  edHighlight(svgEl, 'svg');
+  edHighlight(solEl, 'latex');
 
 
   /* ───────────────────────── site version ─────────────────────────
@@ -2954,6 +3437,7 @@ function toggleTheme() {
   const VERSION_URL = '/version.json';
   const VERSION_CHECK_MS = 5 * 60 * 1000;
   let versionAtLoad = null;
+  let editorOutdated = false;            // version.json moved on since this window loaded
   async function fetchSiteVersion() {
     try {
       const r = await fetch(VERSION_URL + '?_=' + Date.now(), { cache: 'no-store' });
@@ -2964,15 +3448,25 @@ function toggleTheme() {
   }
   async function checkSiteVersion() {
     const v = await fetchSiteVersion();
-    if (!v) return;                                   // offline / server hiccup: keep what is shown
+    if (!v) return editorOutdated;                    // offline / server hiccup: keep what is shown
     const el = $('edVer');
     if (!versionAtLoad) versionAtLoad = v;
     const outdated = v !== versionAtLoad;
+    editorOutdated = outdated;
     el.hidden = false;
     el.classList.toggle('outdated', outdated);
     el.textContent = outdated ? `v${versionAtLoad} (outdated)!` : `v${versionAtLoad}`;
     el.title = outdated ? `Version ${v} is out. Tap to reload; drafts are kept.` : 'Site version';
     el.disabled = !outdated;
+    return outdated;
+  }
+  // Re-checked right before anything is written (saves, rebuilds): a window
+  // left open across a deploy still runs the old code — old preamble, old
+  // figure processing, old build stamp — and must not publish with it. A
+  // failed check (offline) does not block; the last known answer stands.
+  async function editorIsOutdated() {
+    await checkSiteVersion();
+    return editorOutdated;
   }
   // Same message the main site sends (sw.js 'purge-update-cache'); resolves
   // regardless, so a missing or silent service worker never blocks reload.

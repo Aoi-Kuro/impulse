@@ -126,6 +126,26 @@ html.solution-screen-open #stickyScore.visible {
 .solution-credit a { color: inherit; text-decoration: none; }
 .solution-credit a:hover b, .solution-credit a:focus-visible b { text-decoration: underline; }
 .solution-credit[hidden] { display: none; }
+.solution-updated { margin-top: .2rem; }
+.solution-license { margin-top: .2rem; font-size: .66rem; opacity: .85; }
+
+/* Previous / next solution: right under the solution body, above the
+   credit line. Spacing comes from .solution-wrap's gap. */
+.solution-pager {
+  display: flex; justify-content: space-between; gap: .8rem;
+  padding-top: .9rem; border-top: 1px solid var(--border);
+}
+.solution-pager[hidden] { display: none; }
+/* Editor Full preview: the landing screen stays hidden while the preview
+   loads (class set and cleared in js/solutions.js). */
+html.solution-preview-boot #landingScreen { visibility: hidden; }
+/* No fade-in there: the editor reveals the page only once it is drawn. */
+html.solution-preview #solutionScreen.visible { animation: none; }
+/* The line sits above the arrows when they show, so the credit under them
+   drops its own; with no arrows (one solution, or the editor preview) the
+   credit keeps the line. */
+.solution-pager:not([hidden]) + .solution-credit { border-top: none; padding-top: 0; }
+.solution-pager-btn { min-width: 5.5rem; }
 
 .solution-loading { color: var(--muted); font-size: .9rem; text-align: center; padding: 2.5rem 0; }
 .solution-loading[hidden], .solution-figwrap[hidden], .solution-stale[hidden], .solution-problem[hidden], .solution-main[hidden] { display: none; }

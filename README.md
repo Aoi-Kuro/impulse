@@ -64,6 +64,7 @@ The procedure is described in [Deploying a new course](#deploying-a-new-course).
 - [Deploying a new course](#deploying-a-new-course)
 - [Manual-swap items](#manual-swap-items)
 - [Versioning](#versioning)
+- [License](#license)
 
 ---
 
@@ -170,6 +171,9 @@ impulse/
 │   ├── editor.js            Editor logic
 │   ├── editor.css           Editor styles
 │   ├── svg-figure.js        SVG-mode figures: layers, colours, build, panel edits
+│   ├── highlight.js         Syntax colours for the TikZ, SVG and solution boxes
+│   ├── manual.js            Editor manual screen (📖, reads editor/manual.json)
+│   ├── manual.json          Editor manual content (sections/subsections)
 │   ├── store.js             Talks to the solutions-admin Edge Function
 │   └── store-mock.js        Drop-in localStorage stand-in for store.js
 │
@@ -418,8 +422,14 @@ after the SI-prefix conversion below.
 **Units** (`parseUnitToMap`, `unitStatus`, `unitConversionFactor`):
 
 - a space multiplies (`N m`), a single `/` divides (`N/C`, `kg m/s^2`), `^`
-  raises (`m^2`, `s^-1`, `s^(-1)`)
-- `*`, `·`, `×` are rejected; parentheses are only allowed around an exponent
+  raises (`m^2`, `s^-1`, `s^(-1)`); everything after `/` divides, so
+  `J/kg K` = `J/(kg K)`
+- `*`, `·`, `×` are rejected
+- parentheses are allowed around an exponent (`s^(-1)`) and around the whole
+  denominator (`J/(kg K)`, `kg m/(s^2)`); anywhere else (`5 (m)`,
+  `(kg m)/s`, `J/(kg) K`, `(m/s)^2`) the unit is invalid, as in Moodle
+- a second `/` (`J/kg/K`) is invalid
+- `%` is a unit of its own (matches only `%`)
 - Unicode superscripts are normalized (`m²` → `m^2`, `s⁻¹` → `s^-1`)
 - named SI-derived units (`N J W Pa Hz C V Ohm F T Wb H`) are expanded into
   base units, so any dimensionally identical spelling is accepted:
@@ -691,7 +701,7 @@ saved values over `SETTINGS_DEFAULTS`. `getSetting(tab, key)` /
 
 | Tab | Settings |
 |---|---|
-| **Display** | Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme) · Show floating forum button · Show running line (top-bar tips) · Hide field lines by default |
+| **Display** | Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme) · Show floating forum button · Show running line (top-bar tips) · Hide field lines by default · Figure size slider (50–200%, scales problem and solution figures) |
 | **Notifications** | Hide update reminder (sub: Update anyway outside quiz mode) · Hide try-new-theme reminder · Hide bug report reminder · Go silent — hides every badge and banner and mutes push (sub: Turn off automatically after 24 hours) |
 | **Study** | Reduce motion · Show live timer · Reset filter on page load · Automatically stop after 50 minutes · Full screen for Random N (sub: Don't show full-screen reminder) · Select latest quiz by default · Select cumulative by default · Hide topic while active · Solve-All: Lock order + Order · Line progress (rail) · Show progress window (sticky score) · Reveal wrong answer instantly |
 | **Sync & Storage** | Go offline (24 h) · Cache & storage tools · Backup |
@@ -893,6 +903,25 @@ banks live from the same origin, so it always matches the deployed course.
   The preview applies the same crop and size cap as the site.
 - **Scale** (0.25–2, default 1) changes the displayed size of the stored SVG
   without recompiling.
+- **Compile cache**: every compiled step is also kept in IndexedDB
+  (`<prefix>-tikz-cache`, newest 300 steps), so reopening a problem, reloading
+  the editor or the manual's examples show figures without running TeX. Keys
+  are a hash of the build stamp, the step and the source, so an edit or a
+  changed setup simply misses the cache. Hashing is plain JavaScript (no
+  `crypto.subtle`), so it also works on a plain `http://` address.
+- **Build stamp**: worked out automatically from the packages, libraries and
+  preamble, the SVG clean-up code (`figNormalizeSvg` and its helpers in
+  `js/figure.js`), TikZJax's scripts (`tikzjax.js`, `run-tex.js`, read back as
+  loaded) and `FIG_BUILD_VERSION` (`editor/editor.js`, bumped by hand only for
+  TikZJax's TeX data: `core.dump.gz`, `tex.wasm.gz`, `tex_files`). If the
+  scripts can't be read the stamp is unknown: nothing is stamped or flagged
+  and the persistent cache is skipped. `js/figure.js` is minified for
+  deployment, so a local editor and the deployed one have different stamps.
+  Each saved TikZ figure stores it as `figure.build`, only when its SVGs were
+  compiled under the current setup. The state panel's *Figure setup* row
+  (with a *Rebuild figure* button) and *Check all* show figures built under
+  another setup, or before stamps existed; readers only get stored SVGs, so
+  those keep the old output until rebuilt.
 - Compiles run in a queue with a per-source SVG cache and a 90 s timeout. On
   a TeX error, the first `!` line and its source line are shown, with the full
   TeX log available.
@@ -962,7 +991,17 @@ scopes; the solution list covers math blocks (`$$`, `equation`, `align`),
 `aligned`, `cases`, fractions, roots, the derivative macros, integrals,
 accents, brackets, units, relations and Greek letters. Outside a suggestion
 list or tab stops, Tab indents like a code editor (two spaces at the caret,
-or every selected line) and Shift+Tab outdents.
+or every selected line) and Shift+Tab outdents. Enter keeps the line's
+indentation; on a line that is only indentation it removes one level instead
+of starting a line, until none is left (Shift+Enter is a plain line break).
+
+The TikZ, SVG and solution boxes are **syntax-coloured** (`editor/highlight.js`):
+a `<pre>` with the textarea's own classes is drawn behind it and the
+textarea's text is transparent, so typing, selection, undo and snippets are
+untouched. Commands, environment names, options, numbers, math regions and
+`%` comments (SVG: tags, attributes, values, comments, with the `data-layer`/
+`data-step(s)` attributes picked out) get theme colours softened toward the text colour (`.ed-hl` in
+`editor/editor.css`); only colour changes, never width.
 
 ### Saving, publishing and conflicts
 
@@ -1027,9 +1066,22 @@ or every selected line) and Shift+Tab outdents.
 ### Other editor tools
 
 - **Check all**: re-reads every stored row and lists stale solutions (problem
-  changed), published, drafted, orphaned (no matching problem) and locally
-  unsaved work; each line selects that problem. It also refreshes the index,
-  showing work published by another editor meanwhile.
+  changed), figures not built with the current setup, published, drafted,
+  orphaned (no matching problem) and locally unsaved work; each line selects
+  that problem. *Rebuild N figures* (and *Rebuild figure* in the state panel,
+  for the open problem) recompiles those figures from their saved TikZ and
+  saves them back with the same status, text, captions, credit and
+  `problem_hash`. Skipped and listed: rows saved meanwhile by someone else,
+  rows credited to a revoked editor, figures whose step count changed (their
+  captions would land on the wrong steps), and everything once the editor
+  window is outdated. Rebuilds compile step by step behind the live preview,
+  and Check all is disabled while one runs. Check all also refreshes the
+  index, showing work published by another editor meanwhile. It only runs
+  when clicked.
+- **Full preview**: shows the solution as currently written (saved or not)
+  on the site's real Solution screen, in an overlay over the editor. The
+  site page (`/?solutionPreview=1`) gets the solution from the editor by
+  `postMessage`; nothing is stored.
 - **Editors**: active editors and their links.
 - **Export all as JSON**: every row, as a backup file.
 - **Keyboard**: Alt+↑ / Alt+↓ previous/next problem (respecting the filter),
@@ -1037,6 +1089,13 @@ or every selected line) and Shift+Tab outdents.
 - **Version label**: shows the `version.json` value at load; when the site is
   updated it turns red ("outdated") and a tap reloads after purging the
   service-worker cache (drafts are kept).
+- **Manual** (📖 in the top bar, also reachable at the key gate): the
+  practice site's manual layout (`css/manual.css`) with editor-only content
+  from `editor/manual.json`. Its live examples run on the editor's own
+  engines: TikZ through the editor's compile queue (`window.edCompileTikz`),
+  SVG through `svgfBuild`, solution text through `renderSolutionInto`
+  (`.edm-demo[data-demo="tikz|svg|sol"]` in the JSON). The open page is kept
+  until reload; Esc closes it.
 - **Offline stand-in**: replacing `/editor/store.js` with
   `/editor/store-mock.js` in `editor/index.html` runs the editor with
   localStorage instead of the database (same API, marked "offline stand-in").
@@ -1362,7 +1421,58 @@ On every release the version is bumped in **three places**:
 
 The running site polls `version.json` and shows the update banner when it
 differs from `CURRENT_VERSION`; the editor's version label turns red when
-`version.json` changes after the editor was loaded. When `PRECACHE_URLS` in
+`version.json` changes after the editor was loaded, and from then on that
+window refuses to save or rebuild until it is reloaded (drafts are kept), so a
+window left open across a deploy can't publish with old code. This relies on
+`version.json` being bumped with every release that changes the editor. When `PRECACHE_URLS` in
 `sw.js` changes, `CACHE_NAME` is bumped as well, and a change to Solve-All card
 markup or the render pipeline requires bumping `MATH_CACHE_SCHEMA` in
-`js/math-cache.js`.
+`js/math-cache.js`. Changes to the TikZ packages, libraries or preamble, to
+`figNormalizeSvg` and its helpers, or to TikZJax's scripts change the editor's
+figure build stamp on their own; only a change to TikZJax's TeX data
+(`core.dump.gz`, `tex.wasm.gz`, `tex_files`) needs `FIG_BUILD_VERSION` bumped
+in `editor/editor.js`. Afterwards run *Check all → Rebuild* in the editor.
+
+---
+
+## License
+
+This is a free, non-commercial study project: no ads, no paid features, no
+fees. The repository holds three kinds of material under three different terms.
+
+**Code** (everything not listed below) — Copyright © 2026 Ansar Seitkali
+and contributors. Licensed under the
+[GNU Affero General Public License v3.0](LICENSE). You may use, modify and
+share it, including commercially, provided that modified versions are released
+under the same license with their source code, and that anyone using a
+modified version over a network (such as a hosted copy of this site) is offered
+its source code. Copyright and attribution notices must be kept.
+
+**Worked solutions** (the solution text and figures written in the solutions
+editor and shown on the Solution screen) — © their authors, credited under each
+solution, and published on the site with their permission. **All rights
+reserved**: no license is granted, so they may not be copied, republished,
+adapted or used commercially without permission (ask
+[@Aoi_Kuro on Telegram](https://t.me/Aoi_Kuro)). Each solution shows "All rights
+reserved" under its author line.
+
+**Problems and figures** (problem statements, numerical data, answers and
+figures in `course/`, including `course/quizzes/` and `course/images/`) — are
+the intellectual property of Nazarbayev University, or of the original sources
+from which Nazarbayev University obtained them. They are not covered by either
+license above, and this project claims no rights to them. All legal inquiries
+concerning this material should be addressed directly to Nazarbayev University.
+
+**Third-party code** in `vendor/` keeps its own license: MathJax (Apache 2.0),
+DOMPurify (Apache 2.0 / MPL 2.0), SheetJS (Apache 2.0, `vendor/sheetjs/LICENSE`),
+jsPDF, jsPDF-AutoTable and svg2pdf.js (MIT, `vendor/jspdf/`), IBM Plex fonts
+(SIL Open Font License 1.1, `vendor/fonts/LICENSE.txt`) and TikZJax (see its
+upstream repository).
+
+Rights holders who believe material here is used without permission can
+contact [@Aoi_Kuro on Telegram](https://t.me/Aoi_Kuro).
+
+On the site, the **Copyright** link next to the changelog button opens the Copyright
+screen (`js/license.js`, `css/license.css`): these statements, then the full
+text of the AGPL, read from `LICENSE` (the unmodified official text). Keep the
+statements in `index.html`'s `#licenseScreen` in sync with this section.
