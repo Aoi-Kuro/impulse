@@ -900,6 +900,10 @@ banks live from the same origin, so it always matches the deployed course.
   `\thestep` set, and each step gets its own caption. The site cross-fades
   between steps.
 - Everything is kept inside `\useasboundingbox`; anything outside is clipped.
+  `\useasboundingbox` itself only sets the picture's size, so `figNormalizeSvg`
+  wraps each figure's drawing in a clip set to its viewBox; without it,
+  paths drawn past the box showed beside a tall figure whose height is capped
+  (the SVG element keeps the full width).
   The preview applies the same crop and size cap as the site.
 - **Scale** (0.25–2, default 1) changes the displayed size of the stored SVG
   without recompiling.
@@ -924,9 +928,21 @@ banks live from the same origin, so it always matches the deployed course.
   those keep the old output until rebuilt.
 - Compiles run in a queue with a per-source SVG cache and a 90 s timeout. On
   a TeX error, the first `!` line and its source line are shown, with the full
-  TeX log available.
+  TeX log available, and a *Go to line N* button that scrolls the TikZ box to
+  that line and flashes it. TeX's `l.N` is mapped to the box's own numbering
+  (TikZJax puts the preamble on the lines before the code); for an error
+  inside a multi-line argument such as `\onstep{N}{…}`, which TeX reports on
+  the closing brace, the tokens in TeX's context are looked up further up.
+- The TikZ and SVG boxes show VS Code-style line numbers (the caret's line
+  brighter); `edHighlight(textarea, lang, { lineNumbers: true })` in
+  `editor/highlight.js`. *↩ Wrap* wraps long lines instead of scrolling
+  sideways, one choice for both boxes and every problem (`<prefix>-editor-wrap`).
+  While wrapped, each number sits on its line's first row and takes the
+  line's full height, measured on a hidden copy of the text at the same width
+  and font; *Go to line* uses the same measurements.
 - At save time each SVG is normalized (`figNormalizeSvg`: canonical colors,
-  fixed sizes removed, ids prefixed so several inline SVGs never collide).
+  fixed sizes removed, the drawing clipped to its viewBox, ids prefixed so
+  several inline SVGs never collide).
 
 ### Figures (SVG)
 

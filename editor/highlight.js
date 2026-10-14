@@ -16,6 +16,14 @@
      edHighlight(textarea, 'tikz')   commands, options, numbers, $math$, % comments
      edHighlight(textarea, 'latex')  solution text: math regions, commands, numbers
      edHighlight(textarea, 'svg')    tags, attributes, values, comments
+
+   opts.lineNumbers (code boxes): a VS Code-style gutter of line numbers,
+   the caret's line brighter, and textarea._edHl.gotoLine(n), which scrolls
+   to line n, puts the caret at its start and flashes the line for a moment
+   (used by "Go to line" on a TeX error). textarea._edHl.setWrap(on) wraps
+   long lines; each number then stays level with the first row of its line
+   and takes that line's full wrapped height, measured on a hidden copy of
+   the text at the same width and font.
    ─────────────────────────────────────────────────────────────────── */
 
 const ED_HL_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
@@ -103,8 +111,9 @@ function edHlSvg(src) {
   return out + edHlEsc(src.slice(last));
 }
 
-function edHighlight(ta, lang) {
+function edHighlight(ta, lang, opts) {
   if (!ta || ta._edHl) return;
+  opts = opts || {};
   const paint = lang === 'latex' ? edHlLatex : lang === 'svg' ? edHlSvg : edHlTikz;
   const wrap = document.createElement('div');
   wrap.className = 'ed-hl-wrap';
@@ -115,7 +124,109 @@ function edHighlight(ta, lang) {
   pre.setAttribute('aria-hidden', 'true');
   wrap.append(pre, ta);
 
-  const scroll = () => { pre.scrollTop = ta.scrollTop; pre.scrollLeft = ta.scrollLeft; };
+  // Line numbers: a gutter over the left padding (the textarea and its
+  // coloured copy are padded by its width), and a layer for the go-to-line
+  // flash. Both move with the textarea's vertical scroll.
+  let gutter = null, gutterInner = null, flashLayer = null, flash = null, gutterW = 0, lineCount = 0, activeLine = 0;
+  let wrapOn = false;
+  let lineTops = null, lineHeights = null;   // per line, in px, while wrapping
+  let measureEl = null;
+  const basePadL = parseFloat(getComputedStyle(ta).paddingLeft) || 0;
+  if (opts.lineNumbers) {
+    wrap.classList.add('has-lines');
+    gutter = document.createElement('div');
+    gutter.className = 'ed-gutter';
+    gutter.setAttribute('aria-hidden', 'true');
+    gutterInner = document.createElement('div');
+    gutterInner.className = 'ed-gutter-inner';
+    gutter.appendChild(gutterInner);
+    flashLayer = document.createElement('div');
+    flashLayer.className = 'ed-flash-layer';
+    flashLayer.setAttribute('aria-hidden', 'true');
+    flash = document.createElement('div');
+    flash.className = 'ed-lineflash';
+    flashLayer.appendChild(flash);
+    wrap.append(gutter, flashLayer);
+  }
+  const lineHeight = () => {
+    const cs = getComputedStyle(ta);
+    return parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+  };
+  const caretLine = () => ta.value.slice(0, ta.selectionStart).split('\n').length;
+  const markActive = () => {
+    if (!gutterInner) return;
+    const n = caretLine();
+    if (n === activeLine && gutterInner.children[n - 1] && gutterInner.children[n - 1].classList.contains('on')) return;
+    const old = gutterInner.children[activeLine - 1];
+    if (old) old.classList.remove('on');
+    activeLine = n;
+    const cur = gutterInner.children[n - 1];
+    if (cur) cur.classList.add('on');
+  };
+  const renderGutter = () => {
+    if (!gutterInner) return;
+    const n = ta.value.split('\n').length;
+    if (n !== lineCount) {
+      lineCount = n;
+      let html = '';
+      for (let i = 1; i <= n; i++) html += `<span>${i}</span>`;
+      gutterInner.innerHTML = html;
+      activeLine = 0;
+    }
+    markActive();
+  };
+
+  // While wrapping, how tall each source line really is: the text, one
+  // block per line, laid out in a hidden copy with the textarea's content
+  // width, font and wrapping rules. Each gutter number gets its line's
+  // height, so it stays level with the line's first row. Unwrapped, every
+  // line is one row and nothing needs measuring.
+  const measure = () => {
+    if (!gutterInner) return;
+    if (!wrapOn) {
+      lineTops = lineHeights = null;
+      for (const sp of gutterInner.children) sp.style.height = '';
+      return;
+    }
+    const cs = getComputedStyle(ta);
+    const width = ta.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    if (!(width > 0)) return;                      // hidden: measured again once shown (ResizeObserver)
+    if (!measureEl) {
+      measureEl = document.createElement('div');
+      measureEl.className = 'ed-measure';
+      measureEl.setAttribute('aria-hidden', 'true');
+      wrap.appendChild(measureEl);
+    }
+    Object.assign(measureEl.style, {
+      width: width + 'px', fontFamily: cs.fontFamily, fontSize: cs.fontSize, fontWeight: cs.fontWeight,
+      fontStyle: cs.fontStyle, lineHeight: cs.lineHeight, letterSpacing: cs.letterSpacing,
+      tabSize: cs.tabSize, whiteSpace: cs.whiteSpace, overflowWrap: cs.overflowWrap, wordBreak: cs.wordBreak,
+    });
+    const frag = document.createDocumentFragment();
+    ta.value.split('\n').forEach((l) => {
+      const d = document.createElement('div');
+      d.textContent = l || ' ';                   // an empty line is still one row
+      frag.appendChild(d);
+    });
+    measureEl.textContent = '';
+    measureEl.appendChild(frag);
+    lineTops = [];
+    lineHeights = [];
+    let y = 0;
+    Array.from(measureEl.children).forEach((d, i) => {
+      const h = d.getBoundingClientRect().height;
+      lineTops.push(y);
+      lineHeights.push(h);
+      y += h;
+      if (gutterInner.children[i]) gutterInner.children[i].style.height = h + 'px';
+    });
+    measureEl.textContent = '';
+  };
+
+  const scroll = () => {
+    pre.scrollTop = ta.scrollTop; pre.scrollLeft = ta.scrollLeft;
+    if (gutterInner) gutterInner.style.transform = flash.style.transform = `translateY(${-ta.scrollTop}px)`;
+  };
   // The textarea's scrollbars take room the <pre> (no scrollbars) doesn't
   // have; padding it by the same amount keeps lines wrapping at the same place.
   const fit = () => {
@@ -124,6 +235,24 @@ function edHighlight(ta, lang) {
     const sbh = ta.offsetHeight - ta.clientHeight - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth);
     pre.style.paddingRight = `calc(${cs.paddingRight} + ${Math.max(0, sbw)}px)`;
     pre.style.paddingBottom = `calc(${cs.paddingBottom} + ${Math.max(0, sbh)}px)`;
+    if (gutter) {
+      // Wide enough for the largest number; both copies of the text start after it.
+      const fs = parseFloat(cs.fontSize) || 12;
+      const w = Math.ceil((String(Math.max(lineCount, 1)).length + 1.6) * fs * 0.62);
+      if (w !== gutterW) {
+        gutterW = w;
+        ta.style.paddingLeft = pre.style.paddingLeft = `${basePadL + w}px`;
+      }
+      const top = parseFloat(cs.borderTopWidth), left = parseFloat(cs.borderLeftWidth);
+      const bottom = parseFloat(cs.borderBottomWidth) + Math.max(0, sbh);
+      Object.assign(gutter.style, { top: top + 'px', left: left + 'px', bottom: bottom + 'px', width: w + 'px' });
+      Object.assign(flashLayer.style, { top: top + 'px', left: left + 'px', bottom: bottom + 'px',
+        right: (parseFloat(cs.borderRightWidth) + Math.max(0, sbw)) + 'px' });
+      gutterInner.style.paddingTop = cs.paddingTop;
+      gutterInner.style.fontSize = flash.style.fontSize = cs.fontSize;
+      gutterInner.style.lineHeight = cs.lineHeight;
+      measure();                                   // after the padding, which sets the width
+    }
     scroll();
   };
   const render = () => {
@@ -131,7 +260,35 @@ function edHighlight(ta, lang) {
     // A trailing newline needs a character after it, or the last empty line has no height.
     pre.innerHTML = paint(v) + (v.endsWith('\n') || !v ? ' ' : '');
     pre.classList.toggle('off', ta.disabled);
+    renderGutter();
     fit();
+  };
+
+  // Scroll line n (1-based) into the middle of the box, put the caret at its
+  // start, and flash it for a moment.
+  const gotoLine = (n) => {
+    const lines = ta.value.split('\n');
+    n = Math.max(1, Math.min(lines.length, Math.round(n) || 1));
+    let start = 0;
+    for (let i = 0; i < n - 1; i++) start += lines[i].length + 1;
+    const lh = lineHeight();
+    // Wrapped, a line starts where the lines above it end and may be several rows tall.
+    const top = lineTops && lineTops[n - 1] !== undefined ? lineTops[n - 1] : (n - 1) * lh;
+    const h = lineHeights && lineHeights[n - 1] ? lineHeights[n - 1] : lh;
+    ta.scrollIntoView({ block: 'nearest' });
+    try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+    ta.setSelectionRange(start, start);
+    ta.scrollTop = Math.max(0, top - (ta.clientHeight - h) / 2);
+    ta.scrollLeft = 0;
+    scroll();
+    markActive();
+    if (flash) {
+      flash.style.top = `calc(${getComputedStyle(ta).paddingTop} + ${top}px)`;
+      flash.style.height = h + 'px';
+      flash.classList.remove('go');
+      void flash.offsetWidth;                      // restart the animation
+      flash.classList.add('go');
+    }
   };
 
   // Values set from code (switching problems, restoring, snippets) don't fire input.
@@ -143,8 +300,18 @@ function edHighlight(ta, lang) {
   });
   ta.addEventListener('input', render);
   ta.addEventListener('scroll', scroll);
+  if (gutter) {
+    ['keyup', 'click', 'focus', 'select'].forEach((ev) => ta.addEventListener(ev, markActive));
+    document.addEventListener('selectionchange', () => { if (document.activeElement === ta) markActive(); });
+  }
   if (window.ResizeObserver) new ResizeObserver(fit).observe(ta);
   new MutationObserver(() => pre.classList.toggle('off', ta.disabled)).observe(ta, { attributes: true, attributeFilter: ['disabled'] });
-  ta._edHl = { render };
+  // Wrap long lines (the gutter follows); no horizontal scrollbar then.
+  const setWrap = (on) => {
+    wrapOn = !!on;
+    wrap.classList.toggle('wrap', wrapOn);
+    fit();
+  };
+  ta._edHl = { render, gotoLine, setWrap };
   render();
 }

@@ -49,6 +49,35 @@ function figNormalizeSvg(svgText, idPrefix) {
   root.removeAttribute('style');
   root.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
+  // Clip the drawing to its own frame (the viewBox). In TikZ,
+  // \useasboundingbox only sets the picture's size: whatever is drawn past
+  // it stays in the SVG, and wherever the SVG element is wider or taller than
+  // its frame (a tall figure capped by max-height keeps the full width) it
+  // showed around the figure. A clip inside the SVG cuts it off everywhere —
+  // editor, site, any layout. The clipPath id is prefixed below like the rest.
+  const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  if (vb.length === 4 && vb.every(isFinite) && vb[2] > 0 && vb[3] > 0) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const clip = doc.createElementNS(NS, 'clipPath');
+    clip.setAttribute('id', 'figframe');
+    const rect = doc.createElementNS(NS, 'rect');
+    rect.setAttribute('x', vb[0]);
+    rect.setAttribute('y', vb[1]);
+    rect.setAttribute('width', vb[2]);
+    rect.setAttribute('height', vb[3]);
+    clip.appendChild(rect);
+    const g = doc.createElementNS(NS, 'g');
+    g.setAttribute('clip-path', 'url(#figframe)');
+    Array.from(root.childNodes).forEach((n) => {
+      if (n.nodeType === 1 && /^(defs|style|title|desc|metadata)$/i.test(n.localName)) return;
+      g.appendChild(n);
+    });
+    let defs = Array.from(root.children).find((n) => n.localName === 'defs');
+    if (!defs) { defs = doc.createElementNS(NS, 'defs'); root.insertBefore(defs, root.firstChild); }
+    defs.appendChild(clip);
+    root.appendChild(g);
+  }
+
   const all = [root, ...root.querySelectorAll('*')];
   all.forEach((el) => {
     FIG_COLOR_ATTRS.forEach((a) => { if (el.hasAttribute(a)) el.setAttribute(a, _figCanonColor(el.getAttribute(a))); });

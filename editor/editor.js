@@ -27,7 +27,7 @@ function toggleTheme() {
   let editorName = null;          // set once the server confirms the key
   const P  = STORAGE_PREFIX;
   const LS = { key: P + '-editor-key', sb: P + '-editor-sidebar', split: P + '-editor-split', last: P + '-editor-last',
-               drafts: P + '-editor-drafts', history: P + '-editor-history' };
+               drafts: P + '-editor-drafts', history: P + '-editor-history', wrap: P + '-editor-wrap' };
   const MAX_STEPS = 12;
   const $ = (id) => document.getElementById(id);
   const mqNarrow = window.matchMedia('(max-width: 720px)');
@@ -1415,6 +1415,49 @@ function toggleTheme() {
     });
   }
 
+  // The line of the TikZ box a TeX error points at (1-based), or null.
+  // TikZJax hands TeX one file: packages, libraries and our preamble
+  // (TZ.preamble joined, then \thestep=k), "\begin{document}", a line
+  // break, then the TikZ box unchanged — so TeX's "l.N" is line N minus the
+  // line breaks in the preamble, minus one. Inside a multi-line argument
+  // (\onstep{N}{…}) TeX reports the line the argument CLOSES on, often just
+  // "}"; then the tokens TeX shows in its context lines are looked for
+  // further up, so the button lands on the line that actually broke.
+  function texErrorLine(logs, src) {
+    const text = (logs || []).join('\n').split('\n');
+    const i = text.findIndex((l) => l.startsWith('!'));
+    if (i < 0) return null;
+    let j = -1, n = 0;
+    for (let x = i + 1; x < Math.min(text.length, i + 16); x++) {
+      const m = /^l\.(\d+)/.exec(text[x]);
+      if (m) { j = x; n = +m[1]; break; }
+    }
+    if (j < 0) return null;
+    const lines = src.split('\n');
+    const line = n - TZ.preamble.join('').split('\n').length;
+    if (line < 1 || line > lines.length) return null;                  // in the preamble / past the end
+    if (/^[\s{}]*$/.test(lines[line - 1])) {
+      // Context lines come in pairs: the first ends where TeX stopped, the
+      // indented second one holds the rest. TeX prints an argument's tokens
+      // flattened onto one line, so the end of each first line is tried as
+      // its last few tokens, longest first, down to the very last token —
+      // the longest piece found on a single source line (looking upwards)
+      // wins.
+      const clues = text.slice(i + 1, j).filter((l) => l.trim() && !/^\s/.test(l)).reverse();
+      for (const c of clues) {
+        const toks = c.replace(/^<[^>]*>\s*/, '').replace(/^\.\.\./, '').trim().split(/\s+/).filter(Boolean);
+        for (let k = Math.min(toks.length, 6); k >= 1; k--) {
+          const piece = toks.slice(-k).join(' ');
+          if (piece.length < 3 && !piece.startsWith('\\')) continue;    // too short to mean anything
+          for (let x = line - 1; x >= 0 && x >= line - 120; x--) {
+            if (lines[x].replace(/\s+/g, ' ').includes(piece)) return x + 1;
+          }
+        }
+      }
+    }
+    return line;
+  }
+
   // Pulls the first "! ..." error and its source line out of a TeX log.
   function texErrorSummary(logs) {
     const text = logs.join('\n').split('\n');
@@ -1574,6 +1617,21 @@ function toggleTheme() {
           if (sum.ctx) { const c = document.createElement('div'); const code = document.createElement('code'); code.textContent = sum.ctx; c.appendChild(code); nodes.push(c); }
         } else if (!res.timeout) {
           nodes.push(document.createTextNode('TeX could not compile this figure.'));
+        }
+        // "Go to line N": scrolls the TikZ box there and flashes the line.
+        const errLine = texErrorLine(res.log, src);
+        if (errLine) {
+          const go = document.createElement('button');
+          go.type = 'button';
+          go.className = 'ed-link ed-goto';
+          go.textContent = `Go to line ${errLine}`;
+          go.addEventListener('click', () => {
+            setFigOpen(true);
+            if (tikzEl._edHl && tikzEl._edHl.gotoLine) tikzEl._edHl.gotoLine(errLine);
+          });
+          const row = document.createElement('div');
+          row.appendChild(go);
+          nodes.push(row);
         }
         showWarn(nodes, true);
         showLog(res.log || []);
@@ -3418,8 +3476,29 @@ function toggleTheme() {
   attachSnippets(svgEl, SVG_SNIPPETS, 'line');
   attachSnippets(solEl, SOLUTION_SNIPPETS, 'cmd');
   // Syntax colours (editor/highlight.js).
-  edHighlight(tikzEl, 'tikz');
-  edHighlight(svgEl, 'svg');
+  // Code boxes get VS Code-style line numbers.
+  edHighlight(tikzEl, 'tikz', { lineNumbers: true });
+  edHighlight(svgEl, 'svg', { lineNumbers: true });
+
+  // "↩ Wrap" (TikZ and SVG boxes): wrap long lines instead of scrolling
+  // sideways. One choice for both boxes and every problem, remembered in
+  // this browser; line numbers stay on each line's first row.
+  let codeWrap = false;
+  try { codeWrap = localStorage.getItem(LS.wrap) === '1'; } catch (e) { /* ignore */ }
+  function applyCodeWrap() {
+    [tikzEl, svgEl].forEach((ta) => { if (ta._edHl && ta._edHl.setWrap) ta._edHl.setWrap(codeWrap); });
+    ['edWrapTikz', 'edWrapSvg'].forEach((id) => { const b = $(id); if (b) b.setAttribute('aria-pressed', String(codeWrap)); });
+  }
+  ['edWrapTikz', 'edWrapSvg'].forEach((id) => {
+    const b = $(id);
+    if (!b) return;
+    b.addEventListener('click', () => {
+      codeWrap = !codeWrap;
+      try { localStorage.setItem(LS.wrap, codeWrap ? '1' : '0'); } catch (e) { /* ignore */ }
+      applyCodeWrap();
+    });
+  });
+  applyCodeWrap();
   edHighlight(solEl, 'latex');
 
 

@@ -129,7 +129,7 @@ body.sb-closed .ed-sidebar { margin-left: calc(var(--sb-w) * -1); }
 }
 .ed-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
 .ed-input:disabled { opacity: .5; cursor: not-allowed; }
-.ed-code { font-family: var(--mono); font-size: .8rem; tab-size: 2; white-space: pre; overflow: auto; }
+.ed-code { font-family: var(--mono); font-size: .8rem; line-height: 1.5; tab-size: 2; white-space: pre; overflow: auto; }
 .ed-sol { flex: 1; min-height: 12rem; white-space: pre-wrap; }
 .ed-preamble { font-family: var(--mono); font-size: .72rem; color: var(--muted); }
 .ed-preamble summary { cursor: pointer; padding: .1rem 0; }
@@ -435,6 +435,7 @@ body.state-closed .ed-state { display: none; }
   transition: color .15s, border-color .15s;
 }
 .ed-hintbtn:hover { color: var(--accent); border-color: var(--accent); }
+.ed-wrapbtn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 
 .ed-colorpop {
   position: fixed; z-index: 1100;
@@ -814,6 +815,37 @@ body.state-closed .ed-state { display: none; }
   --hl-punc: color-mix(in srgb, var(--muted) 70%, var(--text));
 }
 .ed-hl.off { opacity: .5; }
+
+/* Line numbers (code boxes: edHighlight(…, { lineNumbers: true })). The
+   gutter sits over the left padding, which highlight.js widens to fit it;
+   font size and line height are copied from the textarea so numbers stay
+   level with their lines. */
+.ed-gutter {
+  position: absolute; z-index: 2; overflow: hidden; pointer-events: none;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 55%, var(--bg));
+  border-radius: calc(6px * var(--radius-mult)) 0 0 calc(6px * var(--radius-mult));
+}
+.ed-gutter-inner { font-family: var(--mono); color: color-mix(in srgb, var(--muted) 75%, transparent); text-align: right; padding-right: .55em; will-change: transform; }
+.ed-gutter-inner span { display: block; overflow: hidden; }
+/* "↩ Wrap": both copies of the text wrap the same way (same rules, same
+   width), and the hidden measuring copy (.ed-measure) copies these from
+   the textarea, so the gutter matches what is on screen. */
+.ed-hl-wrap.wrap > textarea,
+.ed-hl-wrap.wrap > pre.ed-hl { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; overflow-x: hidden; }
+.ed-measure {
+  position: absolute; left: -99999px; top: 0; visibility: hidden; pointer-events: none;
+  margin: 0; padding: 0; border: 0; box-sizing: content-box;
+}
+.ed-gutter-inner span.on { color: var(--text); }
+.ed-hl.off ~ .ed-gutter { opacity: .5; }
+/* "Go to line": the line flashes, then fades. */
+.ed-flash-layer { position: absolute; z-index: 2; overflow: hidden; pointer-events: none; }
+.ed-lineflash { position: absolute; left: 0; right: 0; opacity: 0; background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.ed-lineflash.go { animation: edLineFlash 1.4s ease-out forwards; }
+@keyframes edLineFlash { 0%, 30% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ed-lineflash.go { animation-duration: .01s; animation-delay: .9s; } }
+.ed-goto { margin-top: .35rem; }
 .ed-hl .hl-cmd  { color: var(--hl-cmd); }
 .ed-hl .hl-env, .ed-hl .hl-del, .ed-hl .hl-op { color: var(--hl-env); }
 .ed-hl .hl-opt  { color: var(--hl-opt); }
