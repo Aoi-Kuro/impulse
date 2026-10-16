@@ -169,89 +169,89 @@ const Quiz_1_Problems = [
 
   // ──────────────────── Kinematics of 2D straight line motion ────────────────────
 
-  { id:"P54", topic:"Kinematics of 2D straight line motion", answer:4.2047592083257, units:["m/s"],
+  { id:"P54", topic:"Kinematics of 2D linear motion", answer:4.2047592083257, units:["m/s"],
     text:"A river flows due south with a speed of 1.8 m s$^{-1}$. A man steers a motorboat across the river; his velocity relative to the water is 3.8 m s$^{-1}$ due east. What is the magnitude of the velocity of man relative to the earth?" },
 
-  { id:"P55", topic:"Kinematics of 2D straight line motion", answer:3.85746, units:["m/s"],
+  { id:"P55", topic:"Kinematics of 2D linear motion", answer:3.85746, units:["m/s"],
     text:"A river flows due south with a speed of 1.9 m s$^{-1}$. A man steers a motorboat across the river; the speed of the boat relative to the water is 4.3 m s$^{-1}$, and he steers so that he travels due east relative to the earth. What is the magnitude of his velocity relative to the earth?" },
 
-  { id:"P56", topic:"Kinematics of 2D straight line motion", answer:242.5, units:["s"],
+  { id:"P56", topic:"Kinematics of 2D linear motion", answer:242.5, units:["s"],
     text:"A river flows due south with a speed of 1.8 m s$^{-1}$. A man steers a motorboat across the river; his velocity relative to the water is 4 m s$^{-1}$ due east. The river is 970 m wide. How much time is required to cross the river?" },
 
-  { id:"P57", topic:"Kinematics of 2D straight line motion", answer:237.356, units:["s"],
+  { id:"P57", topic:"Kinematics of 2D linear motion", answer:237.356, units:["s"],
     text:"A river flows due south with a speed of 2.3 m s$^{-1}$ and is 1000 m wide. A man steers a motorboat so that his velocity relative to the earth is due east; the speed of the boat relative to the water is 4.8 m s$^{-1}$. How much time is required to cross the river?" },
 
-  { id:"P58", topic:"Kinematics of 2D straight line motion", answer:513.333, units:["m"],
+  { id:"P58", topic:"Kinematics of 2D linear motion", answer:513.333, units:["m"],
     text:"A river flows due south with a speed of 2.2 m s$^{-1}$. A man steers a motorboat across the river; his velocity relative to the water is 3.3 m s$^{-1}$ due east. The river is 770 m wide. How far downstream from his starting point does he land?" },
 
   // ──────────────────── Kinematics of projectile motion ────────────────────
 
-  { id:"P59", topic:"Kinematics of projectile motion", answer:7290.5381227112, units:["m"],
+  { id:"P59", topic:"Kinematics of projectiles", answer:7290.5381227112, units:["m"],
     text:"To start an avalanche on a mountain slope, an artillery shell is fired with an initial velocity of 291 m s$^{-1}$ at 57° above the horizontal. It explodes on the mountainside 46 s after firing. What is the horizontal coordinate of the shell where it explodes relative to its firing point?" },
 
-  { id:"P60", topic:"Kinematics of projectile motion", answer:2556.7818058073, units:["m"],
+  { id:"P60", topic:"Kinematics of projectiles", answer:2556.7818058073, units:["m"],
     text:"To start an avalanche on a mountain slope, an artillery shell is fired with an initial velocity of 301 m s$^{-1}$ at 61° above the horizontal. It explodes on the mountainside 41 s after firing. What is the vertical distance of the shell where it explodes relative to its firing point?" },
 
-  { id:"P61", topic:"Kinematics of projectile motion", answer:161.174, units:["m/s"],
+  { id:"P61", topic:"Kinematics of projectiles", answer:161.174, units:["m/s"],
     text:"To start an avalanche on a mountain slope, an artillery shell is fired with an initial velocity of 296 m s$^{-1}$ at 62° above the horizontal. It explodes on the mountainside 35 s after firing. What is the speed of the shell at the moment it explodes? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P62", topic:"Kinematics of projectile motion", answer:26.435095919879, units:["m"],
+  { id:"P62", topic:"Kinematics of projectiles", answer:26.435095919879, units:["m"],
     text:"A ball is tossed from an upper-story window of a building. The ball is given an initial velocity of 5.5 m s$^{-1}$ at an angle of 16° below the horizontal. It strikes the ground 5 s later. How far horizontally from the base of the building does the ball strike the ground? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P63", topic:"Kinematics of projectile motion", answer:133.7381978, units:["m"],
+  { id:"P63", topic:"Kinematics of projectiles", answer:133.7381978, units:["m"],
     text:"A ball is tossed from an upper-story window of a building. The ball is given an initial velocity of 6 m s$^{-1}$ at an angle of 22° below the horizontal. It strikes the ground 5 s later. Find the height from which the ball was thrown. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P64", topic:"Kinematics of projectile motion", answer:133.243, units:["m"],
+  { id:"P64", topic:"Kinematics of projectiles", answer:133.243, units:["m"],
     text:"A ball is tossed from an upper-story window of a building. The ball is given an initial velocity of 6 m s$^{-1}$ at an angle of 27° above the horizontal. It strikes the ground 5.5 s later. Find the height from which the ball was thrown. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P65", topic:"Kinematics of projectile motion", answer:182.18112244898, units:["m"],
+  { id:"P65", topic:"Kinematics of projectiles", answer:182.18112244898, units:["m"],
     text:"During a fireworks display, a shell is shot into the air with an initial speed of 69 m s$^{-1}$ at an angle of 60° above the horizontal. The fuse is timed to ignite the shell just as it reaches its highest point above the ground. Calculate the height at which the shell explodes. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P66", topic:"Kinematics of projectile motion", answer:8.7422747172345, units:["s"],
+  { id:"P66", topic:"Kinematics of projectiles", answer:8.7422747172345, units:["s"],
     text:"During a fireworks display, a shell is shot into the air with an initial speed of 87 m s$^{-1}$ at an angle of 80° above the horizontal. The fuse is timed to ignite the shell just as it reaches its highest point above the ground. How much time passes between the launch of the shell and the explosion? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_1/unnamed(3).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P67", topic:"Kinematics of projectile motion", answer:196.416, units:["m"],
+  { id:"P67", topic:"Kinematics of projectiles", answer:196.416, units:["m"],
     text:"During a fireworks display, a shell is shot into the air with an initial speed of 83 m s$^{-1}$ at an angle of 75° above the horizontal. The fuse is timed to ignite the shell 3 s after launch. Calculate the height at which the shell explodes. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P68", topic:"Kinematics of projectile motion", answer:3.5774604860727, units:["m/s"],
+  { id:"P68", topic:"Kinematics of projectiles", answer:3.5774604860727, units:["m/s"],
     text:"In a local café, a customer slides an empty mug down the counter for a refill. The mug slides off the counter and strikes the floor $x_{\\text{f}}$ = 1.49 m from the base of the counter. If the height of the counter is $y_{i}$ = 85 cm, what is the magnitude of the velocity with which the mug left the counter? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_1/unnamed(4).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P69", topic:"Kinematics of projectile motion", answer:5.05558, units:["m/s"],
+  { id:"P69", topic:"Kinematics of projectiles", answer:5.05558, units:["m/s"],
     text:"In a local café, a customer slides an empty mug down the counter for a refill. The mug slides off the counter and strikes the floor $x^{\\text{f}}$ = 1.26 m from the base of the counter. The height of the counter is $y_{i}$ = 82 cm. What is the magnitude of the velocity with which the mug strikes the floor? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P70", topic:"Kinematics of projectile motion", answer:40.4622, units:[],
+  { id:"P70", topic:"Kinematics of projectiles", answer:40.4622, units:[],
     text:"In a local café, a customer slides an empty mug down the counter for a refill. The mug slides off the counter and strikes the floor $x^{\\text{f}}$ = 2.04 m from the base of the counter. The height of the counter is $y_{i}$ = 87 cm. At what angle below the horizontal does the mug strike the floor? Give the answer in degrees. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
   // ──────────────────── Kinematics of 2D and 3D motion in vectors form ────────────────────
 
-  { id:"P71", topic:"Kinematics of 2D and 3D motion in vectors form", answer:164.03333333333, units:["m"],
+  { id:"P71", topic:"Vector kinematics in 2D and 3D", answer:164.03333333333, units:["m"],
     text:"A rocket moves in the $xy$-plane. The rocket's acceleration has components $a_{x}(t) = \\alpha t^{2}$ and $a_{y}(t) = \\beta - \\gamma t$, where $\\alpha$ = 2.4 m s$^{-4}$, $\\beta$ = 9 m s$^{-2}$, and $\\gamma$ = 1.6 m s$^{-3}$. At $t$ = 0 the rocket is at the origin and has velocity $\\vec{v}_{0} = v_{0x}\\mathbf{\\hat{i}} + v_{0y}\\mathbf{\\hat{j}}$, with $v_{0x}$ = 1.3 m s$^{-1}$ and $v_{0y}$ = 5 m s$^{-1}$. Calculate the position of the rocket along the vertical axis at $t$ = 7 s." },
 
-  { id:"P72", topic:"Kinematics of 2D and 3D motion in vectors form", answer:47.866666666667, units:["m"],
+  { id:"P72", topic:"Vector kinematics in 2D and 3D", answer:47.866666666667, units:["m"],
     text:"A rocket moves in the $xy$-plane. The rocket's acceleration has components $a_{x}(t) = \\alpha t^{2}$ and $a_{y}(t) = \\beta - \\gamma t$, where $\\alpha$ = 2 m s$^{-4}$, $\\beta$ = 7.5 m s$^{-2}$, and $\\gamma$ = 1.4 m s$^{-3}$. At $t$ = 0 the rocket is at the origin and has velocity $\\vec{v}_{0} = v_{0x}\\mathbf{\\hat{i}} + v_{0y}\\mathbf{\\hat{j}}$, with $v_{0x}$ = 1.3 m s$^{-1}$ and $v_{0y}$ = 8 m s$^{-1}$. Calculate the position of the rocket along horizontal axis at $t$ = 4 s." },
 
-  { id:"P73", topic:"Kinematics of 2D and 3D motion in vectors form", answer:60.797843529008, units:["m/s"],
+  { id:"P73", topic:"Vector kinematics in 2D and 3D", answer:60.797843529008, units:["m/s"],
     text:"A rocket moves in the $xy$-plane. The rocket's acceleration has components $a_{x}(t) = \\alpha t^{2}$ and $a_{y}(t) = \\beta - \\gamma t$, where $\\alpha$ = 2.3 m s$^{-4}$, $\\beta$ = 9 m s$^{-2}$, and $\\gamma$ = 1.1 m s$^{-3}$. At $t$ = 0 the rocket is at the origin and has velocity $\\vec{v}_{0} = v_{0x}\\mathbf{\\hat{i}} + v_{0y}\\mathbf{\\hat{j}}$, with $v_{0x}$ = 1.2 m s$^{-1}$ and $v_{0y}$ = 7 m s$^{-1}$. Calculate the magnitude of the velocity at $t$ = 4 s." },
 
-  { id:"P74", topic:"Kinematics of 2D and 3D motion in vectors form", answer:0.19611613513818, units:["m/s^2"],
+  { id:"P74", topic:"Vector kinematics in 2D and 3D", answer:0.19611613513818, units:["m/s^2"],
     text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = (-3\\mathbf{\\hat{i}} + 3\\mathbf{\\hat{j}})$ m s$^{-1}$ at a point in the ocean. After the fish swims with constant acceleration for 26 s, its velocity is $\\vec{v} = (-2\\mathbf{\\hat{i}} + 8\\mathbf{\\hat{j}})$ m s$^{-1}$. What is the magnitude of the acceleration?" },
 
-  { id:"P75", topic:"Kinematics of 2D and 3D motion in vectors form", answer:45.0, units:[],
+  { id:"P75", topic:"Vector kinematics in 2D and 3D", answer:45.0, units:[],
     text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = (-5\\mathbf{\\hat{i}} + 1\\mathbf{\\hat{j}})$ m s$^{-1}$ at a point in the ocean. After the fish swims with constant acceleration for 29 s, its velocity is $\\vec{v} = (4\\mathbf{\\hat{i}} + 10\\mathbf{\\hat{j}})$ m s$^{-1}$. What is the angle of the acceleration vector, measured counterclockwise from the $+x$ axis? Give the answer in degrees." },
 
-  { id:"P76", topic:"Kinematics of 2D and 3D motion in vectors form", answer:-107.53846153846, units:["m"],
+  { id:"P76", topic:"Vector kinematics in 2D and 3D", answer:-107.53846153846, units:["m"],
     text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = (2\\mathbf{\\hat{i}} + 6\\mathbf{\\hat{j}})$ m s$^{-1}$ at a point in the ocean where the position relative to a certain rock is $\\vec{r}_{i} = (-6\\mathbf{\\hat{i}} + 4\\mathbf{\\hat{j}})$ m. After the fish swims with constant acceleration for 13 s, its velocity is $\\vec{v} = (-2\\mathbf{\\hat{i}} + 2\\mathbf{\\hat{j}})$ m s$^{-1}$. If the fish maintains constant acceleration, what is its horizontal position at $t$ = 33 s?" },
 
-  { id:"P77", topic:"Kinematics of 2D and 3D motion in vectors form", answer:227.076923, units:["m"],
+  { id:"P77", topic:"Vector kinematics in 2D and 3D", answer:227.076923, units:["m"],
     text:"A fish swimming in a horizontal plane has velocity $\\vec{v}_{i} = (3\\mathbf{\\hat{i}} + 1\\mathbf{\\hat{j}})$ m s$^{-1}$ at a point in the ocean where the position relative to a certain rock is $\\vec{r}_{i} = (3\\mathbf{\\hat{i}} + 4\\mathbf{\\hat{j}})$ m. After the fish swims with constant acceleration for 13 s, its velocity is $\\vec{v} = (8\\mathbf{\\hat{i}} + 7\\mathbf{\\hat{j}})$ m s$^{-1}$. If the fish maintains constant acceleration, what is its vertical position at $t$ = 29 s?" },
 
-  { id:"P78", topic:"Kinematics of 2D and 3D motion in vectors form", answer:81.334863373587, units:["m"],
+  { id:"P78", topic:"Vector kinematics in 2D and 3D", answer:81.334863373587, units:["m"],
     text:"A particle starts from the origin at $t$ = 0 with an initial velocity having an x component of -3 m s$^{-1}$ and a y component of $-5$ m s$^{-1}$. The particle moves in the $xy$ plane with an x component of acceleration only, given by $a_{x}$ = 5.2 m s$^{-2}$. Determine the distance from the origin at $t$ = 6 s." },
 
-  { id:"P79", topic:"Kinematics of 2D and 3D motion in vectors form", answer:251.58895047279, units:["m/s"],
+  { id:"P79", topic:"Vector kinematics in 2D and 3D", answer:251.58895047279, units:["m/s"],
     text:"A spaceship is traveling at a constant velocity of $v = 255 \\mathbf{\\vec{i}}$ m s$^{-1}$ when its engines fire up, giving it constant acceleration $\\vec{a} = (-2\\mathbf{\\hat{i}} + 12\\mathbf{\\hat{k}})$ m s$^{-2}$. What is the magnitude of the spaceship's velocity 3 s after the engines fired?" },
 
-  { id:"P80", topic:"Kinematics of 2D and 3D motion in vectors form", answer:816.106, units:["m"],
+  { id:"P80", topic:"Vector kinematics in 2D and 3D", answer:816.106, units:["m"],
     text:"A spaceship is traveling at a constant velocity of $v = 275 \\mathbf{\\vec{i}}$ m s$^{-1}$ when its engines fire up, giving it constant acceleration $\\vec{a} = (-2.2\\mathbf{\\hat{i}} + 9\\mathbf{\\hat{k}})$ m s$^{-2}$. What is the magnitude of the spaceship's displacement 3 s after the engines fired?" },
 
   // ──────────────────── Circular motion ────────────────────

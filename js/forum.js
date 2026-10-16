@@ -4201,6 +4201,15 @@ const FORUM_FAB_HOSTS = [
     show:      el => el.classList.remove('hidden', 'fading-out'),
     scrollY: 0,
   },
+  {
+    // js/solutions.js — reachable from the Solution screen too. Without
+    // this entry it stayed showing, stacked under the screen opened over it.
+    id: 'solutionScreen',
+    isVisible: el => el.classList.contains('visible'),
+    hide:      el => el.classList.remove('visible', 'fading-out'),
+    show:      el => el.classList.add('visible'),
+    scrollY: 0,
+  },
 ];
 
 // Set for the duration of a FAB-opened forum visit to whichever host above
@@ -4379,7 +4388,7 @@ function syncForumFabVisibility() {
 }
 
 function initForumFabWatcher() {
-  const watchIds = ['landingScreen', 'forumScreen', 'appPage', 'solveAllMode', 'mistakesMode', 'statsScreen', 'reviewScreen', 'choicePage', 'licenseScreen'];
+  const watchIds = ['landingScreen', 'forumScreen', 'appPage', 'solveAllMode', 'mistakesMode', 'statsScreen', 'reviewScreen', 'choicePage', 'licenseScreen', 'solutionScreen'];
   watchIds.forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;

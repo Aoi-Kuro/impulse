@@ -126,6 +126,8 @@
   color: var(--accent);
   white-space: nowrap;
 }
+.license-author-name a { text-decoration: none; }
+.license-author-name a:hover { text-decoration: underline; }
 .license-author-count {
   font-size: 0.74rem;
   color: var(--muted);

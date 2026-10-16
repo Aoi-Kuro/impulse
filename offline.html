@@ -215,7 +215,8 @@
           norm: ['\\left\\|#1\\right\\|', 1]
         }
       },
-      chtml: { fontURL: 'vendor/mathjax/fonts/woff' },
+      // displayOverflow: wide display equations (with their \tag) scroll — same as index.html.
+      chtml: { fontURL: 'vendor/mathjax/fonts/woff', displayOverflow: 'scroll' },
       options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] },
       startup: { typeset: false, ready() { MathJax.startup.defaultReady(); resolve(); } }
     };

@@ -439,6 +439,7 @@ function renderStats() {
   renderFilters();
   drawChart();
   renderTable();
+  renderTopicPerformance();
   renderProblemsOverview();
   if (typeof updateExportButtonState === 'function') updateExportButtonState();
 }
@@ -1006,6 +1007,216 @@ function renderProblemsOverview() {
 
   wrap.innerHTML = sections;
   _applyProblemsOverviewCols();
+}
+
+// ── Topic performance ─────────────────────────────────────────────────────────
+// One card between the Attempt log and the per-quiz problem grids: every
+// topic of every available quiz (one group per quiz, with a gap between
+// them), each with two thin bars on the same 0–100% scale:
+//   top    — AVERAGE: the mean points of every answer given to a problem of
+//            that topic, across all attempt history;
+//   bottom — BEST: for each problem of the topic answered at least once,
+//            its best score; then the mean of those.
+// Points are the quiz's own: 1 correct, 0.9 value only, 0 wrong. Like the
+// grids below it, it reads all history (loadStats), not the Attempt log's
+// filter, so it only covers Random N attempts (Solve Them All isn't
+// recorded as attempts). A problem's topic comes from its definition, so a
+// retired problem still counts toward its topic.
+
+// `${quizNum}|${topic}` -> { sum, n, best: Map(problemId -> best points) }
+function _buildTopicPerformance() {
+  const byTopic = new Map();
+  loadStats().forEach((a) => {
+    (a.answers || []).forEach((ans) => {
+      const p = typeof getQuizProblem === 'function' ? getQuizProblem(ans.quiz_num, ans.problem_id) : null;
+      if (!p || !p.topic) return;
+      const key = `${ans.quiz_num}|${p.topic}`;
+      let t = byTopic.get(key);
+      if (!t) { t = { sum: 0, n: 0, best: new Map() }; byTopic.set(key, t); }
+      const pts = Number(ans.points) || 0;
+      t.sum += pts;
+      t.n++;
+      const prev = t.best.get(ans.problem_id);
+      if (prev === undefined || pts > prev) t.best.set(ans.problem_id, pts);
+    });
+  });
+  return byTopic;
+}
+
+// Which quiz's topics the card shows: a sliding "Quiz 1 | 2 | 3 | 4" switch
+// in its header (available quizzes only), remembered in this browser.
+const TP_QUIZ_KEY = STORAGE_PREFIX + '_tp_quiz';
+function _tpSavedQuiz(available) {
+  let n = NaN;
+  try { n = parseInt(localStorage.getItem(TP_QUIZ_KEY), 10); } catch (e) { /* ignore */ }
+  return available.includes(n) ? n : available[0];
+}
+
+// Switches in place (no rebuild): moves the pill, shows that quiz's group
+// with a short fade, and animates the card's height to the new group's
+// instead of letting it jump — the same _animateHeightChange the filter
+// window uses between its Topic / Number / Type panels (js/quiz-engine.js).
+function setTopicQuiz(quizNum) {
+  try { localStorage.setItem(TP_QUIZ_KEY, String(quizNum)); } catch (e) { /* ignore */ }
+  const sw = document.getElementById('tpSwitch');
+  if (!sw) return;
+  const btns = Array.from(sw.querySelectorAll('button[data-quiz]'));
+  const idx = btns.findIndex((b) => +b.dataset.quiz === quizNum);
+  if (idx < 0 || btns[idx].getAttribute('aria-selected') === 'true') return;
+  btns.forEach((b, i) => b.setAttribute('aria-selected', String(i === idx)));
+  sw.style.setProperty('--tp-i', idx);
+  sw.style.setProperty('--tp-color', quizColor(quizNum - 1));
+  const groupsEl = document.getElementById('tpGroups');
+  const swap = () => {
+    document.querySelectorAll('#tpGroups .tp-group').forEach((g) => {
+      const show = +g.dataset.quiz === quizNum;
+      g.hidden = !show;
+      if (show) {
+        g.classList.remove('tp-enter');
+        void g.offsetWidth;                     // restart the fade
+        g.classList.add('tp-enter');
+      }
+    });
+  };
+  if (typeof _animateHeightChange === 'function') _animateHeightChange(groupsEl, swap);
+  else swap();
+}
+
+// 95% interval for a topic's average (Wilson score interval, z = 1.96).
+// Scores are almost all 0 or 1 (0.9 for value-only), so the average behaves
+// like a success rate; unlike "mean ± 1.96·SE", Wilson stays inside 0–100%
+// and keeps a sensible width with few answers or an average near 100%.
+// Returns [lo, hi] as fractions, or null with no answers.
+function _tpWilson(p, n) {
+  if (!n) return null;
+  const z = 1.96, z2 = z * z;
+  const denom = 1 + z2 / n;
+  const centre = (p + z2 / (2 * n)) / denom;
+  const half = (z / denom) * Math.sqrt(Math.max(0, p * (1 - p)) / n + z2 / (4 * n * n));
+  return [Math.max(0, centre - half), Math.min(1, centre + half)];
+}
+
+function _tpEsc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// ── Topic rows (shared by the Stats Topics card and the Random N result
+// screen's "Topics in this attempt", js/quiz-engine.js) ──
+const _tpPct = (x) => Math.round(x * 100);
+
+// [lo, hi] drawn as an error bar |———| across the track (average only). A
+// tiny SVG stretched over the track: x runs 0–100 (percent), strokes don't
+// scale (vector-effect) and snap to whole pixels (crispEdges), so every cap
+// is the same width wherever it lands, and one opaque colour means no
+// brighter spot where a cap meets the line.
+function _tpCiSvg(ci) {
+  const lo = (ci[0] * 100).toFixed(2), hi = (ci[1] * 100).toFixed(2);
+  return `<svg class="tp-ci" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">` +
+    `<path class="tp-ci-line" d="M${lo} 5H${hi}" vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>` +
+    `<path class="tp-ci-cap" d="M${lo} 0V10M${hi} 0V10" vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>` +
+    `</svg>`;
+}
+
+// One bar. The average also gets its interval and a small ▼ above the bar
+// pointing at the mean, so the mean stays easy to find under the line.
+function _tpBar(cls, v, ci) {
+  return `<span class="tp-track"><span class="tp-fill ${cls}" style="width:${v === null ? 0 : _tpPct(v)}%"></span>` +
+    (ci ? _tpCiSvg(ci) + `<span class="tp-mean" style="left:${(v * 100).toFixed(2)}%" aria-hidden="true"></span>` : '') +
+    `</span>`;
+}
+
+// One topic row: name | average (+ interval) and best bars | the two N
+// (shown on hover) | percentages. t is the topic's _buildTopicPerformance
+// entry, or undefined when it has no answers yet. No title tooltips: the
+// browser's delayed tooltip covered the bars while reading them, and the
+// hover state already shows the percentages, the interval and both N.
+function _tpRowHtml(topic, t) {
+  const avg = t && t.n ? t.sum / t.n : null;
+  const bestVals = t ? [...t.best.values()] : [];
+  const best = bestVals.length ? bestVals.reduce((sum, v) => sum + v, 0) / bestVals.length : null;
+  const ci = avg !== null ? _tpWilson(avg, t.n) : null;
+  return `
+          <div class="tp-row">
+            <span class="tp-name"><span class="tp-name-text">${_tpEsc(topic)}</span></span>
+            <span class="tp-bars">${_tpBar('tp-avg', avg, ci)}${_tpBar('tp-best', best, null)}</span>
+            <span class="tp-ns">${avg !== null
+              ? `<span><i>N</i> = ${t.n}</span><span><i>N</i> = ${bestVals.length}</span>`
+              : '<span></span><span></span>'}</span>
+            <span class="tp-vals"><span>${avg === null ? '—' : _tpPct(avg) + '%'}</span><span>${best === null ? '—' : _tpPct(best) + '%'}</span></span>
+          </div>`;
+}
+
+// Rows for the topics that appeared in one attempt (in the order they first
+// appear in it, each once), with the same all-history bars as the Stats
+// card — the attempt itself included. '' when none can be resolved.
+function topicRowsForAttemptHtml(attempt) {
+  if (!attempt) return '';
+  const perf = _buildTopicPerformance();
+  const seen = new Set();
+  const rows = [];
+  (attempt.answers || []).forEach((ans) => {
+    const quizNum = ans.quiz_num || attempt.quizNum;
+    const p = typeof getQuizProblem === 'function' ? getQuizProblem(quizNum, ans.problem_id) : null;
+    if (!p || !p.topic) return;
+    const key = `${quizNum}|${p.topic}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push(_tpRowHtml(p.topic, perf.get(key)));
+  });
+  return rows.join('');
+}
+
+// The same legend as the Stats card's header.
+const TP_LEGEND_HTML = '<span class="tp-legend"><span class="tp-key tp-avg"></span>average<span class="tp-key tp-key-ci"></span>95% interval<span class="tp-key tp-best"></span>best</span>';
+
+function renderTopicPerformance() {
+  const wrap = document.getElementById('statsTopicsWrap');
+  if (!wrap) return;
+  const quizzes = QUIZZES
+    .map((q, i) => ({ q, quizNum: i + 1 }))
+    .filter(({ q }) => q.enabled && Array.isArray(q.problems) && q.problems.length > 0);
+  if (!quizzes.length) { wrap.innerHTML = ''; return; }
+
+  const perf = _buildTopicPerformance();
+  const available = quizzes.map(({ quizNum }) => quizNum);
+  const selected = _tpSavedQuiz(available);
+
+  const groups = quizzes.map(({ q, quizNum }) => {
+    // Topics in the order they first appear among the quiz's active problems.
+    const topics = [];
+    q.problems.forEach((pr) => { if (pr.topic && !topics.includes(pr.topic)) topics.push(pr.topic); });
+    const rows = topics.map((topic) => _tpRowHtml(topic, perf.get(`${quizNum}|${topic}`))).join('');
+
+    // Same .quiz-badge as the Attempt log and the grids below.
+    const color = quizColor(quizNum - 1);
+    const label = q.name ? `Quiz ${quizNum} : ${q.name}` : `Quiz ${quizNum}`;
+    return `
+        <div class="tp-group" data-quiz="${quizNum}"${quizNum === selected ? '' : ' hidden'}>
+          <div class="tp-group-head"><span class="quiz-badge" style="background:${color}22;color:${color}"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color}"></span>${_tpEsc(label)}</span></div>
+          ${rows}
+        </div>`;
+  }).join('');
+
+  const selIdx = available.indexOf(selected);
+  const switchHtml = `
+          <div class="tp-switch" id="tpSwitch" role="tablist" aria-label="Quiz"
+               style="--tp-n:${available.length};--tp-i:${selIdx};--tp-color:${quizColor(selected - 1)}">
+            <span class="tp-switch-pill" aria-hidden="true"></span>
+            ${available.map((n) => `<button type="button" role="tab" data-quiz="${n}" aria-selected="${n === selected}" onclick="setTopicQuiz(${n})">Quiz ${n}</button>`).join('')}
+          </div>`;
+
+  wrap.innerHTML = `
+      <div class="stats-table-section tp-section">
+        <div class="stats-table-header tp-header">
+          <span class="stats-table-title">Topics</span>
+          ${switchHtml}
+          ${TP_LEGEND_HTML}
+        </div>
+        <div class="tp-body">
+          <div class="tp-groups" id="tpGroups">${groups}</div>
+          <div class="problems-overview-footnote">Average counts every answer, with its 95% interval as |—|; best takes each problem's best score. Random ${QUIZ_SIZE} mode only: Solve Them All attempts aren't reflected here.</div>
+        </div>
+      </div>`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

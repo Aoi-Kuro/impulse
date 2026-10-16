@@ -73,7 +73,10 @@ const MATH_CACHE_DB = 'mathRenderCache';
 // stylesheet into each card's cached css (see
 // _structuralRulesFromStyleSheet). This bump clears out every entry
 // cached before this fix so they all get rebuilt with the missing rule.
-const MATH_CACHE_SCHEMA = 10;
+// bumped to 11: MathJax now renders with displayOverflow: 'scroll' (see
+// index.html's MathJax config) — cached problem text typeset under the old
+// 'overflow' mode would keep \tag'd equations spilling past the card.
+const MATH_CACHE_SCHEMA = 11;
 
 let _mathCacheDB = null;
 let _mathCacheMap = new Map();   // problemId -> { hash, html, css }

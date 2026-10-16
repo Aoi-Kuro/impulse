@@ -82,14 +82,16 @@ async function solutionsIndexRows() {
   return r.ok ? r.json() : null;
 }
 
-/** Published { problem_key, author } rows, for the solution authors list
-    on the Copyright screen (js/license.js). null when it can't be loaded. */
+/** Published { problem_key, author, author_link } rows, for the solution
+    authors list on the Copyright screen (js/license.js). null when it
+    can't be loaded. */
 async function fetchSolutionAuthorRows() {
   try {
     if (solutionsOfflineActive()) {
-      return (await loadOfflineSolutionRows()).map((r) => ({ problem_key: r.problem_key, author: r.author }));
+      return (await loadOfflineSolutionRows())
+        .map((r) => ({ problem_key: r.problem_key, author: r.author, author_link: r.author_link }));
     }
-    const r = await fetch(`${SOLUTIONS_REST}?select=problem_key,author&status=eq.published`, {
+    const r = await fetch(`${SOLUTIONS_REST}?select=problem_key,author,author_link&status=eq.published`, {
       headers: solutionsRestHeaders(),
       cache: 'no-store',
     });
@@ -281,7 +283,30 @@ function restoreHostScreen() {
   else window.scrollTo(0, scrollY || 0);
 }
 
-function isSolutionScreenOpen() { return solutionOpen; }
+// Open AND showing: Settings, Manual or the forum can sit on top of it
+// (they hide it as their host and bring it back when they close), and
+// then the screen on top is what the logo and keys act on.
+function isSolutionScreenOpen() {
+  const el = solutionScreenEl();
+  return solutionOpen && !!el && el.classList.contains('visible');
+}
+
+// Going home (exitAppOrChoiceToLanding in js/quiz-engine.js) while the
+// solution sits hidden under Settings / Manual / the forum: the screen on
+// top closes straight to landing, so the solution is dropped too instead
+// of staying "open" with nothing showing.
+function abandonSolutionScreen() {
+  if (!solutionOpen) return;
+  solutionOpen = false;
+  solutionHost = null;
+  stopSolutionAutoplay();
+  solutionViewer = null;
+  setSolutionPreviewMode(false);
+  resetSolutionFigTools();
+  const screen = solutionScreenEl();
+  if (screen) screen.classList.remove('visible', 'fading-out');
+  document.documentElement.classList.remove('solution-screen-open');
+}
 
 // forceLanding: the site logo (goToMainMenu in quiz-engine.js) means "all
 // the way home", not "back to where the solution was opened from". The
@@ -384,6 +409,7 @@ function solutionGoToStep(i) {
 function drawSolutionStep() {
   const v = solutionViewer;
   if (!v) return;
+  hideSolutionLens();
   const i = v.index, n = v.steps.length;
   document.querySelectorAll('#solutionFigure .fig-step').forEach((el, k) => el.classList.toggle('on', k === i));
   const dots = document.getElementById('solutionDots');
@@ -468,6 +494,8 @@ async function openSolution(quizNum, problemId, previewRow) {
   } else {
     probBox.hidden = true;
   }
+
+  resetSolutionFigTools();
 
   // Blank the rest while loading.
   const body = document.getElementById('solutionBody');
@@ -784,9 +812,184 @@ function attachSolutionSwipe(el) {
     const dx = t.clientX - x0, dy = t.clientY - y0;
     x0 = y0 = null;
     if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (solFigZoom > 1 || solFigLensOn) return;     // that drag was panning / magnifying
     solutionStep(dx < 0 ? 1 : -1);
   }, { passive: true });
 }
+
+/* ── Figure zoom & magnifier ───────────────────────────────────────────
+   Three buttons at the right of the step-navigation row: − / + zoom
+   (100–400%) and a magnifier.
+     Zoom: the figure is drawn wider inside a frame that keeps its 100%
+       size and scrolls — dragged with the mouse, or panned with a finger
+       (native scrolling). The point at the centre of the view stays there.
+       − back down to 100% (or the 0 key) resets. Keys + / − / 0 too.
+     Magnifier: a round lens showing what is under it at SOL_LENS_ZOOM×.
+       Mouse: follows the pointer over the figure. Touch: press and drag;
+       the lens sits above the finger so the finger doesn't cover it.
+       It holds a copy of the step on screen, inside a .fig element, so the
+       theme colours apply to it like to the figure.
+   Using either stops the step autoplay, and while zoomed or magnifying a
+   swipe no longer changes steps. Everything resets when a solution opens. */
+const SOL_ZOOM_STEPS = [1, 1.5, 2, 3, 4];
+const SOL_LENS_SIZE = 150, SOL_LENS_ZOOM = 2.5;
+let solFigZoom = 1, solFigLensOn = false;
+let solFigBase = null;             // { w, h } of the figure and its frame at 100%
+let solFigDrag = null;             // mouse drag-to-pan in progress
+
+const solFigEls = () => ({
+  stage: document.getElementById('solutionFigure'),
+  wrap: document.getElementById('solutionFigStage'),
+  lens: document.getElementById('solutionFigLens'),
+});
+
+function updateSolutionZoomUi() {
+  const out = document.getElementById('solutionZoomOut');
+  const inn = document.getElementById('solutionZoomIn');
+  if (out) out.disabled = solFigZoom <= SOL_ZOOM_STEPS[0];
+  if (inn) inn.disabled = solFigZoom >= SOL_ZOOM_STEPS[SOL_ZOOM_STEPS.length - 1];
+  if (out) out.title = solFigZoom > 1 ? `Zoom out (${Math.round(solFigZoom * 100)}%)` : 'Zoom out';
+  const lb = document.getElementById('solutionLensBtn');
+  if (lb) lb.setAttribute('aria-pressed', String(solFigLensOn));
+  const { wrap } = solFigEls();
+  if (wrap) wrap.classList.toggle('lens-on', solFigLensOn);
+}
+
+function setSolutionZoom(z) {
+  const { stage } = solFigEls();
+  const holder = stage && stage.querySelector('.fig-steps');
+  const svg = holder && holder.querySelector('.fig-step.on svg, svg');
+  if (!stage || !holder || !svg) { solFigZoom = 1; updateSolutionZoomUi(); return; }
+  z = Math.min(SOL_ZOOM_STEPS[SOL_ZOOM_STEPS.length - 1], Math.max(1, z));
+  if (z === solFigZoom) { updateSolutionZoomUi(); return; }
+  if (z > 1) stopSolutionAutoplay();
+  // Keep the point at the centre of the view in the centre.
+  const fx = stage.scrollWidth ? (stage.scrollLeft + stage.clientWidth / 2) / stage.scrollWidth : 0.5;
+  const fy = stage.scrollHeight ? (stage.scrollTop + stage.clientHeight / 2) / stage.scrollHeight : 0.5;
+  if (solFigZoom === 1) {
+    const r = svg.getBoundingClientRect();
+    solFigBase = { w: r.width, h: stage.clientHeight };
+  }
+  solFigZoom = z;
+  hideSolutionLens();
+  if (z === 1 || !solFigBase) {
+    stage.classList.remove('zoomed');
+    stage.style.height = holder.style.width = holder.style.maxWidth = '';
+    stage.scrollLeft = stage.scrollTop = 0;
+  } else {
+    stage.classList.add('zoomed');
+    stage.style.height = solFigBase.h + 'px';       // the frame keeps its 100% size
+    holder.style.maxWidth = 'none';
+    holder.style.width = (solFigBase.w * z) + 'px';
+    stage.scrollLeft = fx * stage.scrollWidth - stage.clientWidth / 2;
+    stage.scrollTop = fy * stage.scrollHeight - stage.clientHeight / 2;
+  }
+  updateSolutionZoomUi();
+}
+
+function stepSolutionZoom(dir) {
+  const i = SOL_ZOOM_STEPS.findIndex((z) => z >= solFigZoom - 1e-9);
+  const next = SOL_ZOOM_STEPS[Math.min(SOL_ZOOM_STEPS.length - 1, Math.max(0, (i < 0 ? 0 : i) + dir))];
+  setSolutionZoom(next);
+}
+
+function hideSolutionLens() {
+  const { lens } = solFigEls();
+  if (lens) lens.hidden = true;
+}
+
+// Shows the lens at a pointer position (client coordinates). touch: put it
+// above the finger instead of under it.
+function showSolutionLens(clientX, clientY, touch) {
+  const { wrap, lens } = solFigEls();
+  const svg = document.querySelector('#solutionFigure .fig-step.on svg');
+  if (!wrap || !lens || !svg) return;
+  const r = svg.getBoundingClientRect();
+  if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) { hideSolutionLens(); return; }
+  const idx = solutionViewer ? solutionViewer.index : 0;
+  if (lens.dataset.step !== String(idx) || !lens.firstElementChild) {
+    lens.textContent = '';
+    const copy = svg.cloneNode(true);
+    copy.removeAttribute('id');
+    lens.appendChild(copy);
+    lens.dataset.step = String(idx);
+  }
+  const copy = lens.firstElementChild;
+  const half = SOL_LENS_SIZE / 2;
+  copy.style.width = (r.width * SOL_LENS_ZOOM) + 'px';
+  copy.style.height = (r.height * SOL_LENS_ZOOM) + 'px';
+  copy.style.left = (half - (clientX - r.left) * SOL_LENS_ZOOM) + 'px';
+  copy.style.top = (half - (clientY - r.top) * SOL_LENS_ZOOM) + 'px';
+  const wr = wrap.getBoundingClientRect();
+  const lift = touch ? SOL_LENS_SIZE * 0.8 : 0;
+  lens.style.transform = `translate(${clientX - wr.left - half}px, ${clientY - wr.top - half - lift}px)`;
+  lens.hidden = false;
+}
+
+function toggleSolutionLens() {
+  solFigLensOn = !solFigLensOn;
+  if (solFigLensOn) stopSolutionAutoplay();
+  hideSolutionLens();
+  updateSolutionZoomUi();
+}
+
+function resetSolutionFigTools() {
+  solFigLensOn = false;
+  const { lens } = solFigEls();
+  if (lens) { lens.textContent = ''; lens.dataset.step = ''; }
+  setSolutionZoom(1);
+  solFigZoom = 1;
+  solFigBase = null;
+  updateSolutionZoomUi();
+}
+
+// Run once the page is parsed: this file loads before #solutionScreen's
+// markup, so its buttons don't exist yet when the script itself runs.
+function initSolutionFigTools() {
+  const { stage, wrap } = solFigEls();
+  if (!stage || !wrap) return;
+  const on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', fn); };
+  on('solutionZoomIn', () => stepSolutionZoom(1));
+  on('solutionZoomOut', () => stepSolutionZoom(-1));
+  on('solutionLensBtn', toggleSolutionLens);
+
+  stage.addEventListener('pointerdown', (e) => {
+    if (solFigLensOn) {
+      if (e.pointerType !== 'mouse') { showSolutionLens(e.clientX, e.clientY, true); try { stage.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } }
+      return;
+    }
+    // Mouse drag-to-pan while zoomed (touch pans by native scrolling).
+    if (solFigZoom > 1 && e.pointerType === 'mouse' && e.button === 0) {
+      solFigDrag = { x: e.clientX, y: e.clientY, l: stage.scrollLeft, t: stage.scrollTop };
+      stage.classList.add('dragging');
+      try { stage.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      e.preventDefault();
+    }
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (solFigDrag) {
+      stage.scrollLeft = solFigDrag.l - (e.clientX - solFigDrag.x);
+      stage.scrollTop = solFigDrag.t - (e.clientY - solFigDrag.y);
+      return;
+    }
+    if (!solFigLensOn) return;
+    if (e.pointerType === 'mouse') showSolutionLens(e.clientX, e.clientY, false);
+    else if (e.buttons || e.pressure > 0) showSolutionLens(e.clientX, e.clientY, true);
+  });
+  const end = (e) => {
+    if (solFigDrag) {
+      solFigDrag = null;
+      stage.classList.remove('dragging');
+    }
+    if (e.type === 'pointerleave' || e.pointerType !== 'mouse') hideSolutionLens();
+  };
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((t) => stage.addEventListener(t, end));
+  // Sizes measured at 100% no longer hold after the window changes size.
+  window.addEventListener('resize', () => { if (solFigZoom > 1) setSolutionZoom(1); hideSolutionLens(); });
+  updateSolutionZoomUi();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initSolutionFigTools);
+else initSolutionFigTools();
 
 /** Must match problemHashOf() in editor/editor.js exactly. */
 async function solutionProblemHash(p) {
@@ -796,9 +999,12 @@ async function solutionProblemHash(p) {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (!solutionOpen) return;
+  if (!isSolutionScreenOpen()) return;              // not while another screen sits on top
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target && e.target.tagName)) return;
   if (e.key === 'Escape') { closeSolutionScreen(); return; }
+  if (e.key === '+' || e.key === '=') { stepSolutionZoom(1); return; }
+  if (e.key === '-' || e.key === '_') { stepSolutionZoom(-1); return; }
+  if (e.key === '0') { setSolutionZoom(1); return; }
   if (!solutionViewer) return;
   if (e.key === 'ArrowLeft')  solutionStep(-1);
   if (e.key === 'ArrowRight') solutionStep(1);

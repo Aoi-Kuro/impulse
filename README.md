@@ -416,8 +416,11 @@ Implemented in `js/quiz-engine.js`; the student-facing summary is the
 - power-of-ten notation: `5*10^3`, `1*10^-11`, `1*10^(-11)`, `10^-4`, `10^(-4)`
 - a comma (`3,14`) is rejected; `x` instead of `*` is rejected
 
-**Tolerance** (`numberCorrect`): `|value − answer| <= 1% · |answer| + 1e-10`,
-after the SI-prefix conversion below.
+**Tolerance** (`numberCorrect`): `|value − answer| <= 1% · |answer|`
+(plus a 10⁻¹² relative margin for floating-point rounding), after the
+SI-prefix conversion below. Purely relative: a fixed floor (it used to be
+`1e-10`) swamps small answers such as forces of 10⁻⁹ N or energies of
+10⁻²¹ J. An answer of exactly 0 accepts only 0.
 
 **Units** (`parseUnitToMap`, `unitStatus`, `unitConversionFactor`):
 
@@ -565,6 +568,18 @@ The Stats screen contains:
   Realtime pings plus a 45 s fallback.
 - **Legend, chart (canvas, with tooltip) and filters.**
 - **Attempt log table**, with per-attempt delete and a sync dot.
+- **Topics** (`renderTopicPerformance`): between the attempt log and the
+  overview, the topics of one enabled quiz at a time (a sliding *Quiz 1–4*
+  switch in its header, remembered as `<prefix>_tp_quiz`), each with two
+  thin bars: *average* (the mean points of every answer in that topic) and
+  *best* (each attempted problem's best score, averaged), in accent 1 and
+  accent 2. The average's 95% interval (Wilson score, z = 1.96, which stays
+  inside 0–100% with few answers) is drawn as an error bar |—| across it. All history, like
+  the overview; retired problems count toward their topic.
+- **Topics in this attempt** (Random N result screen, under *Last attempts*;
+  `renderAttemptTopicsMini` in `js/quiz-engine.js`): the same topic rows for
+  just the topics that appeared in the attempt, without quiz grouping, built
+  by the shared `topicRowsForAttemptHtml` / `_tpRowHtml` in `js/stats.js`.
 - **All-problems overview**: one pill per problem in every enabled quiz,
   colored by that problem's *Last* or *Best* score (switchable, remembered).
 - **Attempt review screen** (`openAttemptReview`): a read-only replay of one
@@ -682,6 +697,12 @@ thread on tap.
   is skipped under reduced motion) and a caption per step, the solution text,
   and "Solution by @author" (linked when the editor has an http(s) link).
   Escape closes it and the previous screen and scroll position are restored.
+- **Figure tools** (right end of the step-navigation row): − / + zoom 100–400%
+  inside a frame that keeps its 100% size (drag to pan with the mouse, native
+  panning by touch; keys + − 0), and a 🔍 magnifier lens (2.5×) that follows
+  the mouse, or appears above the finger while pressing and dragging on touch.
+  Either one stops autoplay and suspends swipe-to-step; both reset per
+  solution.
 - Figures are the stored SVGs. They are **always sanitized** with DOMPurify
   (`figSanitizeSvg`) before being inlined, then cropped to the drawn content
   (`figCropToContent`, one shared box for all steps) and scaled by
@@ -1468,9 +1489,9 @@ its source code. Copyright and attribution notices must be kept.
 editor and shown on the Solution screen) — © their authors, credited under each
 solution, and published on the site with their permission. **All rights
 reserved**: no license is granted, so they may not be copied, republished,
-adapted or used commercially without permission (ask
-[@Aoi_Kuro on Telegram](https://t.me/Aoi_Kuro)). Each solution shows "All rights
-reserved" under its author line.
+adapted or used commercially without permission (ask the corresponding
+author, through the link on their name in the Copyright screen's authors
+table). Each solution shows "All rights reserved" under its author line.
 
 **Problems and figures** (problem statements, numerical data, answers and
 figures in `course/`, including `course/quizzes/` and `course/images/`) — are
@@ -1486,7 +1507,7 @@ jsPDF, jsPDF-AutoTable and svg2pdf.js (MIT, `vendor/jspdf/`), IBM Plex fonts
 upstream repository).
 
 Rights holders who believe material here is used without permission can
-contact [@Aoi_Kuro on Telegram](https://t.me/Aoi_Kuro).
+contact [@Aoi_Kuro](https://t.me/Aoi_Kuro) on Telegram.
 
 On the site, the **Copyright** link next to the changelog button opens the Copyright
 screen (`js/license.js`, `css/license.css`): these statements, then the full

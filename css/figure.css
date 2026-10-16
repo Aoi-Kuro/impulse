@@ -63,7 +63,12 @@
 }
 .sol-line { display: block; }
 .sol-line:empty { min-height: 1.1em; }
+/* \tag'd equations: MathJax gives them an inline min-width (equation
+   plus tag), and min-width beats max-width — the box then grew past its
+   parent, the tag ran off the screen and no scrollbar appeared. Same
+   override MathJax's own displayOverflow: 'scroll' mode uses. */
 .sol-text mjx-container[display="true"] {
   display: block; overflow-x: auto; overflow-y: hidden; max-width: 100%;
+  min-width: initial !important;
   padding: .15rem 0; margin: .15rem -.15rem;
 }

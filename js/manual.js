@@ -133,6 +133,15 @@ const MANUAL_HOSTS = [
     show:      el => el.classList.add('visible'),
     scrollY: 0,
   },
+  {
+    // js/solutions.js — reachable from the Solution screen too. Without
+    // this entry it stayed showing, stacked under the screen opened over it.
+    id: 'solutionScreen',
+    isVisible: el => el.classList.contains('visible'),
+    hide:      el => el.classList.remove('visible', 'fading-out'),
+    show:      el => el.classList.add('visible'),
+    scrollY: 0,
+  },
 ];
 
 // Set for the duration of a manual visit opened on top of one of

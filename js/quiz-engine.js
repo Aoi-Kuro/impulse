@@ -62,7 +62,12 @@ function numberCorrect(userVal, expected, unitScale) {
   const u = parseMoodleNumber(userVal);
   if (isNaN(u)) return false;
   const scaled = u * (unitScale === undefined ? 1 : unitScale);
-  const tol = Math.abs(expected) * 0.01 + 1e-10;
+  // ±1% of the expected value, purely relative. It used to add a fixed
+  // 1e-10, which swamps small answers: a force of 6.305e-9 N accepted ±2.6%,
+  // and answers like 5.3e-26 accepted almost anything, 0 included. The
+  // extra 1e-12 (relative) only absorbs floating-point rounding; an
+  // expected 0 accepts only (practically) 0.
+  const tol = Math.abs(expected) * (0.01 + 1e-12) || 1e-300;
   return Math.abs(scaled - expected) <= tol;
 }
 
@@ -846,6 +851,7 @@ function newQuiz() {
   checked = false;
   document.getElementById("resultPanel").classList.remove("show");
   document.getElementById("recentAttemptsPanel").classList.remove("show");
+  document.getElementById("attemptTopicsPanel").classList.remove("show");
   document.getElementById("checkBtn").disabled = false;
   document.getElementById("resultMaxScore").textContent = "Final Score";
   updateFilterActiveNote();
@@ -1105,6 +1111,26 @@ function formatAttemptDuration(totalSeconds) {
 // the list missing the attempt that was literally just taken.
 function onAttemptRecorded() {
   renderRecentAttemptsMini();
+  renderAttemptTopicsMini();
+}
+
+// ─── "Topics in this attempt" (under "Last attempts") ──────────────────────
+// The topics that appeared in the attempt just recorded (up to QUIZ_SIZE),
+// each with the same rows as the Stats screen's Topics card — average with
+// its interval, best, hover details — over all history, this attempt
+// included. No quiz grouping. Rows come from topicRowsForAttemptHtml()
+// (js/stats.js); same timing as the panel above (see onAttemptRecorded).
+function renderAttemptTopicsMini() {
+  const panel = document.getElementById('attemptTopicsPanel');
+  const list  = document.getElementById('attemptTopicsList');
+  if (!panel || !list || typeof loadStats !== 'function' || typeof topicRowsForAttemptHtml !== 'function') return;
+  const latest = loadStats().slice(-1)[0];          // append-ordered: the one just recorded
+  const rows = topicRowsForAttemptHtml(latest);
+  if (!rows) { panel.classList.remove('show'); return; }
+  const legend = document.getElementById('attemptTopicsLegend');
+  if (legend && typeof TP_LEGEND_HTML !== 'undefined') legend.innerHTML = TP_LEGEND_HTML;
+  list.innerHTML = `<div class="tp-group">${rows}</div>`;
+  panel.classList.add('show');
 }
 
 function renderRecentAttemptsMini() {
@@ -1386,6 +1412,7 @@ function _startSolveAllCore(order) {
   document.querySelector('.topic-selector-wrap').style.display = 'none';
   document.getElementById('resultPanel').style.display = 'none';
   document.getElementById('recentAttemptsPanel').style.display = 'none';
+  document.getElementById('attemptTopicsPanel').style.display = 'none';
   document.getElementById('guideMain').style.display = 'none';
   document.querySelector('.quiz-top-row').style.display = 'none';
   document.querySelector('header').style.display = 'none';
@@ -1420,6 +1447,7 @@ function _exitSolveAllScreenDom() {
   document.querySelector('.topic-selector-wrap').style.display = '';
   document.getElementById('resultPanel').style.display = '';
   document.getElementById('recentAttemptsPanel').style.display = '';
+  document.getElementById('attemptTopicsPanel').style.display = '';
   document.getElementById('guideMain').style.display = '';
   document.querySelector('.quiz-top-row').style.display = '';
   document.querySelector('header').style.display = '';
@@ -2575,6 +2603,9 @@ function exitAppOrChoiceToLanding() {
   const appPage   = document.getElementById('appPage');
   const choice    = document.getElementById('choicePage');
   const landing   = document.getElementById('landingScreen');
+  // A solution left hidden under Settings / Manual / the forum (they close
+  // straight to here with the logo) is dropped as well — see js/solutions.js.
+  if (typeof abandonSolutionScreen === 'function') abandonSolutionScreen();
 
   // Settings > Study > "Full screen for Random N" enters fullscreen the
   // moment an attempt starts (see the requestFullscreen() call above) and
@@ -2703,7 +2734,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '12.2.2';
+const CURRENT_VERSION = '12.3.1';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

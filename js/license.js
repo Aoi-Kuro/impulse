@@ -79,7 +79,7 @@ async function renderLicenseSolutionAuthors() {
   const rows = await fetchSolutionAuthorRows();
   if (!Array.isArray(rows)) { box.hidden = true; return; }
 
-  // author key (case-insensitive, no "@") -> { name, total, quizzes: Map<quizNum, number[]> }
+  // author key (case-insensitive, no "@") -> { name, link, total, quizzes: Map<quizNum, number[]> }
   const authors = new Map();
   for (const r of rows) {
     const m = /^q(\d+)_(.+)$/.exec((r && r.problem_key) || '');
@@ -91,8 +91,11 @@ async function renderLicenseSolutionAuthors() {
     const num = typeof problemNumber === 'function' ? problemNumber(quizNum, m[2]) : null;
     if (num === null) continue;
     const key = name.toLowerCase();
-    if (!authors.has(key)) authors.set(key, { name, total: 0, quizzes: new Map() });
+    if (!authors.has(key)) authors.set(key, { name, link: null, total: 0, quizzes: new Map() });
     const a = authors.get(key);
+    // The editor's own link (migration 009 keeps it the same on all their
+    // rows), http(s) only — same rule as "Solution by" in js/solutions.js.
+    if (!a.link && typeof safeAuthorLink === 'function') a.link = safeAuthorLink(r.author_link);
     if (!a.quizzes.has(quizNum)) a.quizzes.set(quizNum, []);
     a.quizzes.get(quizNum).push(num);
     a.total++;
@@ -121,7 +124,16 @@ async function renderLicenseSolutionAuthors() {
           who.rowSpan = quizNums.length;
           const nameEl = document.createElement('div');
           nameEl.className = 'license-author-name';
-          nameEl.textContent = '@' + a.name;
+          if (a.link) {
+            const link = document.createElement('a');
+            link.href = a.link;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = '@' + a.name;
+            nameEl.appendChild(link);
+          } else {
+            nameEl.textContent = '@' + a.name;
+          }
           const countEl = document.createElement('div');
           countEl.className = 'license-author-count';
           countEl.textContent = `${a.total} solution${a.total === 1 ? '' : 's'}`;

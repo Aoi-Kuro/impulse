@@ -93,94 +93,94 @@ const Quiz_2_Problems = [
 
   // ──────────────────── Potential Energy and Energy Conservation ────────────────────
 
-  { id:"P30", topic:"Potential Energy and Energy Conservation", answer:0.0864, units:["N"],
+  { id:"P30", topic:"Potential & Mechanical Energy", answer:0.0864, units:["N"],
     text:"A force parallel to the $x$-axis acts on a particle moving along the $x$-axis. This force produces potential energy given by $U(x) = \\alpha \\cdot x^4$, where $\\alpha$ = 2.7 J m$^{-4}$. What is the force magnitude when the particle is at $x = -0.2$ m?" },
 
-  { id:"P31", topic:"Potential Energy and Energy Conservation", answer:7.4217, units:["J"],
+  { id:"P31", topic:"Potential & Mechanical Energy", answer:7.4217, units:["J"],
     text:"A force parallel to the $x$-axis acts on a particle moving along the $x$-axis. This force produces potential energy given by $U(x) = \\alpha \\cdot x^4$, where $\\alpha$ = 2.6 J m$^{-4}$. How much work does this force do on the particle as it moves from $x$ = 1.3 m to $x$ = 0.2 m?" },
 
-  { id:"P32", topic:"Potential Energy and Energy Conservation", answer:-105.0, units:["J"],
+  { id:"P32", topic:"Potential & Mechanical Energy", answer:-105.0, units:["J"],
     text:"A single conservative force acts on a 5.00-kg particle. The equation $F = (2x + 6)$ N describes the force, where $x$ is in meters. As the particle moves along the $x$ axis from $x$ = 1 m to $x$ = 8 m, calculate the change in the potential energy of the system." },
 
-  { id:"P33", topic:"Potential Energy and Energy Conservation", answer:112.0, units:["J"],
+  { id:"P33", topic:"Potential & Mechanical Energy", answer:112.0, units:["J"],
     text:"A single conservative force acts on a 5 kg particle. The equation $F = (2x + 4)$ N describes the force, where $x$ is in meters. As the particle moves along the $x$ axis from $x$ = 2.5 m to $x$ = 9.5 m, calculate the work done by this force on the particle." },
 
-  { id:"P34", topic:"Potential Energy and Energy Conservation", answer:-349.867, units:["J"],
+  { id:"P34", topic:"Potential & Mechanical Energy", answer:-349.867, units:["J"],
     text:"A force $F$, measured in Newtons, varies along the $x$-axis, with the distance measured in meters, according to the following law: $F(x) = 1.3 x^2 + 4x$. Find the potential energy $U(x)$ associated with this force at x=8 m. Assume that $U(0)=0$." },
 
-  { id:"P35", topic:"Potential Energy and Energy Conservation", answer:94.5, units:["N"],
+  { id:"P35", topic:"Potential & Mechanical Energy", answer:94.5, units:["N"],
     text:"A force $F$, measured in newtons, varies along the $x$-axis, with the distance measured in meters, according to the following law: $F(x) = 1.5 x^2 + 3x$. Find the magnitude of this force at $x$ = 7 m." },
 
-  { id:"P36", topic:"Potential Energy and Energy Conservation", answer:8.776, units:["kg"],
+  { id:"P36", topic:"Potential & Mechanical Energy", answer:8.776, units:["kg"],
     text:"Two blocks with different mass are attached to either end of a light rope that passes over a light, frictionless pulley that is suspended from the ceiling. The masses are released from rest, and the more massive one starts to descend. After this block has descended 1.4 m, its speed is 3.1 m s$^{-1}$. If the total mass of the two blocks is 13 kg, what is the mass of the more massive block? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P37", topic:"Potential Energy and Energy Conservation", answer:4.635, units:["kg"],
+  { id:"P37", topic:"Potential & Mechanical Energy", answer:4.635, units:["kg"],
     text:"Two blocks with different mass are attached to either end of a light rope that passes over a light, frictionless pulley that is suspended from the ceiling. The masses are released from rest, and the more massive one starts to descend. After this block has descended 1.6 m, its speed is 3 m s$^{-1}$. If the total mass of the two blocks is 13 kg, what is the mass of the less massive block? The gravitational acceleration is $g = 9.8$ m s$^{-2}$." },
 
-  { id:"P38", topic:"Potential Energy and Energy Conservation", answer:607.6, units:["N"],
+  { id:"P38", topic:"Potential & Mechanical Energy", answer:607.6, units:["N"],
     text:"At a construction site, a 62-kg bucket of concrete hangs from a light strong cable that passes over a light friction-free pulley and is connected to a 84-kg box on a horizontal roof. The cable pulls horizontally on the box, and a 48-kg bag of gravel rests on top of the box. The coefficients of friction between the box and roof are $\\mu _{\\text{s}}$ = 0.68 and $\\mu_{\\text{k}}$ = 0.43. Find the magnitude of the friction force that the roof exerts on the box. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(7).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P39", topic:"Potential Energy and Energy Conservation", answer:2.721, units:["m/s"],
+  { id:"P39", topic:"Potential & Mechanical Energy", answer:2.721, units:["m/s"],
     text:"At a construction site, a 63-kg bucket of concrete hangs from a light strong cable that passes over a light friction-free pulley and is connected to an 80-kg box on a horizontal roof. The cable pulls horizontally on the box, and a 48-kg bag of gravel rests on top of the box. The coefficients of friction between the box and roof are $\\mu _{\\text{s}}$ = 0.68 and $\\mu_{\\text{k}}$ = 0.45. Suddenly a worker picks up the bag of gravel. Find the speed of the bucket after it has descended 2 m, from rest. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(7).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P40", topic:"Potential Energy and Energy Conservation", answer:0.586, units:["m"],
+  { id:"P40", topic:"Potential & Mechanical Energy", answer:0.586, units:["m"],
     text:"A 1 kg block is pushed against a spring with negligible mass and force constant $k$ = 480 N m$^{-1}$, compressing it 0.12 m. When the block is released, it moves along a frictionless incline with slope 37°. How far does the block travel up the incline before starting to slide back down? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(8).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P41", topic:"Potential Energy and Energy Conservation", answer:1.55597, units:["m/s"],
+  { id:"P41", topic:"Potential & Mechanical Energy", answer:1.55597, units:["m/s"],
     text:"A 1.9 kg block is pushed against a spring with negligible mass and force constant $k$ = 460 N m$^{-1}$, compressing it 0.1 m. When the block is released, it moves along a frictionless incline with slope 30°. What is the speed of the block at the instant it loses contact with the spring? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(9).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P42", topic:"Potential Energy and Energy Conservation", answer:3.184, units:["m/s"],
+  { id:"P42", topic:"Potential & Mechanical Energy", answer:3.184, units:["m/s"],
     text:"A 3 kg block is pushed against a spring with negligible mass and force constant $k$ = 450 N m$^{-1}$, compressing it 0.26 m (1 in Figure below). When the block is released, it moves along a frictionless surface (2 in Figure below). What is the speed of the block as it slides along the horizontal surface having left the spring? <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(10).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P43", topic:"Potential Energy and Energy Conservation", answer:19.04205871223, units:["m/s"],
+  { id:"P43", topic:"Potential & Mechanical Energy", answer:19.04205871223, units:["m/s"],
     text:"On the way up the hill, a car shows the sign of “fuel starvation”. To reach the top of the hill of 18.5 m high, calculate how fast the car must be moving. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P44", topic:"Potential Energy and Energy Conservation", answer:3.647, units:["m/s"],
+  { id:"P44", topic:"Potential & Mechanical Energy", answer:3.647, units:["m/s"],
     text:"On a horizontal surface, a crate with mass 37 kg is placed against a spring that stores 410 J of energy. The spring is released, and the crate slides 5 m before coming to rest due to friction. What is the speed of the crate when it is 2 m from its initial position?" },
 
-  { id:"P45", topic:"Potential Energy and Energy Conservation", answer:3.60972, units:["m/s"],
+  { id:"P45", topic:"Potential & Mechanical Energy", answer:3.60972, units:["m/s"],
     text:"On a horizontal surface, a crate with mass 47 kg is placed against a spring that stores 480 J of energy. The spring is released, and the crate slides 5.8 m before coming to rest. What is the speed of the crate when it is 2.1 m from its initial position?" },
 
-  { id:"P46", topic:"Potential Energy and Energy Conservation", answer:0.51, units:["m"],
+  { id:"P46", topic:"Potential & Mechanical Energy", answer:0.51, units:["m"],
     text:"The block of mass of 0.38 kg is dropped from a height $h$ = 69 cm on the left elevated end of a small track with frictionless curved sections and a flat central part of $L$ = 1.2 m length, where the coefficient of kinetic friction is 0.15. What is the highest point the block can be on the right elevated end of the track? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(11).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P47", topic:"Potential Energy and Energy Conservation", answer:30.46, units:["m/s"],
+  { id:"P47", topic:"Potential & Mechanical Energy", answer:30.46, units:["m/s"],
     text:"A 22 kg stone slides down a snow-covered hill, leaving point $A$ with a speed of 12 m s$^{-1}$ as shown in Figure below. There is no friction on the hill between points $A$ and $B$. Height of the hill is 40 m. What is the speed of the stone when it reaches point $B$? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(12).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P48", topic:"Potential Energy and Energy Conservation", answer:465.5, units:["J"],
+  { id:"P48", topic:"Potential & Mechanical Energy", answer:465.5, units:["J"],
     text:"A 2.5 kg watermelon is dropped from rest from the roof of a 19 m tall building and feels no appreciable air resistance. Just before it strikes the ground, what is the watermelon's kinetic energy? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P49", topic:"Potential Energy and Energy Conservation", answer:21.2321, units:["m/s"],
+  { id:"P49", topic:"Potential & Mechanical Energy", answer:21.2321, units:["m/s"],
     text:"A 3.7 kg watermelon is dropped from rest from the roof of a 23 m tall building and feels no appreciable air resistance. Just before it strikes the ground, what is the watermelon's speed? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P50", topic:"Potential Energy and Energy Conservation", answer:0.2195, units:[],
+  { id:"P50", topic:"Potential & Mechanical Energy", answer:0.2195, units:[],
     text:"A block with mass 1 kg is forced against a horizontal spring of negligible mass, compressing the spring a distance of 0.22 m. When released, the block moves on a horizontal tabletop for 1.8 m before coming to rest. The spring constant $k$ is 160 N m$^{-1}$. What is the coefficient of kinetic friction $\\mu_{\\text{k}}$ between the block and the table? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(10).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P51", topic:"Potential Energy and Energy Conservation", answer:0.791016, units:["m"],
+  { id:"P51", topic:"Potential & Mechanical Energy", answer:0.791016, units:["m"],
     text:"A block with mass 1.6 kg is forced against a horizontal spring of negligible mass, compressing the spring a distance of 0.21 m. The spring constant $k$ is 135 N m$^{-1}$. When released, the block moves on a horizontal tabletop whose coefficient of kinetic friction with the block is 0.24. How far does the block travel before coming to rest? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(13).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P52", topic:"Potential Energy and Energy Conservation", answer:4.6305, units:["J"],
+  { id:"P52", topic:"Potential & Mechanical Energy", answer:4.6305, units:["J"],
     text:"A 700-gram rubber ball is dropped from an initial height of 2.25 m, and on each bounce it returns to 70% of its previous height. Find the amount (the absolute value) of the mechanical energy that the ball loses during its first bounce. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P53", topic:"Potential Energy and Energy Conservation", answer:4.36795, units:["J"],
+  { id:"P53", topic:"Potential & Mechanical Energy", answer:4.36795, units:["J"],
     text:"A 730-gram rubber ball is dropped from an initial height of 2.65 m, and on each bounce it returns to 64% of its previous height. Find the amount (the absolute value) of the mechanical energy that the ball loses during its second bounce. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P54", topic:"Potential Energy and Energy Conservation", answer:35.0, units:["m"],
+  { id:"P54", topic:"Potential & Mechanical Energy", answer:35.0, units:["m"],
     text:"A car in an amusement park ride rolls without friction around the track. It starts from rest at point $A$ at a height $h$ above the bottom of the loop. Radius of the loop is 14 m. What is the minimum value of $h$ such that the car moves around the loop without falling off at the top (point $B$?) <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(14).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P55", topic:"Potential Energy and Energy Conservation", answer:28.8617, units:["m/s"],
+  { id:"P55", topic:"Potential & Mechanical Energy", answer:28.8617, units:["m/s"],
     text:"A car in an amusement park ride rolls without friction around a vertical loop of radius 17 m. It starts from rest at the minimum height that allows it to maintain contact with the track at the top of the loop. What is the speed of the car at the bottom of the loop? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(15).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P56", topic:"Potential Energy and Energy Conservation", answer:10.618, units:["m"],
+  { id:"P56", topic:"Potential & Mechanical Energy", answer:10.618, units:["m"],
     text:"A 29-kg rock approaches the foot of a hill with a speed of 16 m s$^{-1}$. The hill slopes upward at a constant angle of 41° above the horizontal. The coefficients of static and kinetic friction between the hill and the rock are 0.78 and 0.2, respectively. Find the maximum height above the foot of the hill reached by the rock. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P57", topic:"Potential Energy and Energy Conservation", answer:10.0751, units:["m"],
+  { id:"P57", topic:"Potential & Mechanical Energy", answer:10.0751, units:["m"],
     text:"A 32.5-kg rock approaches the foot of a hill with a speed of 12 m s$^{-1}$. The hill slopes upward at a constant angle of 35° above the horizontal. The coefficient of kinetic friction between the hill and the rock is 0.19. Find the distance the rock travels along the incline before coming to a stop. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P58", topic:"Potential Energy and Energy Conservation", answer:43.614, units:["m/s"],
+  { id:"P58", topic:"Potential & Mechanical Energy", answer:43.614, units:["m/s"],
     text:"A 3.7-kg block slides over the smooth, icy hill. The top of the hill is horizontal and $h_1$ = 79 m higher than its base. What minimum speed must the block have at the base of the hill so that it will not fall into the pit on the far side of the hill that is $h_2$ = 59 m above the base? The distance between the top and the far side pit is $d$ = 38 m. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(16).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P59", topic:"Potential Energy and Energy Conservation", answer:39.9981, units:["m/s"],
+  { id:"P59", topic:"Potential & Mechanical Energy", answer:39.9981, units:["m/s"],
     text:"A 3.3-kg block slides over a smooth, icy hill. The top of the hill is horizontal and 24 m higher than its base. The block has a speed of 45.5 m s$^{-1}$ at the base of the hill. What is its speed at the top of the hill? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(17).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
   // ──────────────────── Impulse and Collisions ────────────────────
@@ -223,70 +223,70 @@ const Quiz_2_Problems = [
 
   // ──────────────────── Conservation of Linear Momentum ────────────────────
 
-  { id:"P72", topic:"Conservation of Linear Momentum", answer:554.655, units:["m/s"],
+  { id:"P72", topic:"Linear Momentum Conservation", answer:554.655, units:["m/s"],
     text:"Figure shows a ballistic pendulum. Initially, the pendulum is at rest. The bullet strikes the block horizontally and remains stuck in it. The impact of the bullet puts the block in motion, causing it to swing upward to a height $h$. If the bullet has a mass of 15 g, and the block of mass 7.3 kg swings up to a height of 6.6 cm, what was the speed of the bullet before impact? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(18).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P73", topic:"Conservation of Linear Momentum", answer:0.0401495, units:["m"],
+  { id:"P73", topic:"Linear Momentum Conservation", answer:0.0401495, units:["m"],
     text:"A ballistic pendulum is initially at rest. A bullet of mass 11.5 g strikes a block of mass 6.6 kg horizontally at 510 m s$^{-1}$ and remains stuck in it, putting the block in motion. To what height does the block swing? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed.webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P74", topic:"Conservation of Linear Momentum", answer:1.5757, units:["m/s"],
+  { id:"P74", topic:"Linear Momentum Conservation", answer:1.5757, units:["m/s"],
     text:"A linebacker with mass 85 kg and initial speed 3.17 m s$^{-1}$ makes a perfectly inelastic collision with a 86 kg quarterback that is initially at rest. Find the speeds of the players just after their collision." },
 
-  { id:"P75", topic:"Conservation of Linear Momentum", answer:344.119, units:["J"],
+  { id:"P75", topic:"Linear Momentum Conservation", answer:344.119, units:["J"],
     text:"A linebacker with mass 90 kg and initial speed 3.98 m s$^{-1}$ makes a perfectly inelastic collision with a 84 kg quarterback that is initially at rest. How much kinetic energy is lost in the collision?" },
 
-  { id:"P76", topic:"Conservation of Linear Momentum", answer:6.667, units:["m/s"],
+  { id:"P76", topic:"Linear Momentum Conservation", answer:6.667, units:["m/s"],
     text:"Two masses $M_1$ = 8 kg and $M_2$ = 4 kg collide elastically. The initial velocity of the first mass $M_1$ is 5 m s$^{-1}$, whereas the second mass $M_2$ is starting its motion only after the collision. Find the speed of the second mass after the collision." },
 
-  { id:"P77", topic:"Conservation of Linear Momentum", answer:1.56, units:["m/s"],
+  { id:"P77", topic:"Linear Momentum Conservation", answer:1.56, units:["m/s"],
     text:"Two masses $M_1$ = 9.5 kg and $M_2$ = 3 kg collide elastically. The initial velocity of the first mass $M_1$ is 3 m s$^{-1}$, whereas the second mass $M_2$ is at rest before the collision. Find the speed of the first mass after the collision." },
 
-  { id:"P78", topic:"Conservation of Linear Momentum", answer:2.859, units:["m/s"],
+  { id:"P78", topic:"Linear Momentum Conservation", answer:2.859, units:["m/s"],
     text:"On a frictionless horizontal surface two blocks of masses 2.1 kg and 2.9 kg are connected by a spring of stiffness $k$ = 820 N m$^{-1}$ and negligible mass. Initially, the blocks are pushed together to compress the spring by distance $d$ = 19 cm from its equilibrium length and the configuration is fixed by a cord that holds the blocks. When the cord is cut, the blocks move in opposite directions. Calculate the speed of the first block. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(19).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P79", topic:"Conservation of Linear Momentum", answer:2.49622, units:["m/s"],
+  { id:"P79", topic:"Linear Momentum Conservation", answer:2.49622, units:["m/s"],
     text:"On a frictionless horizontal surface two blocks of masses 2.3 kg and 3 kg are connected by a spring of stiffness $k$ = 890 N m$^{-1}$ and negligible mass. Initially, the blocks are pushed together to compress the spring by a distance $d$ = 22 cm from its equilibrium length and the configuration is fixed by a cord. When the cord is cut, the blocks move in opposite directions. Calculate the speed of the second block. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_2/unnamed(20).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
-  { id:"P80", topic:"Conservation of Linear Momentum", answer:3.601, units:["m/s"],
+  { id:"P80", topic:"Linear Momentum Conservation", answer:3.601, units:["m/s"],
     text:"An object of mass 520 gram has an initial velocity of ($-$2.6 m s$^{-1}$) $\\mathbf{\\hat{i}}$ + (1.1 m s$^{-1}$) $\\mathbf{\\hat{j}}$. It collides with and sticks to another object of mass 880 gram moving with an initial velocity of (5.5 m s$^{-1}$) $\\mathbf{\\hat{i}}$ + (2.3 m s$^{-1}$) $\\mathbf{\\hat{j}}$ + (2.9 m s$^{-1}$) $\\mathbf{\\hat{k}}$ (here $\\mathbf{\\hat{i}}$, $\\mathbf{\\hat{j}}$, and $\\mathbf{\\hat{k}}$ are unit vectors along the $x$-, $y$-, and $z$-axis respectively). Find the magnitude of the speed of the composite object." },
 
-  { id:"P81", topic:"Conservation of Linear Momentum", answer:13.035, units:["m"],
+  { id:"P81", topic:"Linear Momentum Conservation", answer:13.035, units:["m"],
     text:"A block of mass 1 kg stays at rest on a horizontal surface with coefficient of kinetic friction 0.15. When an arrow of mass 260 g strikes the block with the speed 30 m s$^{-1}$ it gets stuck in the block. Find the distance to which the block with the arrow will slide after the strike till they come to rest. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P82", topic:"Conservation of Linear Momentum", answer:67.2697, units:["J"],
+  { id:"P82", topic:"Linear Momentum Conservation", answer:67.2697, units:["J"],
     text:"A block of mass 1.3 kg stays at rest on a horizontal surface whose coefficient of kinetic friction is 0.24. An arrow of mass 235 g strikes the block with a speed of 26 m s$^{-1}$ and gets stuck in the block. How much kinetic energy is lost during the collision? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P83", topic:"Conservation of Linear Momentum", answer:0.256, units:[],
+  { id:"P83", topic:"Linear Momentum Conservation", answer:0.256, units:[],
     text:"When an arrow of mass 260 g strikes the brick of mass 0.8 kg, staying at rest on a horizontal surface, the arrow gets stuck in the brick and they begin to move straight till they stop because of the friction between the brick and the surface. If the initial speed of the arrow before the strike was 49 m s$^{-1}$ and the distance the block with the arrow moved after the strike was 2880 cm, what was the coefficient of kinetic friction between the brick and the surface. The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
-  { id:"P84", topic:"Conservation of Linear Momentum", answer:-2.717, units:["m/s"],
+  { id:"P84", topic:"Linear Momentum Conservation", answer:-2.717, units:["m/s"],
     text:"An astronaut runs out of fuel in her power pack while drifting at 3 m s$^{-1}$ away from the International Space Station. Remembering what she learned in physics class she removes her 30 kg power pack and throws it away at 4 m s$^{-1}$ relative to the Station and in the direction away from the Station. The mass of the astronaut plus space suit, minus the power pack, is 106 kg. Calculate the new velocity of the astronaut relative to the Space Station. Take the direction towards the Space Station as positive." },
 
-  { id:"P85", topic:"Conservation of Linear Momentum", answer:2.97317, units:["m/s"],
+  { id:"P85", topic:"Linear Momentum Conservation", answer:2.97317, units:["m/s"],
     text:"An astronaut of total mass 107 kg, including her power pack, runs out of fuel while drifting at 3.4 m s$^{-1}$ away from the International Space Station. She removes her 25 kg power pack and throws it directly away from the Station at 4.8 m s$^{-1}$ relative to the Station. What is her speed immediately after the throw?" },
 
-  { id:"P86", topic:"Conservation of Linear Momentum", answer:116.67, units:["m"],
+  { id:"P86", topic:"Linear Momentum Conservation", answer:116.67, units:["m"],
     text:"In a volcanic eruption, a 2450-kg boulder is thrown vertically upward into the air. At its highest point, it suddenly explodes due to trapped gas into two fragments, one being 3 times the mass of the other. The lighter fragment starts out with only horizontal velocity and lands 350 m directly north of the point of the explosion. How far from the explosion will the other fragment land? Neglect any other air resistance." },
 
-  { id:"P87", topic:"Conservation of Linear Momentum", answer:14.8333, units:["m/s"],
+  { id:"P87", topic:"Linear Momentum Conservation", answer:14.8333, units:["m/s"],
     text:"In a volcanic eruption, a 2600-kg boulder is thrown vertically upward into the air. At its highest point it suddenly explodes into two fragments, one being 3 times the mass of the other. The lighter fragment starts out with only a horizontal velocity of 44.5 m s$^{-1}$. What is the horizontal speed of the heavier fragment immediately after the explosion?" },
 
-  { id:"P88", topic:"Conservation of Linear Momentum", answer:24.0, units:[],
+  { id:"P88", topic:"Linear Momentum Conservation", answer:24.0, units:[],
     text:"4 coupled railroad cars roll along and couple with a 5th car, which is initially at rest. These 5 cars roll along and couple with a 6th car initially at rest. This process continues until the speed of the final collection of railroad cars is $\\frac{1}{6}$ the speed of the initial 4 railroad cars. All the cars are identical. Ignoring friction, how many cars are in the final collection?" },
 
-  { id:"P89", topic:"Conservation of Linear Momentum", answer:20.81, units:["m/s"],
+  { id:"P89", topic:"Linear Momentum Conservation", answer:20.81, units:["m/s"],
     text:"A 1250-kg blue convertible is traveling south, and a 1850-kg red SUV is traveling west. If the total momentum of the system consisting of the two cars is 77000 kg m s$^{-1}$ directed at 30° west of south, what is the speed of an SUV?" },
 
-  { id:"P90", topic:"Conservation of Linear Momentum", answer:27.4194, units:["m/s"],
+  { id:"P90", topic:"Linear Momentum Conservation", answer:27.4194, units:["m/s"],
     text:"A 1240-kg blue convertible is traveling south, and a 2000-kg red SUV is traveling west. If the total momentum of the system consisting of the two cars is 68000 kg·m s$^{-1}$ directed at 60° west of south, what is the speed of the convertible?" },
 
-  { id:"P91", topic:"Conservation of Linear Momentum", answer:29.615, units:["m/s"],
+  { id:"P91", topic:"Linear Momentum Conservation", answer:29.615, units:["m/s"],
     text:"A 1300-kg blue convertible is traveling south, and a 2150-kg red SUV is traveling west. If the total momentum of the system consisting of the two cars is 77000 kg m s$^{-1}$ directed at 60° west of south, what is the speed of the blue convertible?" },
 
-  { id:"P92", topic:"Conservation of Linear Momentum", answer:11.2068, units:["km/s"],
+  { id:"P92", topic:"Linear Momentum Conservation", answer:11.2068, units:["km/s"],
     text:"A rocket has a payload of 6.5 percent of its total mass, the rest being fuel. If this rocket starts from rest and moves with no external forces acting on it, what is its final velocity if the exhaust velocity of the gas is 4.1 km s$^{-1}$?" },
 
-  { id:"P93", topic:"Conservation of Linear Momentum", answer:0.0497871, units:[],
+  { id:"P93", topic:"Linear Momentum Conservation", answer:0.0497871, units:[],
     text:"A rocket starts from rest and moves with no external forces acting on it. The exhaust velocity of the gas is 3.9 km s$^{-1}$. What fraction of the rocket's total mass can be payload if its final velocity is to be 11.7 km s$^{-1}$?" },
 
   // ──────────────────── Moment of Inertia ────────────────────

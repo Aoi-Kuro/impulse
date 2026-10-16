@@ -185,7 +185,14 @@
         }
       },
       chtml: {
-        fontURL: 'vendor/mathjax/fonts/woff'
+        fontURL: 'vendor/mathjax/fonts/woff',
+        // A display equation wider than its box scrolls sideways — MathJax
+        // lays out the equation and its \tag as one scrollable unit. With the
+        // default ('overflow') a tagged equation spilled past the card and
+        // its tag ran off the screen. Keep in sync with editor/index.html
+        // and offline.html; changing it needs MATH_CACHE_SCHEMA bumped
+        // (js/math-cache.js), since cached problem text keeps the old layout.
+        displayOverflow: 'scroll'
       },
       options: {
         skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
@@ -544,6 +551,16 @@
   <button class="btn btn-secondary see-full-stats-btn" onclick="openFullStatsFromQuiz()">See full stats →</button>
 </div>
 
+<!-- Topics of the attempt just checked, with the Stats screen's topic rows
+     (renderAttemptTopicsMini in js/quiz-engine.js). -->
+<div class="recent-attempts-panel attempt-topics-panel" id="attemptTopicsPanel">
+  <div class="attempt-topics-head">
+    <div class="recent-attempts-header">Topics in this attempt</div>
+    <span id="attemptTopicsLegend"></span>
+  </div>
+  <div id="attemptTopicsList"></div>
+</div>
+
 <!-- Wrapper holds the reset button OUTSIDE #topicSelector: initTopics() does
      `topicSelector.innerHTML = ''` on every rebuild (topic/number toggle,
      quiz switch, etc.), which was wiping out the reset button since it used
@@ -772,6 +789,10 @@
     </div>
     <div class="stats-filters" id="statsFilters"></div>
     <div id="statsTableWrap"></div>
+    <!-- ── Topic performance: every topic of every available quiz, each with
+         an average bar (all answers) and a best bar (each problem's best).
+         Rendered by renderTopicPerformance() in js/stats.js. -->
+    <div id="statsTopicsWrap"></div>
     <!-- ── All-problems overview: every problem in the pool as a score-box
          pill (same component as the result breakdown / "Last attempts"
          panel / review screen), colored by that problem's LATEST recorded
@@ -1000,7 +1021,7 @@
       <section class="license-card">
         <h2>Worked Solutions <span class="license-badge">All rights reserved</span></h2>
         <p>Solutions written for this site, including their figures, are © their authors, who are credited under each solution, and are published here with their permission. All rights reserved.</p>
-        <p>They may not be copied, republished, adapted or used commercially without permission. To ask for permission, contact <a href="https://t.me/Aoi_Kuro" target="_blank" rel="noopener">@Aoi_Kuro on Telegram</a>.</p>
+        <p>They may not be copied, republished, adapted or used commercially without permission. To ask for permission, contact the corresponding author using the link below.</p>
         <!-- Filled by renderLicenseSolutionAuthors() in js/license.js. -->
         <div class="license-authors" id="licenseSolutionAuthors" hidden></div>
       </section>
@@ -1018,7 +1039,7 @@
 
       <section class="license-card license-card-contact">
         <h2>Copyright Holders</h2>
-        <p>If you hold the rights to any material on this site and believe it is used without permission, or want it removed, please contact <a href="https://t.me/Aoi_Kuro" target="_blank" rel="noopener">@Aoi_Kuro on Telegram</a>.</p>
+        <p>If you hold the rights to any material on this site and believe it is used without permission, or want it removed, please contact <a href="https://t.me/Aoi_Kuro" target="_blank" rel="noopener">@Aoi_Kuro</a> on Telegram.</p>
       </section>
     </div>
 
@@ -1451,14 +1472,29 @@
 
     <div class="solution-figwrap" id="solutionFigureWrap" hidden>
       <div class="solution-section-label">Figure</div>
-      <div class="fig" id="solutionFigure"></div>
-      <div class="solution-nav" id="solutionNav">
-        <button type="button" class="solution-navbtn" id="solutionPrev" aria-label="Previous step" onclick="solutionStep(-1)">‹</button>
-        <div class="solution-nav-mid">
-          <div class="solution-dots" id="solutionDots"></div>
-          <div class="solution-stepno" id="solutionStepNo"></div>
+      <!-- The figure and the magnifier lens over it — js/solutions.js,
+           "Figure zoom & magnifier". -->
+      <div class="solution-figstage" id="solutionFigStage">
+        <div class="fig" id="solutionFigure"></div>
+        <div class="fig fig-lens" id="solutionFigLens" aria-hidden="true" hidden></div>
+      </div>
+      <!-- One row: step navigation centred, zoom tools on the right (the
+           tools stay when a one-step figure hides the navigation). Icons
+           are drawn, not text glyphs, so they sit dead centre. -->
+      <div class="solution-figbar">
+        <div class="solution-nav" id="solutionNav">
+          <button type="button" class="solution-navbtn" id="solutionPrev" aria-label="Previous step" onclick="solutionStep(-1)"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="solution-nav-mid">
+            <div class="solution-dots" id="solutionDots"></div>
+            <div class="solution-stepno" id="solutionStepNo"></div>
+          </div>
+          <button type="button" class="solution-navbtn" id="solutionNext" aria-label="Next step" onclick="solutionStep(1)"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
-        <button type="button" class="solution-navbtn" id="solutionNext" aria-label="Next step" onclick="solutionStep(1)">›</button>
+        <div class="fig-tools" id="solutionFigTools" role="toolbar" aria-label="Figure zoom">
+          <button type="button" class="solution-navbtn fig-toolbtn" id="solutionZoomOut" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M3.5 8h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="solution-navbtn fig-toolbtn" id="solutionZoomIn" aria-label="Zoom in" title="Zoom in"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M3.5 8h9M8 3.5v9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="solution-navbtn fig-toolbtn" id="solutionLensBtn" aria-pressed="false" aria-label="Magnifier" title="Magnifier"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M7 2.75a4.25 4.25 0 1 0 0 8.5 4.25 4.25 0 1 0 0-8.5M10.2 10.2 13.5 13.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
       </div>
       <div class="solution-caption sol-text" id="solutionCaption"></div>
     </div>

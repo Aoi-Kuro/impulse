@@ -619,6 +619,241 @@
 .problems-overview-section {
   margin-top: 1.4rem;
 }
+
+/* ── Topic performance (renderTopicPerformance in js/stats.js) ──
+   One row per topic: name | two thin bars (top average, bottom best) |
+   their percentages. Quizzes are separated by a gap and a dashed rule. */
+.tp-section { margin-top: 1.4rem; }
+/* "Topics in this attempt" on the Random N result screen: the same rows,
+   under the "Last attempts" panel (whose look it shares). */
+.attempt-topics-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem 0.9rem;
+  margin-bottom: 0.4rem;
+}
+.attempt-topics-head .recent-attempts-header { margin-bottom: 0; }
+.tp-body { padding: 0.9rem 1.2rem 1.1rem; }
+.tp-group[hidden] { display: none; }
+/* The newly chosen quiz's rows fade in while the card's height animates. */
+.tp-group.tp-enter { animation: tpEnter 0.32s ease both; }
+@keyframes tpEnter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+/* Header: title · quiz switch · legend; wraps on narrow screens. */
+.tp-header { flex-wrap: wrap; gap: 0.6rem 0.9rem; }
+/* Sliding quiz switch: equal-width options, and a pill behind them that
+   slides to the chosen one (--tp-i of --tp-n) in that quiz's colour. */
+.tp-switch {
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: calc(14px * var(--radius-mult));
+  background: var(--bg);
+}
+.tp-switch-pill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / var(--tp-n));
+  transform: translateX(calc(100% * var(--tp-i)));
+  border-radius: calc(12px * var(--radius-mult));
+  background: color-mix(in srgb, var(--tp-color) 24%, transparent);
+  /* Same length as the card's height animation (_animateHeightChange,
+     0.32s), so the pill and the card settle together. */
+  transition: transform 0.32s cubic-bezier(.4, 0, .2, 1), background-color 0.32s ease;
+}
+.tp-switch button {
+  position: relative;
+  z-index: 1;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0.28rem 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+.tp-switch button:hover { color: var(--text); }
+.tp-switch button[aria-selected="true"] { color: var(--text); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) {
+  .tp-switch-pill { transition: none; }
+  .tp-group.tp-enter { animation: none; }
+}
+.tp-group-head { margin-bottom: 0.45rem; }
+.tp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 15.5rem) minmax(0, 1fr) 2.8rem;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.5rem 0 0.3rem;          /* room above for the mean marker */
+}
+.tp-name {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.tp-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* "N = …" beside each line, while hovering the row (mouse only, below):
+   top = answers behind the average and its interval, bottom = problems
+   tried behind the best. Each sits level with its own bar. */
+.tp-ns { display: none; }
+.tp-ns span {
+  display: block;
+  height: 10.5px;
+  line-height: 10.5px;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tp-ns i { font-family: 'STIX Two Text', Georgia, serif; font-size: 0.74rem; color: var(--text); }
+.tp-bars { display: flex; flex-direction: column; gap: 3px; }
+.tp-track {
+  position: relative;
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--border) 75%, transparent);
+  /* Visible, so the interval's end caps can reach past the bar; the fill
+     keeps its own rounded ends (border-radius: inherit). */
+  overflow: visible;
+}
+.tp-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.5s ease;
+}
+/* The two theme accents: average (accent 1) and best (accent 2). */
+.tp-avg { background: var(--accent); }
+.tp-best { background: var(--accent2); }
+/* 95% interval of the average, as an error bar |———|: a 1px line from the
+   lower to the upper bound through the middle of the bar, and 2px caps at
+   both ends reaching 4px past the bar. Drawn as an SVG over the track
+   (js/stats.js, ciSvg) so strokes snap to whole pixels: every cap is the
+   same width, wherever it lands. Solid white at night and solid black by
+   day, for full contrast; opaque, so where a cap meets the line nothing
+   doubles up. */
+.tp-section, .attempt-topics-panel { --tp-ci-color: #fff; }
+body.light .tp-section, body.light .attempt-topics-panel { --tp-ci-color: #000; }
+.tp-ci {
+  position: absolute;
+  left: 0;
+  top: -4px;
+  width: 100%;
+  height: calc(100% + 8px);
+  overflow: visible;                 /* a cap at 0% or 100% isn't cut in half */
+  pointer-events: none;
+}
+.tp-ci path { fill: none; stroke: var(--tp-ci-color); }
+.tp-ci .tp-ci-line { stroke-width: 1px; }
+.tp-ci .tp-ci-cap { stroke-width: 2px; }
+/* ▼ above the average bar, its tip on the bar's top edge at the mean. */
+.tp-mean {
+  position: absolute;
+  bottom: 100%;
+  width: 0;
+  height: 0;
+  margin-bottom: 1px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--tp-ci-color);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+/* Legend: the same |—| in miniature. */
+.tp-key-ci {
+  height: 8px;
+  border-left: 2px solid var(--tp-ci-color);
+  border-right: 2px solid var(--tp-ci-color);
+  background: linear-gradient(var(--tp-ci-color), var(--tp-ci-color)) center / 100% 1px no-repeat;
+  box-sizing: border-box;
+}
+.tp-vals {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  line-height: 1.2;
+  color: var(--muted);
+  text-align: right;
+}
+.tp-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.tp-key {
+  display: inline-block;
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  margin-left: 0.45rem;
+}
+/* Hover (mouse only — phones and tablets keep the plain layout): the row
+   under the pointer gets thicker bars, a bold name and bigger, brighter
+   percentages, and the other rows of that quiz fade back. The bar area has
+   a fixed height that already fits the thicker bars, so they grow in place
+   and the rows never move under the pointer. */
+@media (hover: hover) and (pointer: fine) {
+  /* One more column, between the bars and the percentages, for the two
+     "N = …" — its space is always reserved, only its text appears on hover. */
+  .tp-row { grid-template-columns: minmax(0, 15.5rem) minmax(0, 1fr) 4.2rem 2.8rem; transition: opacity 0.18s ease; }
+  /* Bar area: fixed 25px — room for two 9px bars 7px apart on hover — so
+     the hovered row grows in place and nothing moves under the pointer.
+     The N labels and the percentages use the same 25px box, 9px lines and
+     gap, so each stays level with its own bar. */
+  .tp-ns {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    height: 25px;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.18s ease, visibility 0s linear 0.18s, gap 0.18s ease;
+  }
+  .tp-ns span { height: 9px; line-height: 9px; }
+  .tp-row:hover .tp-ns { visibility: visible; opacity: 1; gap: 7px; transition: opacity 0.18s ease, visibility 0s, gap 0.18s ease; }
+  .tp-bars { height: 25px; justify-content: center; transition: gap 0.18s ease; }
+  .tp-track { transition: height 0.18s ease; }
+  .tp-vals { justify-content: center; height: 25px; gap: 3px; transition: color 0.18s ease, font-size 0.18s ease, gap 0.18s ease; }
+  .tp-vals span { height: 9px; line-height: 9px; }
+  .tp-name { transition: color 0.18s ease; }
+  .tp-group:has(.tp-row:hover) .tp-row:not(:hover) { opacity: 0.4; }
+  .tp-row:hover .tp-bars { gap: 7px; }            /* the two focused lines move apart */
+  .tp-row:hover .tp-track { height: 9px; }
+  .tp-row:hover .tp-name-text { font-weight: 600; }
+  .tp-row:hover .tp-vals { font-size: 0.7rem; color: var(--text); gap: 7px; }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
+  .tp-row, .tp-track, .tp-name, .tp-vals, .tp-bars, .tp-ns { transition: none; }
+}
+
+@media (max-width: 600px) {
+  .tp-body { padding: 0.8rem 0.9rem 1rem; }
+  .tp-ns { display: none; }          /* no room for the N column on narrow screens */
+  .tp-switch button { padding: 0.28rem 0.5rem; }
+  .tp-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2.6rem; gap: 0.6rem; }
+}
 /* Last/Best switch — reuses .filter-mode-option/.mode-toggle-track(.small)
    from css/style.css (the same Topic/Number and Include/Exclude toggles use)
    for a consistent look. Sits inline in each quiz card's own header row
