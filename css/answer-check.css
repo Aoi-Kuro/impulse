@@ -1,0 +1,65 @@
+/* css/answer-check.css · The answer field and its live preview
+   (js/answer-check.js). Its own file, not part of css/style.css: sw.js
+   serves style.css cache-first, so a style.css change reaches a returning
+   visitor one load late, while this file is always fetched fresh. Loaded
+   after style.css, so its rules win over any older cached copy. */
+
+/* One field for number and unit ("9.81 m/s^2"), see js/answer-check.js */
+.answer-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(4px * var(--radius-mult));
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  padding: 0.4rem 0.65rem;
+  outline: none;
+  transition: border-color 0.18s;
+  width: 260px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.answer-input:focus { border-color: var(--accent); }
+
+.answer-input.correct-input { border-color: var(--correct); color: var(--correct); }
+.answer-input.partial-input { border-color: var(--partial); color: var(--partial); }
+.answer-input.wrong-input   { border-color: var(--wrong);   color: var(--wrong);   }
+
+/* Live preview under the focused answer field: the answer as read, or
+   what's wrong with it. One box on <body> (cards clip their overflow),
+   placed by js/answer-check.js. */
+.answer-preview {
+  position: fixed;
+  z-index: 900;
+  white-space: nowrap;
+  padding: 0.3rem 0.65rem;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--border));
+  border-radius: calc(4px * var(--radius-mult));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1.3;
+  pointer-events: none;
+  transition: none;   /* switches between ok and error at once */
+}
+.answer-preview * { transition: none; }
+/* The site's MathJax setting (displayOverflow: 'scroll') gives every
+   formula a scroll box; a preview is short, so show all of it. */
+.answer-preview mjx-container,
+.answer-preview mjx-container[overflow="scroll"] {
+  overflow: visible !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+.answer-preview[hidden] { display: none; }
+.answer-preview.error {
+  background: color-mix(in srgb, var(--wrong) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--wrong) 55%, var(--border));
+  color: var(--wrong);
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  white-space: normal;
+  max-width: min(360px, calc(100vw - 16px));
+}

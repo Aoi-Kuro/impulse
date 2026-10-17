@@ -40,207 +40,10 @@ let selectedCumulativeMode = (_cumulativeDefaultOn && selectedQuizNum >= 2) ? 'c
 let ACTIVE_PROBLEMS = QUIZZES[selectedQuizNum - 1].problems;
 
 
-// ─── Number parser (Moodle rules) ────────────────────────────────────────────
-function parseMoodleNumber(raw) {
-  if (!raw) return NaN;
-  const s = raw.trim();
-  if (s.includes(",")) return NaN;
-  if (/^[+-]?\d+(\.\d*)?$/.test(s) || /^[+-]?\.\d+$/.test(s)) return parseFloat(s);
-  if (/[Ee]/.test(s)) {
-    if (/^[+-]?\d+(\.\d*)?[Ee][+-]?\d+$/.test(s)) return parseFloat(s);
-    return NaN;
-  }
-  // Exponent may be bare (10^-11) or parenthesized (10^(-11))
-  const m1 = s.match(/^([+-]?\d+(\.\d*)?)\*10\^(?:([+-]?\d+)|\(([+-]?\d+)\))$/);
-  if (m1) return parseFloat(m1[1]) * Math.pow(10, parseInt(m1[3] ?? m1[4], 10));
-  const m2 = s.match(/^([+-]?)10\^(?:([+-]?\d+)|\(([+-]?\d+)\))$/);
-  if (m2) return (m2[1] === "-" ? -1 : 1) * Math.pow(10, parseInt(m2[2] ?? m2[3], 10));
-  return NaN;
-}
-
-function numberCorrect(userVal, expected, unitScale) {
-  const u = parseMoodleNumber(userVal);
-  if (isNaN(u)) return false;
-  const scaled = u * (unitScale === undefined ? 1 : unitScale);
-  // ±1% of the expected value, purely relative. It used to add a fixed
-  // 1e-10, which swamps small answers: a force of 6.305e-9 N accepted ±2.6%,
-  // and answers like 5.3e-26 accepted almost anything, 0 included. The
-  // extra 1e-12 (relative) only absorbs floating-point rounding; an
-  // expected 0 accepts only (practically) 0.
-  const tol = Math.abs(expected) * (0.01 + 1e-12) || 1e-300;
-  return Math.abs(scaled - expected) <= tol;
-}
-
-// ─── Unit algebra engine (Moodle / course rules) ──────────────────────────────
-
-// SI prefixes this course's unit boxes understand, checked longest-symbol-first.
-// "mc" / "mk" are ASCII aliases for micro (common transliteration of "мк").
-const SI_PREFIXES = [
-  { sym: "da", factor: 1e1  },
-  { sym: "mc", factor: 1e-6 },
-  { sym: "mk", factor: 1e-6 },
-  { sym: "Y",  factor: 1e24 },
-  { sym: "Z",  factor: 1e21 },
-  { sym: "E",  factor: 1e18 },
-  { sym: "P",  factor: 1e15 },
-  { sym: "T",  factor: 1e12 },
-  { sym: "G",  factor: 1e9  },
-  { sym: "M",  factor: 1e6  },
-  { sym: "k",  factor: 1e3  },
-  { sym: "h",  factor: 1e2  },
-  { sym: "d",  factor: 1e-1 },
-  { sym: "c",  factor: 1e-2 },
-  { sym: "m",  factor: 1e-3 },
-  { sym: "u",  factor: 1e-6 },
-  { sym: "n",  factor: 1e-9 },
-  { sym: "p",  factor: 1e-12 },
-  { sym: "f",  factor: 1e-15 },
-  { sym: "a",  factor: 1e-18 },
-  { sym: "z",  factor: 1e-21 },
-  { sym: "y",  factor: 1e-24 },
-];
-
-// Units a prefix is allowed to attach to. Deliberately excludes "kg" (which
-// already has "kilo" baked in — stacking a second prefix on it is ambiguous)
-// and "rad"/"turns" (counting units; not a real use case in this course).
-const PREFIXABLE_UNITS = new Set([
-  "N", "C", "m", "s", "J", "V", "A", "T", "W", "H", "Hz", "Pa", "Wb", "Ohm", "F"
-]);
-
-// Splits a raw symbol like "mT" into { base: "T", scale: 0.001 }. Exact
-// single-letter units (T, m, H, F, A, ...) are protected automatically: a
-// prefix candidate the same length as the symbol itself can never leave a
-// valid remainder, so e.g. bare "T" always stays Tesla, never "tera-nothing".
-function decomposeUnitToken(sym) {
-  for (const { sym: pfx, factor } of SI_PREFIXES) {
-    if (sym.length > pfx.length && sym.startsWith(pfx)) {
-      const rest = sym.slice(pfx.length);
-      if (PREFIXABLE_UNITS.has(rest)) return { base: rest, scale: factor };
-    }
-  }
-  return { base: sym, scale: 1 }; // no recognized prefix — treat as-is (old behavior)
-}
-
-// Named SI-derived units, expressed in base units. parseUnitToMap() expands
-// each of these into base units, so equivalent spellings all reduce to the
-// same canonical map: "Wb" == "V s" == "T m^2" == "kg m^2 s^-2 A^-1", and
-// "N s" == "kg m/s", "V/m" == "N/C", "W s" == "J", and so on.
-// Every entry here is a *coherent* SI unit (conversion factor exactly 1), so
-// expanding one never changes the numeric scale — only SI prefixes do, and
-// those are still peeled off first by decomposeUnitToken().
-// Base units (kg, m, s, A) and everything not listed here (g, L, in, days,
-// hectares, h, rad, ...) stay opaque symbols, exactly as before.
-// (The map key is "Ohm"; that's the symbol this course's unit boxes accept.)
-const DERIVED_UNITS = {
-  N:   { kg: 1, m: 1, s: -2 },
-  J:   { kg: 1, m: 2, s: -2 },
-  W:   { kg: 1, m: 2, s: -3 },
-  Pa:  { kg: 1, m: -1, s: -2 },
-  Hz:  { s: -1 },
-  C:   { A: 1, s: 1 },
-  V:   { kg: 1, m: 2, s: -3, A: -1 },
-  Ohm: { kg: 1, m: 2, s: -3, A: -2 },
-  F:   { kg: -1, m: -2, s: 4, A: 2 },
-  T:   { kg: 1, s: -2, A: -1 },
-  Wb:  { kg: 1, m: 2, s: -2, A: -1 },
-  H:   { kg: 1, m: 2, s: -2, A: -2 },
-};
-
-// Some unit strings (accepted answers, or things a user pastes/types) use real
-// Unicode superscript characters, e.g. "cm²" or "s⁻¹", instead of "cm^2" /
-// "s^-1". Normalize those to caret notation up front so the rest of the
-// parser (which only understands "^N") can handle them uniformly.
-const SUPERSCRIPT_MAP = { "⁰":"0","¹":"1","²":"2","³":"3","⁴":"4","⁵":"5","⁶":"6","⁷":"7","⁸":"8","⁹":"9","⁻":"-","⁺":"+" };
-function normalizeSuperscripts(str) {
-  return str.replace(/([A-Za-z])([⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+)/g, (_, letter, supers) => {
-    let out = "";
-    for (const c of supers) out += SUPERSCRIPT_MAP[c];
-    return letter + "^" + out;
-  });
-}
-
-function parseUnitToMap(raw) {
-  if (!raw) return { map: new Map(), valid: true, scale: 1 };
-  let s = normalizeSuperscripts(raw.trim());
-  if (s === "" || s === "(none)" || s === "none" || s === "rad")
-    return { map: new Map(), valid: true, scale: 1 };
-  if (/[*·×⋅]/.test(s)) return { map: null, valid: false, scale: 1 };
-  s = s.replace(/\^\(([+-]?\d+)\)/g, "^$1");
-  // Brackets may also wrap the whole denominator: "J/(kg K)" is read the
-  // same as "J/kg K" (everything after "/" divides). Any other bracket use,
-  // e.g. "5 (m)", "(kg m)/s" or "m/(s) kg", stays invalid, as in Moodle.
-  const group = s.match(/^([^()]*)\/\s*\(([^()]*\S[^()]*)\)$/);
-  if (group) s = group[1] + "/" + group[2];
-  if (/[()]/.test(s)) return { map: null, valid: false, scale: 1 };
-  const slashIdx = s.indexOf("/");
-  const numStr = slashIdx === -1 ? s : s.slice(0, slashIdx);
-  const denStr = slashIdx === -1 ? "" : s.slice(slashIdx + 1);
-
-  const map = new Map();
-  let scale = 1;
-  function applyTokens(tokenStr, sign) {
-    for (const tok of tokenStr.trim().split(/\s+/).filter(Boolean)) {
-      // "%" is an opaque symbol like "days": it only ever matches "%".
-      const m = tok.match(/^([A-Za-z]+|%)(?:\^([+-]?\d+))?$/);
-      if (!m) return false;
-      const exp = m[2] !== undefined ? parseInt(m[2], 10) : 1;
-      const { base, scale: pfxScale } = decomposeUnitToken(m[1]);
-      const signedExp = sign * exp;
-      const expansion = DERIVED_UNITS[base];
-      if (expansion) {
-        // Named derived unit (N, J, Wb, ...): fold in its base-unit
-        // dimensions so any equivalent combination compares equal.
-        for (const b in expansion) map.set(b, (map.get(b) || 0) + expansion[b] * signedExp);
-      } else {
-        map.set(base, (map.get(base) || 0) + signedExp);
-      }
-      scale *= Math.pow(pfxScale, signedExp);
-    }
-    return true;
-  }
-  if (applyTokens(numStr, +1) === false || applyTokens(denStr, -1) === false)
-    return { map: null, valid: false, scale: 1 };
-
-  for (const [k, v] of map) if (v === 0) map.delete(k);
-  return { map, valid: true, scale };
-}
-
-// Some problems store `answer` already expressed in a prefixed unit (e.g.
-// answer: 326.9, units:["nm"] — the stored number IS a nanometer count, not
-// meters). So the SI-prefix conversion must be *relative to whatever unit the
-// answer was actually written in* (units[0]), not an absolute conversion to
-// base SI. Typing the exact same unit as units[0] must always be a 1:1 match
-// no matter what prefix it carries; typing a different (but dimensionally
-// equivalent) prefixed unit should convert relative to that reference.
-function unitConversionFactor(userRaw, acceptedList) {
-  const list = (!acceptedList || acceptedList.length === 0) ? [""] : acceptedList;
-  const { valid: userValid, scale: userScale } = parseUnitToMap(userRaw);
-  if (!userValid) return 1; // malformed unit — don't let it corrupt the number check
-  const { valid: refValid, scale: refScale } = parseUnitToMap(list[0]);
-  if (!refValid || !refScale) return 1;
-  return userScale / refScale;
-}
-
-function serializeUnitMap(map) {
-  if (!map || map.size === 0) return "";
-  return [...map.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([sym, exp]) => exp === 1 ? sym : `${sym}^${exp}`)
-    .join(" ");
-}
-
-function unitStatus(userRaw, acceptedList) {
-  // units:[] (empty array) means "dimensionless", same as units:[""].
-  const list = (!acceptedList || acceptedList.length === 0) ? [""] : acceptedList;
-  const { map, valid } = parseUnitToMap(userRaw);
-  if (!valid) return "invalid";
-  const canonical = serializeUnitMap(map);
-  const match = list.some(a => {
-    const { map: am, valid: av } = parseUnitToMap(a);
-    return av && serializeUnitMap(am) === canonical;
-  });
-  return match ? "ok" : "wrong";
-}
+// ─── Answer checking ──────────────────────────────────────────────────────────
+// Numbers, units, points and the live preview: js/answer-check.js (gradeAnswer,
+// splitAnswer / joinAnswer, attachAnswerPreview), on the pt-answer engine in
+// vendor/pt-answer. fmt / fmtUnit below format answers for display.
 
 function fmt(n) {
   if (n === 0) return "0";
@@ -901,10 +704,8 @@ function render() {
       </div>
       <div class="problem-text">${p.text}</div>
       <div class="answer-row">
-        <span class="answer-label">Value =</span>
-        <input class="answer-input" id="ans-${i}" type="text" placeholder="e.g. 3.2e-8" autocomplete="off" spellcheck="false">
-        <span class="sep">·</span>
-        <input class="unit-input" id="unit-${i}" type="text" placeholder="e.g. N/C" autocomplete="off" spellcheck="false">
+        <span class="answer-label">Answer =</span>
+        ${answerInputHtml(`ans-${i}`)}
       </div>
       <div class="feedback" id="fb-${i}"></div>
       <div class="card-check-row" id="forum-row-${i}" style="display:none;">
@@ -925,10 +726,9 @@ function render() {
     `;
     container.appendChild(card);
 
-    card.querySelector(`#ans-${i}`).addEventListener("keydown", e => {
-      if (e.key === "Enter") document.getElementById(`unit-${i}`).focus();
-    });
-    card.querySelector(`#unit-${i}`).addEventListener("keydown", e => {
+    const ansInput = card.querySelector(`#ans-${i}`);
+    attachAnswerPreview(ansInput);
+    ansInput.addEventListener("keydown", e => {
       if (e.key === "Enter") {
         const next = document.getElementById(`ans-${i+1}`);
         if (next) next.focus(); else checkAll();
@@ -954,23 +754,14 @@ function checkAll() {
 
   quiz.forEach((p, i) => {
     const ansEl  = document.getElementById("ans-"  + i);
-    const unitEl = document.getElementById("unit-" + i);
     const card   = document.getElementById("card-" + i);
     const fb     = document.getElementById("fb-"   + i);
 
-    const numOk  = numberCorrect(ansEl.value, p.answer, unitConversionFactor(unitEl.value, p.units));
-    const uStat  = unitStatus(unitEl.value, p.units);
-    const unitOk = uStat === "ok";
-    const pts    = numOk ? (unitOk ? 1 : 0.9) : 0;
-    totalPts    += pts;
+    const res = gradeAnswer(ansEl.value, p);
+    const pts = res.pts;
+    totalPts += pts;
 
-    ansEl.classList.add(numOk ? "correct-input" : "wrong-input");
-
-    if (numOk) {
-      unitEl.classList.add(unitOk ? "correct-unit" : "partial-unit");
-    } else {
-      unitEl.classList.add("wrong-unit");
-    }
+    markAnswerInput(ansEl, pts);
 
     if      (pts === 1)   card.classList.add("correct");
     else if (pts === 0.9) card.classList.add("partial");
@@ -979,27 +770,15 @@ function checkAll() {
     const forumRow = document.getElementById("forum-row-" + i);
     if (forumRow) forumRow.style.display = "";
 
-    fb.classList.add("show");
-    if (pts === 1) {
-      fb.classList.add("correct-fb");
-      fb.innerHTML = `✓ Correct <span class="pts-badge pts-full">+1 pt</span>`;
-    } else if (pts === 0.9) {
-      fb.classList.add("partial-fb");
-      const unitHint = uStat === "invalid"
-        ? `unit format invalid — use spaces to multiply, e.g. <strong>${fmtUnit(p.units)}</strong>`
-        : `unit should be <strong>${fmtUnit(p.units)}</strong>`;
-      fb.innerHTML = `✓ Value correct, but ${unitHint} <span class="pts-badge pts-partial">+0.9 pt</span>`;
-    } else {
-      fb.classList.add("wrong-fb");
-      fb.innerHTML = `✗ Expected ≈ <strong>${fmt(p.answer)}</strong> ${fmtUnit(p.units)} <span class="pts-badge pts-zero">+0 pt</span>`;
-    }
+    fb.classList.add("show", pts === 1 ? "correct-fb" : pts === 0.9 ? "partial-fb" : "wrong-fb");
+    fb.innerHTML = answerFeedbackHtml(res, p, true);
 
     breakdown.push({ id: p.id, pts, quizNum: p._quizNum || selectedQuizNum });
     answers.push({
       problem_id: p.id,
       quiz_num: p._quizNum || selectedQuizNum,
-      entered_value: ansEl.value,
-      entered_unit: unitEl.value,
+      entered_value: res.value,
+      entered_unit: res.unit,
       points: pts
     });
   });
@@ -1241,14 +1020,12 @@ function buildSolveAllSnapshot() {
     const p = solveAllProblems[idx];
     if (!p) return;
     checkedById[p.id] = status;
-    // Save the typed answer text so it persists across reloads
-    const ansEl  = document.getElementById('sa-ans-'  + idx);
-    const unitEl = document.getElementById('sa-unit-' + idx);
-    if (ansEl || unitEl) {
-      answersById[p.id] = {
-        ans:  ansEl  ? ansEl.value  : '',
-        unit: unitEl ? unitEl.value : ''
-      };
+    // Save the typed answer text so it persists across reloads, in the
+    // {ans, unit} shape progress always had (split from the one field)
+    const ansEl = document.getElementById('sa-ans-' + idx);
+    if (ansEl) {
+      const { value, unit } = splitAnswer(ansEl.value);
+      answersById[p.id] = { ans: value, unit };
     }
   });
   const lockedIds = [...solveAllLocked].map(idx => solveAllProblems[idx]?.id).filter(Boolean);
@@ -1693,10 +1470,8 @@ function buildSolveAllCards(container, batchSize = 12) {
             </div>
             <div class="problem-text">${cached !== null ? cached.html : p.text}</div>
             <div class="answer-row">
-              <span class="answer-label">Value =</span>
-              <input class="answer-input" id="sa-ans-${i}" type="text" placeholder="e.g. 3.2e-8" autocomplete="off" spellcheck="false">
-              <span class="sep">·</span>
-              <input class="unit-input" id="sa-unit-${i}" type="text" placeholder="e.g. N/C" autocomplete="off" spellcheck="false">
+              <span class="answer-label">Answer =</span>
+              ${answerInputHtml(`sa-ans-${i}`)}
             </div>
             <div class="feedback" id="sa-fb-${i}"></div>
             <div class="card-check-row" id="sa-btnrow-${i}">
@@ -1725,10 +1500,9 @@ function buildSolveAllCards(container, batchSize = 12) {
           // Enter is actually pressed, not this card's own index. Capture
           // it per-iteration so each card's listener checks itself.
           const idx = i;
-          card.querySelector(`#sa-ans-${i}`).addEventListener('keydown', e => {
-            if (e.key === 'Enter') { e.preventDefault(); document.getElementById(`sa-unit-${idx}`).focus(); }
-          });
-          card.querySelector(`#sa-unit-${i}`).addEventListener('keydown', e => {
+          const ansInput = card.querySelector(`#sa-ans-${i}`);
+          attachAnswerPreview(ansInput);
+          ansInput.addEventListener('keydown', e => {
             if (e.key === 'Enter') { e.preventDefault(); checkSingleProblem(idx); }
           });
         }
@@ -1771,32 +1545,29 @@ function buildSolveAllCards(container, batchSize = 12) {
 function restoreSolveAllCard(i, p, status, savedAnswer) {
   const card   = document.getElementById('sa-card-' + i);
   const ansEl  = document.getElementById('sa-ans-' + i);
-  const unitEl = document.getElementById('sa-unit-' + i);
   const fb     = document.getElementById('sa-fb-' + i);
   const btn    = document.getElementById('sa-check-btn-' + i);
   const btnRow = document.getElementById('sa-btnrow-' + i);
+  // Saved as {ans, unit}; the field shows them together
+  const saved = savedAnswer ? joinAnswer(savedAnswer.ans, savedAnswer.unit) : '';
 
   fb.classList.add('show');
 
   if (status === 'correct') {
     card.classList.add('correct');
     // Restore typed answer; fall back to correct answer if missing
-    ansEl.value  = savedAnswer ? savedAnswer.ans  : fmt(p.answer);
-    unitEl.value = savedAnswer ? savedAnswer.unit : fmtUnit(p.units);
-    ansEl.disabled = unitEl.disabled = true;
-    ansEl.classList.add('correct-input');
-    unitEl.classList.add('correct-unit');
+    ansEl.value = savedAnswer ? saved : expectedAnswerText(p);
+    ansEl.disabled = true;
+    markAnswerInput(ansEl, 1);
     fb.classList.add('correct-fb');
     fb.innerHTML = `✓ Correct <span class="pts-badge pts-full">+1 pt</span>`;
     btn.textContent = '✓ Correct'; btn.classList.add('checked'); btn.disabled = true;
 
   } else if (status === 'partial') {
     card.classList.add('partial');
-    ansEl.value  = savedAnswer ? savedAnswer.ans  : '';
-    unitEl.value = savedAnswer ? savedAnswer.unit : '';
-    ansEl.disabled = unitEl.disabled = false;
-    ansEl.classList.add('correct-input');
-    unitEl.classList.add('partial-unit');
+    ansEl.value = saved;
+    ansEl.disabled = false;
+    markAnswerInput(ansEl, 0.9);
     fb.classList.add('partial-fb');
     fb.innerHTML = `✓ Value correct, but unit needs fixing <span class="pts-badge pts-partial">+0.9 pt</span>`;
     btn.textContent = '↺ Try again'; btn.disabled = false;
@@ -1809,11 +1580,9 @@ function restoreSolveAllCard(i, p, status, savedAnswer) {
 
   } else if (status === 'wrong') {
     card.classList.add('wrong');
-    ansEl.value  = savedAnswer ? savedAnswer.ans  : '';
-    unitEl.value = savedAnswer ? savedAnswer.unit : '';
-    ansEl.disabled = unitEl.disabled = false;
-    ansEl.classList.add('wrong-input');
-    unitEl.classList.add('wrong-unit');
+    ansEl.value = saved;
+    ansEl.disabled = false;
+    markAnswerInput(ansEl, 0);
     fb.classList.add('wrong-fb');
     fb.innerHTML = `✗ Wrong answer <span class="pts-badge pts-zero">+0 pt</span>`;
     btn.textContent = '↺ Try again'; btn.disabled = false;
@@ -1826,9 +1595,9 @@ function restoreSolveAllCard(i, p, status, savedAnswer) {
 
   } else if (status === 'revealed') {
     card.classList.add('wrong');
-    ansEl.value = fmt(p.answer); unitEl.value = fmtUnit(p.units);
-    ansEl.disabled = unitEl.disabled = true;
-    ansEl.classList.add('wrong-input'); unitEl.classList.add('wrong-unit');
+    ansEl.value = expectedAnswerText(p);
+    ansEl.disabled = true;
+    markAnswerInput(ansEl, 0);
     fb.classList.add('wrong-fb');
     fb.innerHTML = `👁 Answer revealed — no points awarded <span class="pts-badge pts-zero">+0 pt</span>`;
     btn.textContent = '✗ Revealed'; btn.classList.add('checked'); btn.disabled = true;
@@ -1838,18 +1607,14 @@ function restoreSolveAllCard(i, p, status, savedAnswer) {
 function resetCardVisuals(i) {
   const card   = document.getElementById('sa-card-' + i);
   const ansEl  = document.getElementById('sa-ans-' + i);
-  const unitEl = document.getElementById('sa-unit-' + i);
   const fb     = document.getElementById('sa-fb-' + i);
 
   card.classList.remove('correct', 'partial', 'wrong');
-  ansEl.classList.remove('correct-input', 'partial-input', 'wrong-input');
-  unitEl.classList.remove('correct-unit', 'partial-unit', 'wrong-unit');
+  markAnswerInput(ansEl, null);
   fb.classList.remove('show', 'correct-fb', 'partial-fb', 'wrong-fb');
   fb.innerHTML = '';
-  ansEl.disabled  = false;
-  unitEl.disabled = false;
-  ansEl.value  = '';
-  unitEl.value = '';
+  ansEl.disabled = false;
+  ansEl.value = '';
 }
 
 function checkSingleProblem(i) {
@@ -1859,33 +1624,20 @@ function checkSingleProblem(i) {
   const p      = solveAllProblems[i];
   const card   = document.getElementById('sa-card-' + i);
   const ansEl  = document.getElementById('sa-ans-' + i);
-  const unitEl = document.getElementById('sa-unit-' + i);
   const fb     = document.getElementById('sa-fb-' + i);
   const btn    = document.getElementById('sa-check-btn-' + i);
   const btnRow = document.getElementById('sa-btnrow-' + i);
 
-  const numOk  = numberCorrect(ansEl.value, p.answer, unitConversionFactor(unitEl.value, p.units));
-  const uStat  = unitStatus(unitEl.value, p.units);
-  const unitOk = uStat === 'ok';
-  const pts    = numOk ? (unitOk ? 1 : 0.9) : 0;
+  const res = gradeAnswer(ansEl.value, p);
+  const pts = res.pts;
 
   // Reset previous styling before re-applying
   card.classList.remove('correct', 'partial', 'wrong');
-  ansEl.classList.remove('correct-input', 'partial-input', 'wrong-input');
-  unitEl.classList.remove('correct-unit', 'partial-unit', 'wrong-unit');
   fb.classList.remove('correct-fb', 'partial-fb', 'wrong-fb');
 
-  // Disable inputs while showing result
-  ansEl.disabled  = true;
-  unitEl.disabled = true;
-
-  // Style inputs
-  ansEl.classList.add(numOk ? 'correct-input' : 'wrong-input');
-  if (numOk) {
-    unitEl.classList.add(unitOk ? 'correct-unit' : 'partial-unit');
-  } else {
-    unitEl.classList.add('wrong-unit');
-  }
+  // Disable the field while showing the result, and style it
+  ansEl.disabled = true;
+  markAnswerInput(ansEl, pts);
 
   // Card border
   if      (pts === 1)   card.classList.add('correct');
@@ -1923,24 +1675,15 @@ function checkSingleProblem(i) {
       return;
     }
 
-    if (pts === 0.9) {
-      fb.classList.add('partial-fb');
-      const unitHint = uStat === 'invalid'
-        ? `unit format invalid — use spaces to multiply, e.g. <strong>${fmtUnit(p.units)}</strong>`
-        : `unit should be <strong>${fmtUnit(p.units)}</strong>`;
-      fb.innerHTML = `✓ Value correct, but ${unitHint} <span class="pts-badge pts-partial">+0.9 pt</span>`;
-    } else {
-      fb.classList.add('wrong-fb');
-      fb.innerHTML = `✗ Wrong answer <span class="pts-badge pts-zero">+0 pt</span>`;
-    }
+    fb.classList.add(pts === 0.9 ? 'partial-fb' : 'wrong-fb');
+    fb.innerHTML = answerFeedbackHtml(res, p, false);
 
     // Update check button label but keep it active for retry
     btn.textContent = '↺ Try again';
     btn.classList.remove('checked');
     btn.disabled = false;
-    // Re-enable inputs for retry
-    ansEl.disabled  = false;
-    unitEl.disabled = false;
+    // Re-enable the field for retry
+    ansEl.disabled = false;
 
     // Add "See correct answer" button if not already there
     if (!btnRow.querySelector('.btn-see-answer')) {
@@ -1961,7 +1704,6 @@ function revealAnswer(i) {
   const p      = solveAllProblems[i];
   const card   = document.getElementById('sa-card-' + i);
   const ansEl  = document.getElementById('sa-ans-' + i);
-  const unitEl = document.getElementById('sa-unit-' + i);
   const fb     = document.getElementById('sa-fb-' + i);
   const btn    = document.getElementById('sa-check-btn-' + i);
   const btnRow = document.getElementById('sa-btnrow-' + i);
@@ -1970,19 +1712,14 @@ function revealAnswer(i) {
   solveAllLocked.add(i);
   solveAllChecked.set(i, 'revealed');
 
-  // Show the answer in the fields
-  ansEl.value    = fmt(p.answer);
-  unitEl.value   = fmtUnit(p.units);
-  ansEl.disabled  = true;
-  unitEl.disabled = true;
+  // Show the answer in the field
+  ansEl.value    = expectedAnswerText(p);
+  ansEl.disabled = true;
 
   // Style as revealed (use wrong colour to mark it wasn't solved)
   card.classList.remove('correct', 'partial', 'wrong');
   card.classList.add('wrong');
-  ansEl.classList.remove('correct-input', 'partial-input', 'wrong-input');
-  ansEl.classList.add('wrong-input');
-  unitEl.classList.remove('correct-unit', 'partial-unit', 'wrong-unit');
-  unitEl.classList.add('wrong-unit');
+  markAnswerInput(ansEl, 0);
 
   // Feedback
   fb.classList.remove('correct-fb', 'partial-fb', 'wrong-fb');
@@ -2102,10 +1839,8 @@ function renderMistakes() {
       </div>
       <div class="problem-text">${p.text}</div>
       <div class="answer-row">
-        <span class="answer-label">Value =</span>
-        <input class="answer-input" id="mk-ans-${i}" type="text" placeholder="e.g. 3.2e-8" autocomplete="off" spellcheck="false">
-        <span class="sep">·</span>
-        <input class="unit-input" id="mk-unit-${i}" type="text" placeholder="e.g. N/C" autocomplete="off" spellcheck="false">
+        <span class="answer-label">Answer =</span>
+        ${answerInputHtml(`mk-ans-${i}`)}
       </div>
       <div class="feedback" id="mk-fb-${i}"></div>
       <div class="card-check-row" id="mk-btnrow-${i}">
@@ -2115,10 +1850,9 @@ function renderMistakes() {
 
     container.appendChild(card);
 
-    card.querySelector(`#mk-ans-${i}`).addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); document.getElementById(`mk-unit-${i}`).focus(); }
-    });
-    card.querySelector(`#mk-unit-${i}`).addEventListener('keydown', e => {
+    const ansInput = card.querySelector(`#mk-ans-${i}`);
+    attachAnswerPreview(ansInput);
+    ansInput.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); checkMistakeProblem(i); }
     });
   });
@@ -2131,30 +1865,18 @@ function checkMistakeProblem(i) {
   const p      = mistakesProblems[i];
   const card   = document.getElementById('mk-card-' + i);
   const ansEl  = document.getElementById('mk-ans-' + i);
-  const unitEl = document.getElementById('mk-unit-' + i);
   const fb     = document.getElementById('mk-fb-' + i);
   const btn    = document.getElementById('mk-check-btn-' + i);
   const btnRow = document.getElementById('mk-btnrow-' + i);
 
-  const numOk  = numberCorrect(ansEl.value, p.answer, unitConversionFactor(unitEl.value, p.units));
-  const uStat  = unitStatus(unitEl.value, p.units);
-  const unitOk = uStat === 'ok';
-  const pts    = numOk ? (unitOk ? 1 : 0.9) : 0;
+  const res = gradeAnswer(ansEl.value, p);
+  const pts = res.pts;
 
   card.classList.remove('correct', 'partial', 'wrong');
-  ansEl.classList.remove('correct-input', 'partial-input', 'wrong-input');
-  unitEl.classList.remove('correct-unit', 'partial-unit', 'wrong-unit');
   fb.classList.remove('correct-fb', 'partial-fb', 'wrong-fb');
 
-  ansEl.disabled  = true;
-  unitEl.disabled = true;
-
-  ansEl.classList.add(numOk ? 'correct-input' : 'wrong-input');
-  if (numOk) {
-    unitEl.classList.add(unitOk ? 'correct-unit' : 'partial-unit');
-  } else {
-    unitEl.classList.add('wrong-unit');
-  }
+  ansEl.disabled = true;
+  markAnswerInput(ansEl, pts);
 
   if      (pts === 1)   card.classList.add('correct');
   else if (pts === 0.9) card.classList.add('partial');
@@ -2187,22 +1909,13 @@ function checkMistakeProblem(i) {
       return;
     }
 
-    if (pts === 0.9) {
-      fb.classList.add('partial-fb');
-      const unitHint = uStat === 'invalid'
-        ? `unit format invalid — use spaces to multiply, e.g. <strong>${fmtUnit(p.units)}</strong>`
-        : `unit should be <strong>${fmtUnit(p.units)}</strong>`;
-      fb.innerHTML = `✓ Value correct, but ${unitHint} <span class="pts-badge pts-partial">+0.9 pt</span>`;
-    } else {
-      fb.classList.add('wrong-fb');
-      fb.innerHTML = `✗ Wrong answer <span class="pts-badge pts-zero">+0 pt</span>`;
-    }
+    fb.classList.add(pts === 0.9 ? 'partial-fb' : 'wrong-fb');
+    fb.innerHTML = answerFeedbackHtml(res, p, false);
 
     btn.textContent = '↺ Try again';
     btn.classList.remove('checked');
     btn.disabled = false;
-    ansEl.disabled  = false;
-    unitEl.disabled = false;
+    ansEl.disabled = false;
 
     if (!btnRow.querySelector('.btn-see-answer')) {
       const seeBtn = document.createElement('button');
@@ -2218,7 +1931,6 @@ function revealMistakeAnswer(i) {
   const p      = mistakesProblems[i];
   const card   = document.getElementById('mk-card-' + i);
   const ansEl  = document.getElementById('mk-ans-' + i);
-  const unitEl = document.getElementById('mk-unit-' + i);
   const fb     = document.getElementById('mk-fb-' + i);
   const btn    = document.getElementById('mk-check-btn-' + i);
   const btnRow = document.getElementById('mk-btnrow-' + i);
@@ -2226,17 +1938,12 @@ function revealMistakeAnswer(i) {
   mistakesLocked.add(i);
   mistakesChecked.set(i, 'revealed');
 
-  ansEl.value    = fmt(p.answer);
-  unitEl.value   = fmtUnit(p.units);
-  ansEl.disabled  = true;
-  unitEl.disabled = true;
+  ansEl.value    = expectedAnswerText(p);
+  ansEl.disabled = true;
 
   card.classList.remove('correct', 'partial', 'wrong');
   card.classList.add('wrong');
-  ansEl.classList.remove('correct-input', 'partial-input', 'wrong-input');
-  ansEl.classList.add('wrong-input');
-  unitEl.classList.remove('correct-unit', 'partial-unit', 'wrong-unit');
-  unitEl.classList.add('wrong-unit');
+  markAnswerInput(ansEl, 0);
 
   fb.classList.remove('correct-fb', 'partial-fb', 'wrong-fb');
   fb.classList.add('show', 'wrong-fb');
@@ -2734,7 +2441,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '12.3.2';
+const CURRENT_VERSION = '12.4.0';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

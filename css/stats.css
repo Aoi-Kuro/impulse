@@ -1285,17 +1285,15 @@ body.light .tp-section, body.light .attempt-topics-panel { --tp-ci-color: #000; 
   flex-direction: column;
   gap: 1.4rem;
 }
-/* .problem-card and its correct/partial/wrong + .answer-input/.unit-input +
+/* .problem-card and its correct/partial/wrong + .answer-input +
    .feedback children are reused unstyled here (css/style.css already
    covers all of it) — the only review-specific override is disabling
-   interaction on the readonly inputs, since [readonly] alone still shows a
+   interaction on the readonly input, since [readonly] alone still shows a
    text-edit cursor on hover/focus otherwise. */
-.review-problem-card .answer-input,
-.review-problem-card .unit-input {
+.review-problem-card .answer-input {
   cursor: default;
 }
-.review-problem-card .answer-input:focus,
-.review-problem-card .unit-input:focus {
+.review-problem-card .answer-input:focus {
   outline: none;
 }
 

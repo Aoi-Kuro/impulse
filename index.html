@@ -138,6 +138,7 @@
      tier-2 loader near the end of <body>, since deferred *script*
      execution has no equivalent flash-of-unstyled-content risk. -->
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/answer-check.css">
 <link rel="stylesheet" href="css/stats.css">
 <link rel="stylesheet" href="css/forum.css">
 <link rel="stylesheet" href="css/manual.css">
@@ -466,6 +467,16 @@
   </div>
 
   <div class="guide-section">
+    <div class="guide-section-title">One box: number, then unit</div>
+    <div class="guide-chip-row">
+      <div class="guide-chip"><code>9.81 m/s^2</code><span class="desc">number, space, unit</span></div>
+      <div class="guide-chip"><code>2.5e-3 kg m^2</code><span class="desc">any number format + unit</span></div>
+      <div class="guide-chip"><code>0.75</code><span class="desc">no unit when there is none</span></div>
+    </div>
+    <div class="guide-note-inline">while you type, a box under the field shows how your answer is read</div>
+  </div>
+
+  <div class="guide-section">
     <div class="guide-section-title">Numbers</div>
     <div class="guide-chip-row">
       <div class="guide-chip"><code>1.56E4</code><span class="desc">= 15600</span></div>
@@ -473,11 +484,13 @@
       <div class="guide-chip"><code>1.56*10^4</code><span class="desc">× power-of-ten</span></div>
       <div class="guide-chip"><code>10^-3</code><span class="desc">pure power of ten</span></div>
       <div class="guide-chip"><code>-3.2E7</code><span class="desc">negative value</span></div>
+      <div class="guide-chip"><code>3/4</code><span class="desc">fractions work</span></div>
+      <div class="guide-chip"><code>2*pi</code><span class="desc">π and e work</span></div>
     </div>
     <div class="guide-invalid-row">
       <div class="guide-invalid-item"><span class="x">✕</span><code>1.6x10^5</code><span class="why">use E or *10^, not x</span></div>
-      <div class="guide-invalid-item"><span class="x">✕</span><code>1E(-3)</code><span class="why">no parens around exponent</span></div>
-      <div class="guide-invalid-item"><span class="x">✕</span><code>4.1 E 5</code><span class="why">no spaces around E</span></div>
+      <div class="guide-invalid-item"><span class="x">✕</span><code>2,5</code><span class="why">decimal point, not comma</span></div>
+      <div class="guide-invalid-item"><span class="x">✕</span><code>sqrt(2)</code><span class="why">no functions</span></div>
     </div>
   </div>
 
@@ -485,17 +498,18 @@
     <div class="guide-section-title">Units</div>
     <div class="guide-chip-row">
       <div class="guide-chip"><code>N/C</code><span class="desc">slash = division</span></div>
-      <div class="guide-chip"><code>m s^(-1)</code><span class="desc">space = multiply</span></div>
-      <div class="guide-chip"><code>m/s</code><span class="desc">same as m s^(-1)</span></div>
       <div class="guide-chip"><code>N m</code><span class="desc">space = multiply</span></div>
       <div class="guide-chip"><code>m^2</code><span class="desc">exponent with ^</span></div>
-      <div class="guide-chip"><code>kN m^(-2)</code><span class="desc">neg exp needs ( )</span></div>
-      <div class="guide-chip"><code>kg m s^(-2)</code><span class="desc">= kg m/s² = N</span></div>
-      <div class="guide-chip"><code>N m^2 C^(-1)</code><span class="desc">permutations OK</span></div>
+      <div class="guide-chip"><code>m s^-1</code><span class="desc">same as m/s; s^(-1) too</span></div>
+      <div class="guide-chip"><code>kg m/s^2</code><span class="desc">= N</span></div>
+      <div class="guide-chip"><code>J/(kg K)</code><span class="desc">brackets after the /</span></div>
+      <div class="guide-chip"><code>rad</code><span class="desc">same as no unit</span></div>
     </div>
     <div class="guide-invalid-row">
-      <div class="guide-invalid-item"><span class="x">✕</span><code>N*m</code><span class="why">* not supported — use space</span></div>
-      <div class="guide-invalid-item"><span class="x">✕</span><code>m/s^(-2)</code><span class="why">( ) only on negative exponents</span></div>
+      <div class="guide-invalid-item"><span class="x">✕</span><code>N*m</code><span class="why">use a space, not * (0 points)</span></div>
+      <div class="guide-invalid-item"><span class="x">✕</span><code>m m</code><span class="why">each unit once: m^2</span></div>
+      <div class="guide-invalid-item"><span class="x">✕</span><code>m/s/s</code><span class="why">only one /</span></div>
+      <div class="guide-invalid-item"><span class="x">✕</span><code>m/s^(2)</code><span class="why">( ) only around a negative power</span></div>
       <div class="guide-invalid-item"><span class="x">✕</span><code>kn or KN</code><span class="why">units are case-sensitive</span></div>
     </div>
   </div>
@@ -506,13 +520,13 @@
       <div class="guide-chip"><code>p n µ/u m c</code><span class="desc">10⁻¹² → 10⁻²</span></div>
       <div class="guide-chip"><code>k M G T</code><span class="desc">10³ → 10¹²</span></div>
       <div class="guide-chip"><code>mm km ns</code><span class="desc">prefix + unit, no space</span></div>
-      <div class="guide-chip"><code>kOhm MHz GPa</code><span class="desc">works on most SI units</span></div>
+      <div class="guide-chip"><code>kOhm MHz mg</code><span class="desc">works on SI units</span></div>
     </div>
-    <div class="guide-note-inline">write prefix directly before the unit — e.g. <code>mm</code>, <code>km</code>, <code>ns</code>, <code>µF</code> or <code>uF</code> — not on <code>kg</code> (already prefixed)</div>
+    <div class="guide-note-inline">write the prefix right before the unit — e.g. <code>mm</code>, <code>µF</code> or <code>uF</code>. Only SI units convert: <code>km/h</code> is not <code>m/s</code>, <code>L</code> is not <code>m^3</code></div>
   </div>
 
   <div class="guide-footer">
-    <span><b>Score:</b> value✓+unit✓ = 1.0 · value✓+unit✗ = 0.9 · value✗ = 0 · ±1% tolerance</span>
+    <span><b>Score:</b> value✓+unit✓ = 1.0 · value✓+unit wrong or missing = 0.9 · invalid unit = 0 · value✗ = 0 · ±1% tolerance</span>
   </div>
 </div>
 
@@ -585,6 +599,16 @@
     </div>
 
     <div class="guide-section">
+      <div class="guide-section-title">One box: number, then unit</div>
+      <div class="guide-chip-row">
+        <div class="guide-chip"><code>9.81 m/s^2</code><span class="desc">number, space, unit</span></div>
+        <div class="guide-chip"><code>2.5e-3 kg m^2</code><span class="desc">any number format + unit</span></div>
+        <div class="guide-chip"><code>0.75</code><span class="desc">no unit when there is none</span></div>
+      </div>
+      <div class="guide-note-inline">while you type, a box under the field shows how your answer is read</div>
+    </div>
+
+    <div class="guide-section">
       <div class="guide-section-title">Numbers</div>
       <div class="guide-chip-row">
         <div class="guide-chip"><code>1.56E4</code><span class="desc">= 15600</span></div>
@@ -592,11 +616,13 @@
         <div class="guide-chip"><code>1.56*10^4</code><span class="desc">× power-of-ten</span></div>
         <div class="guide-chip"><code>10^-3</code><span class="desc">pure power of ten</span></div>
         <div class="guide-chip"><code>-3.2E7</code><span class="desc">negative value</span></div>
+        <div class="guide-chip"><code>3/4</code><span class="desc">fractions work</span></div>
+        <div class="guide-chip"><code>2*pi</code><span class="desc">π and e work</span></div>
       </div>
       <div class="guide-invalid-row">
         <div class="guide-invalid-item"><span class="x">✕</span><code>1.6x10^5</code><span class="why">use E or *10^, not x</span></div>
-        <div class="guide-invalid-item"><span class="x">✕</span><code>1E(-3)</code><span class="why">no parens around exponent</span></div>
-        <div class="guide-invalid-item"><span class="x">✕</span><code>4.1 E 5</code><span class="why">no spaces around E</span></div>
+        <div class="guide-invalid-item"><span class="x">✕</span><code>2,5</code><span class="why">decimal point, not comma</span></div>
+        <div class="guide-invalid-item"><span class="x">✕</span><code>sqrt(2)</code><span class="why">no functions</span></div>
       </div>
     </div>
 
@@ -604,17 +630,18 @@
       <div class="guide-section-title">Units</div>
       <div class="guide-chip-row">
         <div class="guide-chip"><code>N/C</code><span class="desc">slash = division</span></div>
-        <div class="guide-chip"><code>m s^(-1)</code><span class="desc">space = multiply</span></div>
-        <div class="guide-chip"><code>m/s</code><span class="desc">same as m s^(-1)</span></div>
         <div class="guide-chip"><code>N m</code><span class="desc">space = multiply</span></div>
         <div class="guide-chip"><code>m^2</code><span class="desc">exponent with ^</span></div>
-        <div class="guide-chip"><code>kN m^(-2)</code><span class="desc">neg exp needs ( )</span></div>
-        <div class="guide-chip"><code>kg m s^(-2)</code><span class="desc">= kg m/s² = N</span></div>
-        <div class="guide-chip"><code>N m^2 C^(-1)</code><span class="desc">permutations OK</span></div>
+        <div class="guide-chip"><code>m s^-1</code><span class="desc">same as m/s; s^(-1) too</span></div>
+        <div class="guide-chip"><code>kg m/s^2</code><span class="desc">= N</span></div>
+        <div class="guide-chip"><code>J/(kg K)</code><span class="desc">brackets after the /</span></div>
+        <div class="guide-chip"><code>rad</code><span class="desc">same as no unit</span></div>
       </div>
       <div class="guide-invalid-row">
-        <div class="guide-invalid-item"><span class="x">✕</span><code>N*m</code><span class="why">* not supported — use space</span></div>
-        <div class="guide-invalid-item"><span class="x">✕</span><code>m/s^(-2)</code><span class="why">( ) only on negative exponents</span></div>
+        <div class="guide-invalid-item"><span class="x">✕</span><code>N*m</code><span class="why">use a space, not * (0 points)</span></div>
+        <div class="guide-invalid-item"><span class="x">✕</span><code>m m</code><span class="why">each unit once: m^2</span></div>
+        <div class="guide-invalid-item"><span class="x">✕</span><code>m/s/s</code><span class="why">only one /</span></div>
+        <div class="guide-invalid-item"><span class="x">✕</span><code>m/s^(2)</code><span class="why">( ) only around a negative power</span></div>
         <div class="guide-invalid-item"><span class="x">✕</span><code>kn or KN</code><span class="why">units are case-sensitive</span></div>
       </div>
     </div>
@@ -625,13 +652,13 @@
         <div class="guide-chip"><code>p n µ/u m c</code><span class="desc">10⁻¹² → 10⁻²</span></div>
         <div class="guide-chip"><code>k M G T</code><span class="desc">10³ → 10¹²</span></div>
         <div class="guide-chip"><code>mm km ns</code><span class="desc">prefix + unit, no space</span></div>
-        <div class="guide-chip"><code>kOhm MHz GPa</code><span class="desc">works on most SI units</span></div>
+        <div class="guide-chip"><code>kOhm MHz mg</code><span class="desc">works on SI units</span></div>
       </div>
-      <div class="guide-note-inline">write prefix directly before the unit — e.g. <code>mm</code>, <code>km</code>, <code>ns</code>, <code>µF</code> or <code>uF</code> — not on <code>kg</code> (already prefixed)</div>
+      <div class="guide-note-inline">write the prefix right before the unit — e.g. <code>mm</code>, <code>µF</code> or <code>uF</code>. Only SI units convert: <code>km/h</code> is not <code>m/s</code>, <code>L</code> is not <code>m^3</code></div>
     </div>
 
     <div class="guide-footer">
-      <span><b>Score:</b> value✓+unit✓ = 1.0 · value✓+unit✗ = 0.9 · value✗ = 0 · ±1% tolerance</span>
+      <span><b>Score:</b> value✓+unit✓ = 1.0 · value✓+unit wrong or missing = 0.9 · invalid unit = 0 · value✗ = 0 · ±1% tolerance</span>
     </div>
   </div>
 
@@ -1037,6 +1064,12 @@
         <p>Bundled libraries and fonts keep their own licenses: MathJax, DOMPurify and SheetJS (Apache 2.0), jsPDF (MIT), IBM Plex fonts (SIL Open Font License 1.1) and TikZJax. Their license files are kept with them in <code>vendor/</code>.</p>
       </section>
 
+      <section class="license-card">
+        <h2>Answer Engine <span class="license-badge">MIT</span></h2>
+        <p>Since October 17, 2026, the engine behind the answer field is adapted from <a href="https://github.com/omgaXD/pt-nu-phys161" target="_blank" rel="noopener">pt-nu-phys161</a> by <a href="https://t.me/omgaxd" target="_blank" rel="noopener">@omgaxd</a>, © 2026, released under the MIT License. Thank you!</p>
+        <p>For this site its expression parser and unit table were rewritten. Its license file is kept with it in <code>vendor/pt-answer/</code>.</p>
+      </section>
+
       <section class="license-card license-card-contact">
         <h2>Copyright Holders</h2>
         <p>If you hold the rights to any material on this site and believe it is used without permission, or want it removed, please contact <a href="https://t.me/Aoi_Kuro" target="_blank" rel="noopener">@Aoi_Kuro</a> on Telegram.</p>
@@ -1344,6 +1377,11 @@
 
 <!-- ── Quiz registry: maps quiz slots to problem arrays ── -->
 <script src="course/quizzes/quizzes.js"></script>
+
+<!-- ── Answer checking: the pt-answer engine (vendor-src/pt-answer) and the
+     course's rules on it. Before stats + quiz-engine, which grade with it. ── -->
+<script src="vendor/pt-answer/pt-answer.min.js"></script>
+<script src="js/answer-check.js"></script>
 
 <!-- ── Stats module (must load before quiz-engine) ── -->
 <script src="js/stats.js"></script>

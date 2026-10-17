@@ -114,6 +114,8 @@ impulse/
 ├── version.json             { "version": "X.Y.Z" } — polled by the update
 │                            checkers of the site and of the editor
 ├── minify.py                Builds the minified Netlify upload zip
+├── vendor-src/              Sources of vendor/ builds (not deployed)
+│   └── pt-answer/           Answer engine: source, build.py, tests
 │
 ├── course/                  ★ Everything specific to the deployed course
 │   ├── quizzes/
@@ -137,6 +139,7 @@ impulse/
 │   ├── easter.js            Pi Day / Pi Hour easter egg
 │   ├── data/changelog.js    Changelog entries (platform history)
 │   ├── data/tips.js         Rotating top-bar tip strings
+│   ├── answer-check.js      Answer field: grading rules, preview box
 │   ├── stats.js             Attempt log, chart, table, problems overview,
 │   │                        attempt review, Forum & Site panel
 │   ├── stats-export.js      Export to PDF / Excel / CSV / TXT
@@ -151,8 +154,8 @@ impulse/
 │   ├── solutions.js         "See solution" buttons and the Solution screen
 │   ├── editor-access.js     Hidden long-press entry to /editor on the logo
 │   ├── quiz-engine.js       Quiz engine: Random N, cumulative, filters,
-│   │                        Solve-All, mistakes retry, number/unit parsing,
-│   │                        live timer, full-screen hint, update checker
+│   │                        Solve-All, mistakes retry, live timer,
+│   │                        full-screen hint, update checker
 │   ├── fig-attribution.js   Tap-to-toggle (i) attribution badges on figures
 │   ├── top-bar-scroll.js    Top-bar backdrop state on scroll
 │   ├── top-bar-tips.js      Rotating one-line tips in the top bar
@@ -179,6 +182,8 @@ impulse/
 │
 ├── css/
 │   ├── style.css            Core UI, landing screen, theme presets
+│   ├── answer-check.css     Answer field + preview (own file: style.css is
+│   │                        served cache-first by sw.js, this one fresh)
 │   ├── stats.css            Stats screen (+ shared modal styles)
 │   ├── forum.css            Forum screen, Getting Started FAQ
 │   ├── manual.css           Manual screen
@@ -197,6 +202,7 @@ impulse/
 │   ├── mathjax/             MathJax bundle + STIX Two woff fonts
 │   ├── tikzjax/             TikZJax (TeX in WebAssembly), TeX fonts, .sty
 │   ├── dompurify/           DOMPurify
+│   ├── pt-answer/           Answer engine (built from vendor-src/pt-answer)
 │   ├── jspdf/               jsPDF, svg2pdf, jspdf-autotable
 │   ├── sheetjs/             SheetJS (xlsx)
 │   └── fonts/               IBM Plex embedded for PDF export
@@ -405,50 +411,96 @@ for a fifth quiz: the `<script>` tags in `index.html`, the forum filter chips
 
 ## Answer checking
 
-Implemented in `js/quiz-engine.js`; the student-facing summary is the
-"How to enter your answer" guide in `index.html` and the
-"Scoring & Answer Formatting" manual page in `course/manual.json`.
+Students type the whole answer in **one field**, number then unit
+(`9.81 m/s^2`), as in Moodle. While the field has focus, a box under it shows
+the answer as read (TeX through MathJax, the unit as a fraction) or what is
+wrong with it. The student-facing summary is the "How to enter your answer"
+guide in `index.html` and the "Scoring & Answer Formatting" manual page in
+`course/manual.json`.
 
-**Numbers** (`parseMoodleNumber`) follow Moodle rules:
+In use since October 17, 2026 (version 12.4.0); before that the site had
+two boxes, value and unit, checked by its own parser in `quiz-engine.js`.
 
-- plain decimals: `3.14`, `-0.5`, `.5`, `1200`
-- `e`/`E` notation: `1.6e-19`, `2.998E8` (no spaces, no parentheses)
-- power-of-ten notation: `5*10^3`, `1*10^-11`, `1*10^(-11)`, `10^-4`, `10^(-4)`
-- a comma (`3,14`) is rejected; `x` instead of `*` is rejected
+**Two layers.**
 
-**Tolerance** (`numberCorrect`): `|value − answer| <= 1% · |answer|`
-(plus a 10⁻¹² relative margin for floating-point rounding), after the
-SI-prefix conversion below. Purely relative: a fixed floor (it used to be
-`1e-10`) swamps small answers such as forces of 10⁻⁹ N or energies of
-10⁻²¹ J. An answer of exactly 0 accepts only 0.
+- `vendor/pt-answer/pt-answer.min.js` (global `PTAnswer`, ~40 KB, ~14 KB
+  gzipped): reading numbers and units, unit conversion, the preview TeX. It is
+  adapted from [pt-nu-phys161](https://github.com/omgaXD/pt-nu-phys161)
+  (MIT, © 2026 omga), with its mathjs dependency replaced by a small parser of
+  ours and its unit table replaced by the course's. Source, build script and
+  tests are in `vendor-src/pt-answer/` (see its README); rebuild with
+  `python vendor-src/pt-answer/build.py`.
+- `js/answer-check.js`: the course's rules on top of it, used by every quiz
+  view and the review screen: `gradeAnswer(text, p)`, `splitAnswer` /
+  `joinAnswer`, `answerFeedbackHtml`, `answerInputHtml` and
+  `attachAnswerPreview(input)` (one preview box on `<body>`, since the cards
+  clip their overflow).
 
-**Units** (`parseUnitToMap`, `unitStatus`, `unitConversionFactor`):
+**Numbers** (Moodle's "numeric" type): `3.14`, `-0.5`, `.5`, `1.6e-19`,
+`2.998E8`, `5*10^3`, `10^-4`, `10^(-4)`, and arithmetic with
+`+ - * / ^`, brackets, `pi` and `e` (`3/4`, `2*pi`, `(1+2)/3`). No functions
+(`sqrt(2)`), no comma decimals (`3,14`), no `x` for times. Typographic
+`×`, `·`, `−`, `π` and superscripts (`10⁻³`) are read as their ASCII forms.
 
-- a space multiplies (`N m`), a single `/` divides (`N/C`, `kg m/s^2`), `^`
-  raises (`m^2`, `s^-1`, `s^(-1)`); everything after `/` divides, so
-  `J/kg K` = `J/(kg K)`
-- `*`, `·`, `×` are rejected
-- parentheses are allowed around an exponent (`s^(-1)`) and around the whole
-  denominator (`J/(kg K)`, `kg m/(s^2)`); anywhere else (`5 (m)`,
-  `(kg m)/s`, `J/(kg) K`, `(m/s)^2`) the unit is invalid, as in Moodle
-- a second `/` (`J/kg/K`) is invalid
-- `%` is a unit of its own (matches only `%`)
-- Unicode superscripts are normalized (`m²` → `m^2`, `s⁻¹` → `s^-1`)
-- named SI-derived units (`N J W Pa Hz C V Ohm F T Wb H`) are expanded into
-  base units, so any dimensionally identical spelling is accepted:
-  `Wb` = `V s` = `T m^2`, `V/m` = `N/C`, `N s` = `kg m/s`
-- `""`, `none`, `(none)` and `rad` mean dimensionless
-- units are case-sensitive
+**Tolerance**: `|value − answer| <= 1% · |answer|` (plus a few units in the
+last place for rounding), after unit conversion. Purely relative, so tiny
+answers (10⁻²⁶ kg) are checked as strictly as large ones; an answer of 0
+accepts only 0.
 
-**SI prefixes** (`SI_PREFIXES`, `PREFIXABLE_UNITS`): `Y Z E P T G M k h da d c m u n p f a z y`,
-with `mc`/`mk` as ASCII aliases for micro. They attach to
-`N C m s J V A T W H Hz Pa Wb Ohm F` (not to `kg`). The conversion is relative
-to `units[0]`, so a stored answer such as `326.9` with `units:["nm"]` matches
-`326.9 nm` 1:1 and `0.3269 um` after conversion. A bare single-letter unit
-(`T`, `m`) is never read as a prefix.
+**Units** (Moodle grammar):
 
-**Scoring** per problem: value ✓ + unit ✓ = **1**; value ✓ + unit ✗ or
-unparseable = **0.9**; value ✗ = **0**.
+- a space multiplies (`N m`), one `/` divides (`N/C`, `kg m/s^2`),
+  everything after `/` divides (`J/kg K` = `J/(kg K)`), and the part after
+  `/` may be in brackets
+- `^` raises: `m^2`, `s^-1`, `s^(-1)`; brackets only around a negative
+  exponent, as in Moodle (`s^(2)`, `s^+2`, `m^1.5` are invalid);
+  superscripts work (`m²`, `s⁻¹`)
+- each unit name at most once: `m m` is invalid (write `m^2`)
+- `*`, `·`, `×` between units and a second `/` are invalid
+- units are case-sensitive; `%` is a unit of its own
+- `rad`, `none` and `(none)` written alone mean no unit, either way round
+
+**Conversion** (the unit table in
+`vendor-src/pt-answer/src/core/units/table.ts`):
+
+- SI units take every SI prefix (`Y … y`, with `u`, `mc`, `mk` for micro):
+  `m s g A K mol N J W Pa Hz C V Ohm/Ω F T Wb H`. They convert through their
+  SI dimensions, so any equivalent spelling is accepted: `J` = `N m` =
+  `kg m^2/s^2`, `V/m` = `N/C`, `Wb` = `V s` = `T m^2`, `Hz` = `s^-1`.
+- Other units convert only within themselves, by their prefixes: `keV` =
+  1000 `eV`, `mL` = 0.001 `L`, but `km/h` is not `m/s`, `L` is not `m^3`,
+  `eV` is not `J`, `min` is not `s`.
+- Names the table doesn't know (`hectares`, `in`) match only themselves.
+
+`p.answer` is in `units[0]`; a student's unit is converted to the first
+accepted unit it matches (`units[0]` first), so `326.9` with `units:["nm"]`
+matches `326.9 nm` and `0.3269 um`. A number with no unit is not scaled.
+
+**Splitting** the field into number and unit: the leftmost split whose unit
+is known and whose number is valid, else any syntactically valid unit; a
+whole answer that is a number on its own is not split at an unknown "unit"
+(`2pi` is 2π); a valid number followed by an invalid unit splits there
+(`0.5 m m`), so it is reported as a unit mistake.
+
+**Scoring** per problem: value ✓ + unit ✓ = **1**; value ✓ + unit wrong or
+missing = **0.9**; invalid unit = **0** (as in Moodle); value ✗ = **0**.
+
+**Storage is unchanged**: attempts keep `entered_value` / `entered_unit` and
+Solve-All progress keeps `{ans, unit}`, split from the field with
+`splitAnswer` and shown again with `joinAnswer`. The review screen shows the
+points stored at the time, so changing these rules never rescores old
+attempts.
+
+**Two deploy details.**
+
+- The field has `maxlength="200"`: `sync-quiz-attempts` refuses a whole
+  batch of attempts if any `entered_value` or `entered_unit` is longer, and
+  the split pieces can't be longer than what was typed.
+- The field's and the preview's styles are in `css/answer-check.css`, not
+  `css/style.css`: `sw.js` serves `style.css` cache-first, so a change there
+  reaches a returning visitor one load late; `answer-check.css` is not
+  precached, always comes fresh, and is loaded after `style.css`, so it also
+  wins over an older cached copy.
 
 ---
 
@@ -470,7 +522,8 @@ unparseable = **0.9**; value ✗ = **0**.
 3. **Tier 1 scripts** (plain tags, in order): `course-config.js` →
    `banner-manager.js`, `theme-colors.js`, `themes.js`, `splash.js`,
    `easter.js` → `course/quizzes/quiz1..4.js` → `data/changelog.js`,
-   `data/tips.js` → `quizzes.js` → `stats.js`, `stats-export.js`,
+   `data/tips.js` → `quizzes.js` → `vendor/pt-answer`, `answer-check.js` →
+   `stats.js`, `stats-export.js`,
    `attempts-sync.js`, `solve-all-sync.js` → `math-cache.js`,
    `math-render.js` → DOMPurify, `figure.js`, `solution-render.js`,
    `solutions.js`, `editor-access.js` → `quiz-engine.js`. The engine boots
@@ -1378,8 +1431,8 @@ python minify.py path/to/out.zip  # -> that file
 ```
 
 The script never writes into the project folder. It copies the site to a
-temporary folder, leaving out `.git`, `superbase/`, `README.md`, `*.zip`,
-`*.py` and editor/IDE folders, then:
+temporary folder, leaving out `.git`, `superbase/`, `vendor-src/`,
+`README.md`, `*.zip`, `*.py` and editor/IDE folders, then:
 
 - minifies own `.js` and `.css` with **esbuild** (whitespace, syntax and
   **local** names only — top-level names are never renamed, because files
@@ -1504,7 +1557,10 @@ concerning this material should be addressed directly to Nazarbayev University.
 DOMPurify (Apache 2.0 / MPL 2.0), SheetJS (Apache 2.0, `vendor/sheetjs/LICENSE`),
 jsPDF, jsPDF-AutoTable and svg2pdf.js (MIT, `vendor/jspdf/`), IBM Plex fonts
 (SIL Open Font License 1.1, `vendor/fonts/LICENSE.txt`) and TikZJax (see its
-upstream repository).
+upstream repository). The answer engine in `vendor/pt-answer/` (source in
+`vendor-src/pt-answer/`), in use since October 17, 2026, is adapted from
+[pt-nu-phys161](https://github.com/omgaXD/pt-nu-phys161), MIT License,
+© 2026 omga (`vendor/pt-answer/LICENSE`).
 
 Rights holders who believe material here is used without permission can
 contact [@Aoi_Kuro](https://t.me/Aoi_Kuro) on Telegram.

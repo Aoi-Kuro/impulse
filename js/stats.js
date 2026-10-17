@@ -155,12 +155,11 @@ async function deleteAttempt(hash) {
 
 // ── Review screen ────────────────────────────────────────────────────────────
 // Read-only replay of one stored attempt. Looks the original problem back up
-// in QUIZZES by (quiz_num, problem_id) from the attempt's own answers array,
-// then reuses numberCorrect/unitConversionFactor/unitStatus/fmt/fmtUnit
-// (all defined in quiz-engine.js) — the exact same grading functions
-// checkAll() itself calls — so a reviewed card is graded identically to how
-// it looked the moment it was actually checked, not a re-implementation
-// that could quietly drift out of sync with real grading over time.
+// in QUIZZES by (quiz_num, problem_id) from the attempt's own answers array.
+// The points shown are the ones awarded at the time (grading rules can
+// change); gradeAnswer/answerFeedbackHtml (js/answer-check.js) — what
+// checkAll() itself uses — only pick the hint wording. The stored value and
+// unit are shown together, as they were typed into the one answer field.
 function findReviewProblem(quizNum, problemId) {
   // Active OR retired — retired problems stay openable from review (they
   // just show as "DEL"); only a problem removed outright resolves to null.
@@ -273,10 +272,8 @@ function renderAttemptReview(attempt) {
         <div class="card-header"><span class="problem-num">${problemLabel(a.quiz_num, a.problem_id)} · Quiz #${a.quiz_num}</span></div>
         <div class="problem-text" style="color:var(--muted)">This problem's original text is no longer available.</div>
         <div class="answer-row">
-          <span class="answer-label">Value =</span>
-          <input class="answer-input" type="text" value="${_escAttr(a.entered_value)}" readonly tabindex="-1">
-          <span class="sep">·</span>
-          <input class="unit-input" type="text" value="${_escAttr(a.entered_unit)}" readonly tabindex="-1">
+          <span class="answer-label">Answer =</span>
+          <input class="answer-input" type="text" value="${_escAttr(joinAnswer(a.entered_value, a.entered_unit))}" readonly tabindex="-1">
         </div>
         <div class="feedback show">Recorded score: <strong>${a.points}</strong> pt</div>
         ${forumRowHtml}`;
@@ -284,30 +281,17 @@ function renderAttemptReview(attempt) {
       return;
     }
 
-    const numOk  = numberCorrect(a.entered_value, p.answer, unitConversionFactor(a.entered_unit, p.units));
-    const uStat  = unitStatus(a.entered_unit, p.units);
-    const unitOk = uStat === 'ok';
-    const pts    = a.points; // trust the score actually awarded at the time over a live recompute, in case grading rules ever change later
+    const typed = joinAnswer(a.entered_value, a.entered_unit);
+    const pts   = a.points; // trust the score actually awarded at the time over a live recompute, in case grading rules ever change later
+    const res   = { ...gradeAnswer(typed, p), pts };
 
     card.classList.add(pts === 1 ? 'correct' : pts === 0.9 ? 'partial' : 'wrong');
     const isCumulative = attempt.mode === 'cumulative' && a.quiz_num !== attempt.quizNum;
     const pLabel = problemLabel(a.quiz_num, a.problem_id);
     const numDisplay = isCumulative ? `${pLabel} · Quiz #${a.quiz_num}` : pLabel;
 
-    let fbClass, fbHtml;
-    if (pts === 1) {
-      fbClass = 'correct-fb';
-      fbHtml = `✓ Correct <span class="pts-badge pts-full">+1 pt</span>`;
-    } else if (pts === 0.9) {
-      fbClass = 'partial-fb';
-      const unitHint = uStat === 'invalid'
-        ? `unit format invalid — use spaces to multiply, e.g. <strong>${fmtUnit(p.units)}</strong>`
-        : `unit should be <strong>${fmtUnit(p.units)}</strong>`;
-      fbHtml = `✓ Value correct, but ${unitHint} <span class="pts-badge pts-partial">+0.9 pt</span>`;
-    } else {
-      fbClass = 'wrong-fb';
-      fbHtml = `✗ Expected ≈ <strong>${fmt(p.answer)}</strong> ${fmtUnit(p.units)} <span class="pts-badge pts-zero">+0 pt</span>`;
-    }
+    const fbClass = pts === 1 ? 'correct-fb' : pts === 0.9 ? 'partial-fb' : 'wrong-fb';
+    const fbHtml  = answerFeedbackHtml(res, p, true);
 
     card.innerHTML = `
       <div class="card-header">
@@ -316,10 +300,8 @@ function renderAttemptReview(attempt) {
       </div>
       <div class="problem-text">${p.text}</div>
       <div class="answer-row">
-        <span class="answer-label">Value =</span>
-        <input class="answer-input ${numOk ? 'correct-input' : 'wrong-input'}" type="text" value="${_escAttr(a.entered_value)}" readonly tabindex="-1">
-        <span class="sep">·</span>
-        <input class="unit-input ${numOk ? (unitOk ? 'correct-unit' : 'partial-unit') : 'wrong-unit'}" type="text" value="${_escAttr(a.entered_unit)}" readonly tabindex="-1">
+        <span class="answer-label">Answer =</span>
+        <input class="answer-input ${pts === 1 ? 'correct-input' : pts === 0.9 ? 'partial-input' : 'wrong-input'}" type="text" value="${_escAttr(typed)}" readonly tabindex="-1">
       </div>
       <div class="feedback show ${fbClass}">${fbHtml}</div>
       ${forumRowHtml}`;

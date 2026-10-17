@@ -11,6 +11,7 @@ path inside it is given.
 What it does
   - copies the site, leaving out what isn't part of the website:
     .git, superbase/ (edge functions + SQL, deployed to Supabase instead),
+    vendor-src/ (sources the vendor/ builds are made from),
     README.md, *.zip and this script itself
   - minifies our own .js and .css with esbuild: whitespace, syntax and the
     names of LOCAL variables only. Top-level names are never renamed — the
@@ -35,7 +36,7 @@ ESBUILD_VERSION = '0.28.2'
 
 SRC = os.path.dirname(os.path.abspath(__file__))
 SELF = os.path.basename(__file__)
-SKIP_DIRS = {'.git', 'superbase', '.claude', '.vscode', 'node_modules', '__pycache__'}
+SKIP_DIRS = {'.git', 'superbase', 'vendor-src', '.claude', '.vscode', 'node_modules', '__pycache__'}
 SKIP_ROOT_FILES = {'README.md', SELF}
 SKIP_EXT = {'.zip', '.py'}
 MINIFY_EXT = {'.js', '.css', '.html', '.json', '.webmanifest'}

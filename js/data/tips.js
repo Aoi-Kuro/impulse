@@ -18,5 +18,17 @@ window.TOP_BAR_TIPS = [
   "New in Settings, Study: start main page with latest quiz selected instead of first.",
   "New in Settings, Study: lock Solve Them All to always start ordered or always shuffled.",
   "New in Settings, Study: reveal a wrong answer right away instead of tapping to see it.",
-  "New in Settings, Sync & Storage: download everything you need and go fully offline for 24 hours, perfect for studying while traveling."
+  "New in Settings, Sync & Storage: download everything you need and go fully offline for 24 hours, perfect for studying while traveling.",
+  "You can type the whole answer in one box, like 9.81 m/s^2, and see how it's read in the preview under it.",
+  "You can type answers like 3/4, 2*pi or 1.5*10^-3: simple arithmetic works in the answer box.",
+  "You can put SI prefixes right on the unit, like mA, kOhm or nm (u, mc or mk for micro).",
+  "You can tap 📋 Quiz: wrong problems in Solve Them All to retry only the ones you got wrong.",
+  "You can open any past attempt in Stats to replay it with your answers and points.",
+  "You can see how you do in each topic in Stats, with your average and best score per topic.",
+  "You can export your stats as PDF, Excel, CSV or TXT from the Stats screen.",
+  "You can zoom a solution's figure up to 400% or look closer with the 🔍 magnifier.",
+  "You can open a problem's own forum thread with the 💬 button on its card.",
+  "You can tag @gemini in the forum to get an answer from the AI assistant.",
+  "You can get a notification when someone replies to you or mentions you in the forum.",
+  "You can make your own theme (colors, roundness, fonts) by picking Custom in the theme picker."
 ];

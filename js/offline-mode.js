@@ -54,6 +54,7 @@ function writeOfflineModeUntilFlag(until) {
 const OFFLINE_CORE_FILES = [
   'index.html',
   'css/style.css',
+  'css/answer-check.css',
   'css/settings.css',
   'css/manual.css',
   'css/license.css',
@@ -72,6 +73,8 @@ const OFFLINE_CORE_FILES = [
   'js/easter.js',
   'js/data/changelog.js',
   'js/data/tips.js',
+  'vendor/pt-answer/pt-answer.min.js',
+  'js/answer-check.js',
   'js/stats.js',
   'js/stats-export.js',
   'js/attempts-sync.js',
