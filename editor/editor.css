@@ -813,6 +813,7 @@ body.state-closed .ed-state { display: none; }
   --hl-num:  color-mix(in srgb, var(--partial) 80%, var(--text));
   --hl-math: color-mix(in srgb, var(--correct) 55%, var(--text));
   --hl-punc: color-mix(in srgb, var(--muted) 70%, var(--text));
+  --hl-sec-name: color-mix(in srgb, var(--partial) 90%, var(--text));
 }
 .ed-hl.off { opacity: .5; }
 
@@ -839,6 +840,31 @@ body.state-closed .ed-state { display: none; }
 }
 .ed-gutter-inner span.on { color: var(--text); }
 .ed-hl.off ~ .ed-gutter { opacity: .5; }
+/* Folding (TikZ box): an arrow after the number where a block starts,
+   shown while the box is hovered or focused; a folded block's arrow
+   points right and always shows. In the text, the folded block is one
+   character drawn as a "⋯" pill. */
+.ed-gutter-inner .ed-fold {
+  display: inline-block; position: relative; width: 1em; height: 1em; margin-left: .15em; vertical-align: -.15em;
+  pointer-events: auto; cursor: pointer; opacity: 0; transition: opacity .15s, color .15s;
+}
+.ed-gutter-inner .ed-fold.none { pointer-events: none; cursor: default; }
+.ed-gutter-inner .ed-fold::before {
+  content: ''; position: absolute; left: 50%; top: 50%; width: .34em; height: .34em;
+  border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: translate(-50%, -70%) rotate(45deg);
+}
+.ed-gutter-inner .ed-fold.shut::before { transform: translate(-70%, -50%) rotate(-45deg); }
+.ed-hl-wrap:hover .ed-fold:not(.none), .ed-hl-wrap:focus-within .ed-fold:not(.none) { opacity: .75; }
+@media (hover: none) { .ed-gutter-inner .ed-fold:not(.none) { opacity: .6; } }
+.ed-hl-wrap .ed-gutter-inner .ed-fold.shut { opacity: 1; color: var(--accent); }
+.ed-hl-wrap .ed-gutter-inner .ed-fold:not(.none):hover { opacity: 1; color: var(--accent); }
+.ed-hl .hl-fold { position: relative; color: transparent; }
+.ed-hl .hl-fold::before {
+  content: '⋯'; position: absolute; top: .05em; bottom: .05em; left: -1px; right: -1px;
+  display: flex; align-items: center; justify-content: center; border-radius: 3px;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
 /* "Go to line": the line flashes, then fades. */
 .ed-flash-layer { position: absolute; z-index: 2; overflow: hidden; pointer-events: none; }
 .ed-lineflash { position: absolute; left: 0; right: 0; opacity: 0; background: color-mix(in srgb, var(--accent) 30%, transparent); }
@@ -853,6 +879,9 @@ body.state-closed .ed-state { display: none; }
 .ed-hl .hl-math, .ed-hl .hl-str { color: var(--hl-math); }
 .ed-hl .hl-punc { color: var(--hl-punc); }
 .ed-hl .hl-com  { color: var(--muted); }
+/* Sections (TikZ box): the "% =====" / "% ===" markers, and the name after them. */
+.ed-hl .hl-sec  { color: var(--accent); }
+.ed-hl .hl-secname { color: var(--hl-sec-name); }
 
 /* ── Editor manual (📖, editor/manual.js) ──
    The practice site's manual layout (css/manual.css) in a scrolling layer

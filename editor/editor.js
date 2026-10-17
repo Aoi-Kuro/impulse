@@ -1157,6 +1157,8 @@ function toggleTheme() {
 
   /* ───────────────────────── captions + step viewer ───────────────────────── */
   const tikzEl = $('edTikz'), solEl = $('edSol'), capsEl = $('edCaps');
+  // The TikZ box can fold blocks (editor/highlight.js): its full text, folds put back.
+  const tikzText = () => (tikzEl._edHl && tikzEl._edHl.text ? tikzEl._edHl.text() : tikzEl.value);
   const svgEl = $('edSvg'), svgBoxEl = $('edSvgBox');
 
   // Highest N in \onstep{N}, ignoring TeX comments; 1 when there are no steps.
@@ -1497,12 +1499,18 @@ function toggleTheme() {
   function applyScale() {
     if (cur) stage.style.setProperty('--fig-scale', String(draftScale(draft())));
   }
+  // Sets this problem's scale; tidy: also rewrite the field ("0.8" -> "0.80").
+  function setDraftScale(v, tidy) {
+    if (!cur || !isFinite(v) || v <= 0) return;
+    draft().scale = figScaleOf({ scale: v });
+    if (tidy) scaleEl.value = draftScale(draft()).toFixed(2);
+    persistDrafts(); markItem(); refreshState(); applyScale();
+  }
   scaleEl.addEventListener('input', () => {
     if (!cur) return;
     const v = parseFloat(scaleEl.value);
     if (!isFinite(v) || v <= 0) return;           // mid-typing ("0.", "")
-    draft().scale = figScaleOf({ scale: v });
-    persistDrafts(); markItem(); refreshState(); applyScale();
+    setDraftScale(v, false);
   });
   scaleEl.addEventListener('change', () => {       // tidy the field on blur/enter
     if (cur) scaleEl.value = draftScale(draft()).toFixed(2);
@@ -1596,7 +1604,7 @@ function toggleTheme() {
     clearTimeout(compileTimer);
     const gen = ++compileGen;
     if (cur && figKind(draft()) === 'svg') { scheduleSvgBuild(gen); return; }
-    const src = tikzEl.value;
+    const src = tikzText();
     if (!src.trim()) { curSvgs = []; curSvgKey = ''; clearStage('No figure'); showWarn(null); showLog(null); setStatus('', ''); renderViewer(); refreshState(); return; }
     setStatus('typing…', '');
     compileTimer = setTimeout(async () => {
@@ -2127,7 +2135,9 @@ function toggleTheme() {
   }
   tikzEl.addEventListener('input', () => {
     if (!cur) return;
-    draft().tikz = tikzEl.value;
+    const t = tikzText();
+    if (t === draft().tikz) return;      // folding / unfolding: same text
+    draft().tikz = t;
     figSourceChanged();
   });
   svgEl.addEventListener('input', () => {
@@ -3143,6 +3153,7 @@ function toggleTheme() {
     { p: 'dimension', d: 'Length marker ↔ with label', b: '\\draw[<->] (${1:0,-0.4}) -- (${2:2,-0.4}) node[midway, below] {$${3:L}$};' },
     { p: 'onstep', d: 'Show from step N on', b: '\\onstep{${1:2}}{$0}' },
     { p: 'foreach', d: 'Loop', b: '\\foreach \\x in {${1:0,1,2}} {\n  $0\n}' },
+    { p: 'section', d: 'Foldable section: % ===== Name … % ===', b: '% ===== ${1:Name}\n$0\n% ===' },
     { p: 'scope', d: 'Scope (shift / scale a group)', b: '\\begin{scope}[${1:xshift=2cm}]\n  $0\n\\end{scope}' },
   ];
 
@@ -3414,6 +3425,8 @@ function toggleTheme() {
 
     ta.addEventListener('input', (e) => {
       if (inserting) return;
+      // A fold or unfold (editor/highlight.js) is not typing.
+      if (ta._edFolding) { close(); endStops(); return; }
       // Keep tab stops in place while the current one is being typed into.
       if (stops) {
         const delta = ta.value.length - stops.len;
@@ -3475,10 +3488,91 @@ function toggleTheme() {
   attachSnippets(tikzEl, TIKZ_SNIPPETS, 'line');
   attachSnippets(svgEl, SVG_SNIPPETS, 'line');
   attachSnippets(solEl, SOLUTION_SNIPPETS, 'cmd');
+
+  /* Figure settings on the clipboard. Copying the whole figure from the
+     TikZ box (\begin{tikzpicture} … \end{tikzpicture} selected) or the SVG
+     box (all of it) puts its scale (when it isn't 1) and its filled step
+     captions on comment lines before it:
+       % scale: 0.80                <!-- scale: 0.80 -->
+       % caption 2: Weight $mg$     <!-- caption 2: Weight $mg$ -->
+     ("--" in an SVG comment is written -&#45;, which a comment can't hold.)
+     Pasting text that starts with such lines, into either box, leaves them
+     out and sets them on this problem: the scale, and — if any caption
+     line came — all the captions (a step with no line gets none). The code
+     itself never holds these lines. */
+  const HEAD_LINE = /^[ \t]*(?:%[ \t]*(scale|caption[ \t]+\d+):[ \t]?(.*?)|<!--[ \t]*(scale|caption[ \t]+\d+):[ \t]?(.*?)[ \t]*-->)[ \t]*$/;
+  // The settings lines at the start of text, or null when there are none.
+  function readFigHead(text) {
+    const head = { scale: null, captions: null };
+    let at = 0;
+    while (at < text.length) {
+      const nl = text.indexOf('\n', at), end = nl < 0 ? text.length : nl;
+      const m = HEAD_LINE.exec(text.slice(at, end).replace(/\r$/, ''));
+      if (!m) break;
+      const key = (m[1] || m[3]).replace(/\s+/g, ' '), val = m[1] ? m[2] : m[4].replace(/&#45;/g, '-');
+      if (key === 'scale') {
+        if (!/^\d*\.?\d+$/.test(val.trim()) || !(parseFloat(val) > 0)) break;
+        head.scale = parseFloat(val);
+      } else {
+        const i = parseInt(key.slice(8), 10);
+        if (!(i >= 1 && i <= 200)) break;
+        (head.captions = head.captions || [])[i - 1] = val;
+      }
+      at = nl < 0 ? text.length : nl + 1;
+    }
+    return at ? Object.assign(head, { rest: text.slice(at) }) : null;
+  }
+  const copyWithHead = (kind) => (text) => {
+    if (!cur || readFigHead(text)) return text;
+    const whole = kind === 'svg'
+      ? !!text.trim() && text.trim() === svgEl.value.trim()
+      : /\\begin\s*\{tikzpicture\}/.test(text) && /\\end\s*\{tikzpicture\}/.test(text);
+    if (!whole) return text;
+    const d = draft(), sc = draftScale(d), lines = [];
+    if (sc !== 1) lines.push(['scale', sc.toFixed(2)]);
+    for (let i = 0; i < stepState.n; i++) {
+      const c = ((d.captions || [])[i] || '').trim();
+      if (c) lines.push([`caption ${i + 1}`, c]);
+    }
+    if (!lines.length) return text;
+    return lines.map(([k, v]) => (kind === 'svg'
+      ? `<!-- ${k}: ${v.replace(/--/g, '-&#45;').replace(/-$/, '&#45;')} -->`
+      : `% ${k}: ${v}`)).join('\n') + '\n' + text;
+  };
+  [tikzEl, svgEl].forEach((ta) => ta.addEventListener('paste', (e) => {
+    if (!cur || ta.disabled || !e.clipboardData) return;
+    const head = readFigHead(e.clipboardData.getData('text/plain'));
+    if (!head) return;
+    e.preventDefault();
+    if (head.rest) {
+      // Through execCommand, like typing: Ctrl+Z works, the input event saves it.
+      let ok = false;
+      try { ok = document.execCommand('insertText', false, head.rest); } catch (err) { ok = false; }
+      if (!ok) { ta.setRangeText(head.rest, ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input')); }
+    }
+    const done = [];
+    if (head.scale != null) {
+      const before = draftScale(draft());
+      setDraftScale(head.scale, true);
+      if (draftScale(draft()) !== before) done.push(`scale ${draftScale(draft()).toFixed(2)}`);
+    }
+    if (head.captions) {
+      const d = draft();
+      d.captions = Array.from(head.captions, (c) => c || '');
+      persistDrafts(); markItem(); refreshState(); renderCaptions(); renderCaption();
+      const n = d.captions.filter((c) => c.trim()).length;
+      done.push(`${n} caption${n === 1 ? '' : 's'}`);
+    }
+    if (done.length) {
+      const msg = done.join(' and ');
+      toast(`${msg[0].toUpperCase()}${msg.slice(1)} taken from the pasted figure.`, 'ok');
+    }
+  }));
+
   // Syntax colours (editor/highlight.js).
   // Code boxes get VS Code-style line numbers.
-  edHighlight(tikzEl, 'tikz', { lineNumbers: true });
-  edHighlight(svgEl, 'svg', { lineNumbers: true });
+  edHighlight(tikzEl, 'tikz', { lineNumbers: true, fold: true, copyText: copyWithHead('tikz') });
+  edHighlight(svgEl, 'svg', { lineNumbers: true, copyText: copyWithHead('svg') });
 
   // "↩ Wrap" (TikZ and SVG boxes): wrap long lines instead of scrolling
   // sideways. One choice for both boxes and every problem, remembered in
@@ -3499,6 +3593,21 @@ function toggleTheme() {
     });
   });
   applyCodeWrap();
+
+  // "Fold all" (TikZ box): folds every block inside the picture (% =====
+  // sections, \onstep, scopes, \foreach bodies), inner ones too; while
+  // anything is folded it is
+  // "Unfold all". The arrows in the gutter fold one block at a time.
+  const foldBtn = $('edFoldTikz');
+  let tikzFolded = false;
+  tikzEl.addEventListener('edfold', (e) => {
+    tikzFolded = e.detail.folded > 0;
+    foldBtn.hidden = !tikzFolded && !e.detail.foldable;
+    foldBtn.textContent = tikzFolded ? '⊞ Unfold all' : '⊟ Fold all';
+  });
+  foldBtn.addEventListener('click', () => {
+    if (tikzFolded) tikzEl._edHl.unfoldAll(); else tikzEl._edHl.foldAll();
+  });
   edHighlight(solEl, 'latex');
 
 
