@@ -264,12 +264,14 @@ function toggleTheme() {
 
      Why it has to read every ROW and not just the index: problem_hash
      lives on the row, and the index deliberately carries only status and
-     timestamps so startup stays one small request. A few hundred reads is
-     fine on demand, which is exactly why this is a button rather than
+     timestamps so startup stays one small request. The rows come in ONE
+     request (the same "export" the JSON backup button uses), not one per
+     problem, and everything after that is compared locally. Still heavy
+     (every body and figure), which is why this is a button rather than
      something that runs by itself.
 
-     It also refreshes serverIndex, so it doubles as the answer to "did my
-     collaborator publish anything since I opened this?" */
+     It also rebuilds serverIndex from those rows, so it doubles as the
+     answer to "did my collaborator publish anything since I opened this?" */
   let checking = false;
   let rebuilding = false;                // a figure rebuild is running (Check all waits)
 
@@ -326,8 +328,9 @@ function toggleTheme() {
     progress.textContent = 'Reading the database…';
     box.appendChild(progress);
 
+    let rows;
     try {
-      serverIndex = await SolutionStore.index();
+      rows = await SolutionStore.exportAll();
     } catch (e) {
       box.textContent = '';
       const err = document.createElement('div');
@@ -338,13 +341,19 @@ function toggleTheme() {
       return;
     }
 
+    // Same entries SolutionStore.index() would have given.
+    serverIndex = {};
+    Object.keys(rows).forEach((k) => {
+      const r = rows[k];
+      serverIndex[k] = { status: r.status, updated_at: r.updated_at, author: r.author, saved_by: r.saved_by };
+    });
+
     const keys = Object.keys(serverIndex);
     const stale = [], published = [], drafted = [], orphan = [], unsaved = [], oldFigs = [];
+    progress.textContent = `Checking ${keys.length} solution${keys.length === 1 ? '' : 's'}…`;
     await figBuildReady;
 
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      progress.textContent = `Checking ${i + 1} / ${keys.length}…`;
+    for (const key of keys) {
       const p = byKey.get(key);
       if (!p) {
         // A row whose problem is no longer in the quiz files at all — e.g.
@@ -352,9 +361,7 @@ function toggleTheme() {
         orphan.push({ key, status: serverIndex[key].status });
         continue;
       }
-      let row = null;
-      try { row = await SolutionStore.get(key); } catch (e) { continue; }
-      if (!row) continue;
+      const row = rows[key];
       const bucket = row.status === 'published' ? published : drafted;
       bucket.push(p);
       // problemHashOf needs crypto.subtle (https:// or localhost); without it

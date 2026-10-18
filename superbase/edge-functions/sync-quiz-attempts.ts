@@ -14,6 +14,9 @@
 //      attempts, or attempts lost to local corruption, come back — the
 //      client just calls this with an empty `attempts` array to pull
 //      without pushing anything.
+//      When the client sends `known_fingerprint` and the stored list
+//      matches it, the reply is { unchanged: true, confirmed: [...] }
+//      instead, with no rows (see the unchanged check in the handler).
 //
 // The response also includes identity_id (see migration
 // 003_attempts_realtime_broadcast.sql) so the client can subscribe to a
@@ -41,6 +44,16 @@ async function sha256Hex(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Fingerprint of a set of attempts: SHA-256 of "hash:score" entries sorted
+// and joined with "\n". The score is in it so that a score corrected in the
+// database (a regrade) still counts as a change and reaches every device.
+// Must match attemptsFingerprint() in js/attempts-sync.js exactly (same
+// entries, sort and separator), or every sync falls back to a full pull:
+// never wrong, just no saving.
+async function attemptsFingerprint(entries: { hash: string; score: number }[]): Promise<string> {
+  return sha256Hex([...new Set(entries.map((e) => `${e.hash}:${Number(e.score)}`))].sort().join("\n"));
 }
 
 function randomHex(byteLen: number): string {
@@ -314,6 +327,46 @@ export default {
       }
     }
 
+    const tokenFields = {
+      ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+      ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
+    };
+
+    // Unchanged check: the client sends `known_fingerprint`, a SHA-256 of
+    // the attempts (hash and score) it will hold once this push lands (its
+    // synced ones plus the ones just sent; see attemptsFingerprint() in
+    // js/attempts-sync.js, which must hash exactly the same way). The
+    // stored list is read back here, hash and score only, after the write above, so
+    // `confirmed` still means "read back from the database", never just "no
+    // error". If the two fingerprints match, the client already has every
+    // stored attempt and the reply carries no rows. Any difference (an
+    // attempt from another device, a delete, a pushed attempt that didn't
+    // land, local data lost) falls through to the full pull below. A client
+    // that sends no fingerprint (older versions) always gets the full pull.
+    const knownFingerprint = payload?.known_fingerprint;
+    if (typeof knownFingerprint === "string" && /^[0-9a-f]{64}$/.test(knownFingerprint)) {
+      const { data: hashRows, error: hashErr } = await admin
+        .from("quiz_attempts")
+        .select("attempt_hash, score")
+        .eq("identity_id", identityId);
+      if (hashErr) {
+        console.error("Quiz attempts hash fetch error:", hashErr);
+        return Response.json({ ok: false, error: "Saved, but couldn't refresh your list." }, { status: 500 });
+      }
+      const storedRows = (hashRows ?? []) as { attempt_hash: string; score: number }[];
+      const stored = storedRows.map((r) => r.attempt_hash);
+      if (await attemptsFingerprint(storedRows.map((r) => ({ hash: r.attempt_hash, score: r.score }))) === knownFingerprint) {
+        const storedSet = new Set(stored);
+        return Response.json({
+          ok: true,
+          unchanged: true,
+          confirmed: incoming.map((a) => a.attempt_hash).filter((h) => storedSet.has(h)),
+          identity_id: identityId,
+          ...tokenFields,
+        });
+      }
+    }
+
     // Pull: the full current list for this identity becomes the client's
     // new authoritative local copy, regardless of whether anything was
     // pushed this call — this is what makes "just call sync" also double
@@ -338,8 +391,7 @@ export default {
       ok: true,
       attempts: rows ?? [],
       identity_id: identityId,
-      ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
-      ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
+      ...tokenFields,
     });
   }),
 };

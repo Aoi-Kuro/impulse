@@ -1316,6 +1316,28 @@ document.addEventListener('click', (e) => {
   if (menu && menu.classList.contains('open') && !menu.contains(e.target) && e.target.id !== 'sfpSettingsBtn') closeSfpSettingsMenu();
 });
 
+// One identity refresh (refreshForumIdentityUI, js/forum.js) paints this
+// same avatar into the composer bar, this panel and the landing badge at
+// once, and each used to send its own get_author_stats request. They now
+// share one lookup per nickname for a minute. Promise.resolve matters: the
+// supabase-js query is a lazy thenable that re-sends on every await, so
+// the builder itself can't be shared. A failed lookup is dropped at once,
+// so the next paint retries instead of reusing the failure.
+const SFP_AVATAR_LOOKUP_TTL_MS = 60 * 1000;
+const _sfpAvatarLookups = new Map();   // nickname -> { at, promise }
+
+function _sfpAvatarLookup(client, nickname) {
+  const hit = _sfpAvatarLookups.get(nickname);
+  if (hit && Date.now() - hit.at < SFP_AVATAR_LOOKUP_TTL_MS) return hit.promise;
+  const promise = Promise.resolve(client.rpc('get_author_stats', { p_author_name: nickname }));
+  _sfpAvatarLookups.set(nickname, { at: Date.now(), promise });
+  promise.then(
+    (res) => { if (!res || res.error) _sfpAvatarLookups.delete(nickname); },
+    () => _sfpAvatarLookups.delete(nickname),
+  );
+  return promise;
+}
+
 async function loadSfpAvatar(nickname, avatarEl) {
   // Local-first: paint whatever we already have (cache, or the plain
   // letter) immediately and synchronously — no network round-trip stands
@@ -1352,7 +1374,7 @@ async function loadSfpAvatar(nickname, avatarEl) {
   if (!client) { await fallbackIfNeeded(); return; }
 
   try {
-    const { data, error } = await client.rpc('get_author_stats', { p_author_name: nickname });
+    const { data, error } = await _sfpAvatarLookup(client, nickname);
     if (error) throw error;
     const row = data && data[0];
     if (row && row.avatar_svg) {

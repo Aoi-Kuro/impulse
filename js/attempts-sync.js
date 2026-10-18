@@ -209,7 +209,15 @@ window.addEventListener('offline', () => {
 // and by endOfflineMode() (js/offline-mode.js), since turning offline mode
 // off doesn't touch navigator.onLine (the connection never actually
 // changed), so the 'online' event alone never fires for that case.
+//
+// Background tabs skip it. 'online' reaches every open tab at the same
+// instant (a laptop waking, Wi-Fi coming back), so with many tabs open each
+// one used to run the full set at once: one device sent ~290 requests in 3
+// seconds this way (Supabase logs, 2026-10-17 18:24). A hidden tab loses
+// nothing by waiting: the visibilitychange listeners in this file, js/stats.js
+// and js/solve-all-sync.js already re-sync the moment it is looked at again.
 function reconnectAllLiveSync() {
+  if (document.hidden) return;
   syncAttempts();
   if (typeof pollStatsPanel === 'function' && document.getElementById('sfpLiveDot')) pollStatsPanel();
   if (typeof _saSyncActive !== 'undefined' && _saSyncActive && typeof _saSyncRoundTrip === 'function') {
@@ -223,6 +231,22 @@ window.addEventListener('online', () => {
   // result the instant connectivity returns rather than a guess.
   reconnectAllLiveSync();
 });
+
+// SHA-256 of "hash:score" for each attempt, sorted and joined with "\n".
+// The score is in it so a score corrected in the database (a regrade)
+// still reads as a change. Must match attemptsFingerprint() in
+// superbase/edge-functions/sync-quiz-attempts.ts exactly. null where
+// crypto.subtle is missing (plain http://): the request then goes without a
+// fingerprint and gets the full list, as before.
+async function attemptsFingerprint(attempts) {
+  try {
+    const src = [...new Set(attempts.filter(a => a && a.hash).map(a => `${a.hash}:${Number(a.score)}`))].sort().join('\n');
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(src));
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    return null;
+  }
+}
 
 async function syncAttempts() {
   if (_attemptsSyncing) return; // already in flight — the caller's own next open/click will pick up the result
@@ -259,6 +283,10 @@ async function syncAttempts() {
       })),
       attempted_at: a.date
     }));
+    // Every attempt this device will hold once the push lands (synced ones
+    // plus the pending ones above). The server answers "unchanged" when its
+    // stored list matches, instead of resending the whole history.
+    const knownFingerprint = await attemptsFingerprint(local);
 
     // Plain fetch, not a Supabase client method — same pattern every other
     // Edge Function call in this codebase uses (callForumClaimNickname,
@@ -285,12 +313,30 @@ async function syncAttempts() {
         'apikey': SUPABASE_PUBLISHABLE_KEY,
         'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, identity_token: identityToken || undefined, attempts: pending }),
+      body: JSON.stringify({ device_id: deviceId, device_secret: deviceSecret, device_token: deviceToken || undefined, identity_token: identityToken || undefined, attempts: pending, known_fingerprint: knownFingerprint || undefined }),
       signal: AbortSignal.timeout(10000),
     });
     const data = await res.json().catch(() => null);
     if (typeof applyDeviceToken === 'function') applyDeviceToken(data);
     if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || 'sync_failed');
+
+    // The server's list matches this device's, so nothing is downloaded.
+    // Only attempts it lists in `confirmed` (read back from the database
+    // after the write) become synced; anything else stays queued and is
+    // sent again next time, exactly as on the full path below. Re-read from
+    // storage for the same reason as there: an attempt recorded while the
+    // request was in flight must not be overwritten.
+    if (data.unchanged) {
+      const confirmed = new Set(Array.isArray(data.confirmed) ? data.confirmed : []);
+      const localNow = loadStats();
+      let marked = false;
+      localNow.forEach(a => { if (!a.synced && confirmed.has(a.hash)) { a.synced = true; marked = true; } });
+      if (marked) saveStats(localNow);
+      _lastSyncFailed = false;
+      renderStats();
+      if (data.identity_id) _ensureAttemptsRealtime(data.identity_id);
+      return;
+    }
 
     // The server's list is now authoritative — rebuild the local cache from
     // it entirely (this is also the "corrupted local attempt gets reloaded

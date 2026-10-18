@@ -15,6 +15,8 @@
         sessionStorage for a fast first paint;
      2. one row call the first time a given solution is opened, cached in
         memory until the index shows it was unpublished or saved again.
+   While Go offline's 24h window runs, both are answered from the copy it
+   downloaded (offline-data/solutions.json) instead of the network.
 
    WHERE THE BUTTON APPEARS
      Random quiz — only once scores are revealed (checkAll), so a
@@ -185,10 +187,16 @@ function hasPublishedSolution(quizNum, problemId) {
 }
 
 /** One published row, or null. Only the body is cached; the background
-    index refresh above drops it once it is unpublished or edited. */
+    index refresh above drops it once it is unpublished or edited. While
+    offline mode is active the row comes from the download instead: the
+    network request would only be refused by sw.js. */
 async function fetchSolution(problemKey) {
   if (solutionsRowCache.has(problemKey)) return solutionsRowCache.get(problemKey);
-  const url = `${SOLUTIONS_REST}?select=problem_key,solution,figure,author,author_link,problem_hash,updated_at`
+  if (solutionsOfflineActive()) {
+    const rows = await loadOfflineSolutionRows();
+    return rows.find((r) => r && r.problem_key === problemKey) || null;
+  }
+  const url = `${SOLUTIONS_REST}?select=${SOLUTIONS_ROW_COLUMNS}`
             + `&problem_key=eq.${encodeURIComponent(problemKey)}&status=eq.published&limit=1`;
   const res = await fetch(url, { headers: solutionsRestHeaders() });
   if (!res.ok) throw new Error('Could not load the solution.');

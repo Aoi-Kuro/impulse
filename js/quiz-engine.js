@@ -1026,6 +1026,11 @@ function buildSolveAllSnapshot() {
     if (ansEl) {
       const { value, unit } = splitAnswer(ansEl.value);
       answersById[p.id] = { ans: value, unit };
+    } else if (solveAllAnswers[p.id]) {
+      // Card not rendered yet (cards stream in in batches): send the saved
+      // answer, so the server copy doesn't lose it and the merge
+      // (mergeSolveAllSnapshots, js/solve-all-sync.js) sees every answer.
+      answersById[p.id] = solveAllAnswers[p.id];
     }
   });
   const lockedIds = [...solveAllLocked].map(idx => solveAllProblems[idx]?.id).filter(Boolean);
@@ -1045,6 +1050,11 @@ function applySolveAllMerge(serverSnapshot) {
   const merged = mergeSolveAllSnapshots(buildSolveAllSnapshot(), serverSnapshot);
 
   solveAllAnswers = { ...solveAllAnswers, ...merged.answersById };
+  // An answer the merge dropped (the other side's status won and it had no
+  // answer) must not survive here either, or the card would show it again.
+  Object.keys(merged.checkedById).forEach(id => {
+    if (!(id in merged.answersById)) delete solveAllAnswers[id];
+  });
   const lockedIdSet = new Set(merged.lockedIds);
 
   solveAllProblems.forEach((p, idx) => {
@@ -1066,8 +1076,69 @@ function applySolveAllMerge(serverSnapshot) {
     }
   });
 
+  // The other device may still carry an old-checker "correct" (see
+  // regradeSolveAllState below); it is re-checked before anything is saved
+  // or pushed, so the merge can't bring it back.
+  regradeSolveAllState();
+
   updateStickyScore();
   saveSolveAllProgress();
+}
+
+// ─── Re-check of old-checker results ──────────────────────────────────────
+// Until 2026-10-17 an answer counted as correct within |expected| × 1% +
+// 1e-10. That absolute 1e-10 floor let almost any small number through on
+// the problems below, whose answers are all under 1e-8 (e.g. 1.934e-19
+// passed for 6.5178e-13). On these problems only, a saved 'correct' or
+// 'partial' is checked again with the current checker and becomes 'wrong'
+// (unlocked, so it can be retried) when its value is out of tolerance.
+// Only a definite miss is downgraded: an answer that wasn't saved, doesn't
+// parse, or has a unit the checker can't read is left as it is. Every
+// device runs this on open and after each merge, so they all reach the same
+// result and the union merge (js/solve-all-sync.js) can't restore it.
+const SA_REGRADE_PROBLEMS = { 2: ['P19', 'P20'], 3: ['P5i', 'P6i'], 4: ['P45', 'P50', 'P64', 'P68'] };
+
+function _saFailsRegrade(p, answer) {
+  if (!answer || !String(answer.ans || '').trim()) return false;
+  const res = gradeAnswer(joinAnswer(answer.ans, answer.unit), p);
+  if (res.unitStatus === 'invalid') return false;
+  if (!PTAnswer.validateAnswer(res.value, ANSWER_TYPE).ok) return false;
+  return !res.valueOk;
+}
+
+/** Downgrades failed old-checker results in the open session (state and
+    any rendered cards). Returns true if anything changed; the caller saves. */
+function regradeSolveAllState() {
+  const ids = SA_REGRADE_PROBLEMS[selectedQuizNum];
+  if (!ids) return false;
+  let changed = false;
+  solveAllProblems.forEach((p, idx) => {
+    if (!ids.includes(p.id)) return;
+    const status = solveAllChecked.get(idx);
+    if (status !== 'correct' && status !== 'partial') return;
+    // A rendered card's field is what gets saved, so judge that; otherwise
+    // the saved answer.
+    const ansEl = document.getElementById('sa-ans-' + idx);
+    let answer = solveAllAnswers[p.id];
+    if (ansEl) {
+      const { value, unit } = splitAnswer(ansEl.value);
+      answer = { ans: value, unit };
+    }
+    if (!_saFailsRegrade(p, answer)) return;
+
+    solveAllChecked.set(idx, 'wrong');
+    solveAllLocked.delete(idx);
+    solveAllAnswers[p.id] = answer;
+    changed = true;
+
+    const card = document.getElementById('sa-card-' + idx);
+    if (!card) return;   // drawn later from solveAllChecked, as 'wrong'
+    resetCardVisuals(idx);
+    restoreSolveAllCard(idx, p, 'wrong', answer);
+    const btn = document.getElementById('sa-check-btn-' + idx);
+    if (btn) btn.classList.remove('checked');
+  });
+  return changed;
 }
 
 // Zeroes the live in-memory progress (and any already-rendered cards) back
@@ -1181,6 +1252,9 @@ function _startSolveAllCore(order) {
       if (checkedById[p.id]) solveAllChecked.set(idx, checkedById[p.id]);
       if (lockedIdSet.has(p.id)) solveAllLocked.add(idx);
     });
+    // Before any card is drawn; saved (and pushed by the sync below) with
+    // the rest of the progress.
+    regradeSolveAllState();
   }
 
   // Hide normal quiz UI

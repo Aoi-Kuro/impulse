@@ -80,14 +80,28 @@ function mergeSolveAllSnapshots(local, server) {
   const lockedSet = new Set(local.lockedIds || []);
   const answersById = { ...local.answersById };
 
+  // A problem's answer always comes from the same side as its status.
+  // Taking the status from one side and the answer from the other is how a
+  // "correct" problem ended up showing another device's wrong or blank
+  // answer (seen in solve_all_progress, 2026-10-17). When the server's
+  // status wins and it has no answer for that problem, the losing answer
+  // is dropped rather than kept: restoreSolveAllCard (js/quiz-engine.js)
+  // then shows the problem's own answer for a correct or revealed card.
+  const serverAnswers = server.answersById || {};
+  const isBlank = (a) => !a || (!String(a.ans || '').trim() && !String(a.unit || '').trim());
   Object.keys(server.checkedById || {}).forEach(id => {
     if (_saStatusRank(server.checkedById[id]) > _saStatusRank(checkedById[id])) {
       checkedById[id] = server.checkedById[id];
+      if (id in serverAnswers) answersById[id] = serverAnswers[id];
+      else delete answersById[id];
     }
   });
   (server.lockedIds || []).forEach(id => lockedSet.add(id));
-  Object.keys(server.answersById || {}).forEach(id => {
-    if (!(id in answersById)) answersById[id] = server.answersById[id];
+  // Same status on both sides (or the server has none): keep local's answer,
+  // unless local's is missing or blank and the server's isn't.
+  Object.keys(serverAnswers).forEach(id => {
+    if (checkedById[id] !== server.checkedById?.[id] && id in checkedById) return;
+    if (isBlank(answersById[id]) && !isBlank(serverAnswers[id])) answersById[id] = serverAnswers[id];
   });
 
   return {
