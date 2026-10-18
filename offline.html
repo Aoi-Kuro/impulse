@@ -216,9 +216,16 @@
         }
       },
       // displayOverflow: wide display equations (with their \tag) scroll — same as index.html.
-      chtml: { fontURL: 'vendor/mathjax/fonts/woff', displayOverflow: 'scroll' },
+      // fontPath: the font's on-demand glyph files, served locally — see index.html.
+      chtml: { fontURL: 'vendor/mathjax/fonts/woff', fontPath: '[mathjax]/stix2-font', displayOverflow: 'scroll' },
       options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] },
-      startup: { typeset: false, ready() { MathJax.startup.defaultReady(); resolve(); } }
+      // One failed typeset must not fail every later one — see index.html.
+      startup: { typeset: false, ready() {
+        MathJax.startup.defaultReady();
+        const typeset = MathJax.typesetPromise;
+        MathJax.typesetPromise = (elements) => { const p = typeset(elements); MathJax.startup.promise = p.catch(() => { MathJax.typesetClear(elements); }); return p; };
+        resolve();
+      } }
     };
   });
 </script>

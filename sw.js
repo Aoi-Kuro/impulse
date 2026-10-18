@@ -31,7 +31,7 @@
 // no `document`, so it can't read the data-course attribute the way every
 // other file here does. This is a manual swap item at release time —
 // change the 'phys162' prefix by hand alongside the data-course attribute.
-const CACHE_NAME = 'phys161-offline-v9';
+const CACHE_NAME = 'phys161-offline-v10';
 
 // ── Phase 4: full offline mode (js/offline-mode.js) ──
 // OFFLINE_MODE_CACHE_NAME must match that file's own copy of the same
@@ -198,6 +198,32 @@ const PRECACHE_URLS = [
   'vendor/mathjax/fonts/woff/mjx-stx-v.woff',
   'vendor/mathjax/fonts/woff/mjx-stx-vx.woff',
   'vendor/mathjax/fonts/woff/mjx-stx-zero.woff',
+  // The font's on-demand glyph files (chtml.fontPath in index.html).
+  'vendor/mathjax/stix2-font/chtml/dynamic/accents-other.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/accents.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/arrows.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/calligraphic.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/cyrillic.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/dingbats.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/double-struck.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/enclosed.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/fraktur.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/greek.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/latin-b.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/latin-bi.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/latin-i.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/latin.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/math.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/monospace.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/phonetics.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/sans-serif.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/script.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/shapes.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/stretchy.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/symbols-other.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/symbols.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/upright.js',
+  'vendor/mathjax/stix2-font/chtml/dynamic/variants.js',
 ];
 
 // cache: 'reload' skips the browser's HTTP cache, so a precache run right

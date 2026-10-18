@@ -187,6 +187,13 @@
       },
       chtml: {
         fontURL: 'vendor/mathjax/fonts/woff',
+        // Glyph ranges outside the bundle (accented Latin, Cyrillic,
+        // superscripts like ², most arrows and shapes...) are loaded on first
+        // use as <fontPath>/chtml/dynamic/<range>.js. The default fontPath
+        // is jsDelivr, which offline mode refuses: the load failed and took
+        // the whole typeset down with it. [mathjax] is the bundle's own
+        // folder, so this resolves the same from every page (editor/ too).
+        fontPath: '[mathjax]/stix2-font',
         // A display equation wider than its box scrolls sideways — MathJax
         // lays out the equation and its \tag as one scrollable unit. With the
         // default ('overflow') a tagged equation spilled past the card and
@@ -214,6 +221,19 @@
         typeset: false,
         ready() {
           MathJax.startup.defaultReady();
+          // ONE failed typeset (a font file that can't load) used to fail
+          // every later one: the failed math stays in MathJax's document and
+          // is retried by each typeset, and the promise every call is chained
+          // onto stays rejected. All math after it stayed raw TeX until a
+          // reload. Now a failure drops that call's math and unblocks the
+          // chain; the call itself still rejects for its caller. Keep in sync
+          // with offline.html and editor/index.html.
+          const typeset = MathJax.typesetPromise;
+          MathJax.typesetPromise = (elements) => {
+            const p = typeset(elements);
+            MathJax.startup.promise = p.catch(() => { MathJax.typesetClear(elements); });
+            return p;
+          };
           resolve();
         }
       }
