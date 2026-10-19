@@ -221,10 +221,10 @@ window.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById(id);
     if (el) el.textContent = `${COURSE_CODE_DISPLAY} · ${suffix}`;
   };
-  _setEyebrowText('eyebrowLandingPractice', 'Practice Mode');
-  _setEyebrowText('eyebrowLandingSolveAll', 'Solve them all');
+  _setEyebrowText('eyebrowLandingPractice', 'Practice Platform');
+  _setEyebrowText('eyebrowLandingSolveAll', 'Entire Set');
   _setEyebrowText('eyebrowQuizHeader', 'Practice Mode');
-  _setEyebrowText('eyebrowSolveHeader', 'Solve Mode');
+  _setEyebrowText('eyebrowSolveHeader', 'Entire Set');
 });
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {

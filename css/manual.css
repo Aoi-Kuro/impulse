@@ -232,100 +232,6 @@
 .manual-content-body td code { white-space: nowrap; }
 .manual-content-body tr:last-child td { border-bottom: none; }
 
-/* ── Interactive figure demo (Random 6 mode page) ──
-   Reuses the site's own six theme presets (dark+light each) as the swatch
-   options, but every color is overridden as a *local* CSS custom property
-   on .manual-fig-demo-preview rather than on body[data-theme], so flipping
-   it here never touches the manual's own chrome or the rest of the app —
-   the SVG inside just happens to read var(--surface)/var(--svg-blue)/
-   var(--svg-red)/currentColor same as it would live in a quiz, and those
-   names resolve to whatever this wrapper sets instead of the real theme. */
-.manual-fig-demo {
-  margin: 1.1rem 0 1.5rem;
-  border: 1px solid var(--border);
-  border-radius: calc(12px * var(--radius-mult));
-  overflow: hidden;
-}
-.manual-fig-demo-preview {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 1.7rem 1rem;
-  background: var(--surface);
-  transition: background 0.35s ease;
-}
-.manual-fig-demo-preview svg {
-  width: 260px;
-  height: auto;
-  color: var(--text);
-  transition: color 0.35s ease;
-}
-.manual-fig-demo-preview svg * { transition: fill 0.35s ease, stroke 0.35s ease; }
-
-/* Six presets × two modes, values lifted straight from the site's real
-   body[data-theme=…] blocks in style.css. */
-.manual-fig-demo-preview[data-theme="default"][data-mode="dark"]  { --bg:#0d1117; --surface:#161b22; --text:#e6edf3; --svg-blue:#79AFFF; --svg-red:#FF8A98; }
-.manual-fig-demo-preview[data-theme="default"][data-mode="light"] { --bg:#ffffff; --surface:#f6f8fa; --text:#1f2328; --svg-blue:#2C6DD5; --svg-red:#C73A4A; }
-.manual-fig-demo-preview[data-theme="nord"][data-mode="dark"]     { --bg:#2E3440; --surface:#3B4252; --text:#ECEFF4; --svg-blue:#88C0D0; --svg-red:#B48EAD; }
-.manual-fig-demo-preview[data-theme="nord"][data-mode="light"]    { --bg:#ECEFF4; --surface:#E5E9F0; --text:#2E3440; --svg-blue:#4C7EA8; --svg-red:#8067A8; }
-.manual-fig-demo-preview[data-theme="sakura"][data-mode="dark"]   { --bg:#241A20; --surface:#34222A; --text:#F7E9EE; --svg-blue:#FF7AA8; --svg-red:#8FD6A8; }
-.manual-fig-demo-preview[data-theme="sakura"][data-mode="light"]  { --bg:#FFF5F7; --surface:#FFE9EF; --text:#4A2530; --svg-blue:#E8558A; --svg-red:#4FAE7A; }
-.manual-fig-demo-preview[data-theme="cyber"][data-mode="dark"]    { --bg:#05060A; --surface:#0D0F1A; --text:#D8F8FF; --svg-blue:#00F0FF; --svg-red:#FF2FD0; }
-.manual-fig-demo-preview[data-theme="cyber"][data-mode="light"]   { --bg:#F2F4FB; --surface:#E6E9F7; --text:#0A0C14; --svg-blue:#7A00E0; --svg-red:#D6009C; }
-.manual-fig-demo-preview[data-theme="forest"][data-mode="dark"]   { --bg:#141A13; --surface:#1E281C; --text:#E4ECDF; --svg-blue:#4F9D7A; --svg-red:#D98A3D; }
-.manual-fig-demo-preview[data-theme="forest"][data-mode="light"]  { --bg:#F5F2E8; --surface:#ECE5D3; --text:#2B2517; --svg-blue:#3F7D55; --svg-red:#B5651D; }
-.manual-fig-demo-preview[data-theme="solar"][data-mode="dark"]    { --bg:#002B36; --surface:#073642; --text:#F0ECD7; --svg-blue:#2AA1D6; --svg-red:#D98032; }
-.manual-fig-demo-preview[data-theme="solar"][data-mode="light"]   { --bg:#FDF6E3; --surface:#EEE8D5; --text:#43403A; --svg-blue:#1B7BAB; --svg-red:#B85C1E; }
-
-.manual-fig-demo-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-  padding: 0.65rem 0.9rem;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-}
-.manual-fig-demo-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: calc(20px * var(--radius-mult));
-  padding: 0.32rem 0.75rem;
-  font-family: var(--sans);
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text);
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-.manual-fig-demo-toggle:hover { border-color: var(--accent); }
-
-.manual-fig-demo-swatches { display: flex; gap: 0.4rem; }
-.manual-fig-demo-swatch {
-  width: 19px;
-  height: 19px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
-  cursor: pointer;
-  padding: 0;
-  transition: transform 0.15s, border-color 0.15s;
-}
-.manual-fig-demo-swatch:hover { transform: scale(1.15); }
-.manual-fig-demo-swatch.active { border-color: var(--text); }
-
-.manual-fig-demo-caption {
-  padding: 0.6rem 0.9rem 0.85rem;
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  line-height: 1.5;
-  color: var(--muted);
-  border-top: 1px dashed var(--border);
-}
-
 /* ── Live avatar demo (Posting & identity page) ──
    Real DiceBear identicons, fetched live as the reader types, via the exact
    same seed→SVG endpoint the forum itself uses at claim/rename time
@@ -613,7 +519,7 @@ body.light .manual-github-demo {
    posting. They intentionally reuse the real .forum-message/.forum-flag-btn/
    etc. classes from forum.css (already loaded on this page) purely for
    visual fidelity, then sit inside a bordered .manual-mock-forum wrapper
-   with a manual-fig-demo-style dashed caption underneath explaining what's
+   with a dashed caption underneath (like .manual-mock-caption) explaining what's
    being shown, since a screenshot would go stale the moment the real forum's
    styling changes and a live embed would risk actually hitting the network.
    Buttons inside carry no onclick and tabindex="-1" so they read as inert
@@ -672,7 +578,11 @@ body.light .manual-github-demo {
   min-height: 100px;
   padding: 1.6rem 1rem;
   background: var(--surface);
+  /* The whole box is the tap target (see manualSplashDemoReroll), so the
+     deliberately blank splash, which hides the badge, can be tapped past. */
+  cursor: pointer;
 }
+.manual-splash-demo-preview:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .manual-splash-demo-preview .mc-splash {
   position: static;
   top: auto;
@@ -698,8 +608,7 @@ body.light .manual-github-demo {
 /* ── Theme gallery (Appearance page) ──
    Preview windows — one per built-in theme — each split into a night half
    and a day half. Colors are set as local CSS custom properties on
-   .manual-theme-window-half (same technique as .manual-fig-demo-preview
-   above), so the little "card" mockup inside just reads
+   .manual-theme-window-half, so the little "card" mockup inside just reads
    var(--surface)/var(--border)/var(--accent)/etc. and those resolve to
    whichever half they're sitting in. Those preview colors are static and
    NOT wired to themes.js — but the window itself is clickable (see
@@ -798,10 +707,220 @@ body.light .manual-github-demo {
   border-top: 1px dashed var(--border);
 }
 
+/* ── Keys, tips and numbered dots (any page) ── */
+.manual-content-body kbd {
+  font-family: var(--mono);
+  font-size: 0.76em;
+  white-space: nowrap;
+  color: var(--text);
+  padding: 0.05em 0.4em;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: calc(4px * var(--radius-mult));
+  background: var(--bg);
+}
+.manual-tip {
+  margin: 1rem 0;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.88rem;
+  border-left: 3px solid var(--accent);
+  border-radius: calc(6px * var(--radius-mult));
+  background: rgba(var(--accent-rgb), 0.08);
+}
+/* A numbered dot tying a spot in a .manual-mock to a row of the table
+   under it. */
+.manual-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent, var(--chrome-dark));
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: 0;
+  vertical-align: 0.1em;
+}
+
+/* ── UI mocks ──
+   Inert copies of real screens, built from the site's own classes (the
+   problem card, the filter window, the Solution screen, the Stats rows …),
+   so they follow the theme and keep up with the real styling. Same idea
+   as .manual-mock-forum below; nothing in them is wired to anything. */
+.manual-mock {
+  margin: 1.1rem 0 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult));
+  overflow: hidden;
+  background: var(--bg);
+  font-family: var(--sans);
+  line-height: 1.4;
+  pointer-events: none;
+  user-select: none;
+}
+.manual-mock-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem;
+}
+.manual-mock-caption {
+  padding: 0.6rem 0.9rem 0.85rem;
+  border-top: 1px dashed var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* A dot beside the piece of UI it labels. */
+.manual-mock-step {
+  display: grid;
+  grid-template-columns: 1.15rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.6rem;
+}
+.manual-mock-step > .manual-n { margin-top: 0.15rem; }
+/* A row of small controls shown side by side. */
+.manual-mock-inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.1rem;
+}
+.manual-mock-inline .forum-problem-btn { margin-right: 0; }
+.manual-mock-note {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+
+/* Main screen: the top bar, then the landing box's own controls. */
+.manual-mock-topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.8rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.manual-mock-topbar > span { display: inline-flex; align-items: center; gap: 0.45rem; }
+.manual-mock-topbar > span:last-child { margin-left: auto; letter-spacing: 0.2em; }
+.manual-mock-logo { width: 1.35rem; height: 1.35rem; display: block; }
+.manual-mock-landing { max-width: 30rem; width: 100%; margin: 0 auto; box-sizing: border-box; }
+.manual-mock .quiz-select-grid,
+.manual-mock .mode-switch-section { margin-bottom: 0; }
+.manual-mock .forum-launch-btn { margin-top: 0.6rem; }
+
+/* The filter window: in the page, not centred in the quiz column. */
+.manual-mock .topic-selector-wrap { max-width: none; margin: 0; }
+
+/* A card's buttons wrap instead of being clipped by the card when the
+   manual's column is narrow. */
+.manual-mock .card-check-row { flex-wrap: wrap; }
+
+/* Solve Them All: #stickyScore's look, without its fixed position. */
+.manual-mock-sticky {
+  align-self: center;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.65rem 1.1rem 0.6rem;
+  font-family: var(--mono);
+  min-width: 110px;
+  text-align: center;
+}
+.manual-mock-sticky .sticky-score-val small { color: var(--muted); font-size: 1rem; }
+
+/* Solution screen: a smaller figure than the real one. */
+.manual-mock .solution-figstage { display: flex; justify-content: center; padding: 0.4rem 0; }
+.manual-mock-fig { width: 220px; max-width: 100%; height: auto; display: block; }
+.manual-mock .solution-pager { margin-top: 0; }
+
+/* Stats: a card from the Stats screen, without its top margin. The manual's
+   column is much narrower than the Stats screen, so the topic name gets a
+   narrower column there, or it leaves the bars no room at all. */
+.manual-mock .tp-section,
+.manual-mock .problems-overview-section { margin-top: 0; }
+.manual-mock .tp-row { grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) 2.8rem; }
+@media (hover: hover) and (pointer: fine) {
+  .manual-mock .tp-row { grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) 4.2rem 2.8rem; }
+}
+
+/* ── Live answer field (Entering answers page) ──
+   The real .answer-row / .answer-input / .answer-preview / .feedback, so it
+   reads exactly like a quiz card; only the preview is placed in the flow
+   here instead of floating under the field. */
+.manual-answer-demo {
+  margin: 1.1rem 0 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: calc(12px * var(--radius-mult));
+  overflow: hidden;
+  background: var(--surface);
+}
+.manual-answer-demo-task {
+  padding: 0.85rem 1.1rem 0.2rem;
+  font-size: 0.9rem;
+}
+.manual-answer-demo .answer-row { padding-top: 0.6rem; }
+.manual-answer-demo .answer-preview {
+  position: static;
+  display: inline-block;
+  margin: 0 1.1rem 0.7rem;
+  box-shadow: none;
+}
+.manual-answer-demo .answer-preview[hidden] { display: none; }
+.manual-answer-demo-caption {
+  padding: 0.6rem 0.9rem 0.85rem;
+  border-top: 1px dashed var(--border);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ── Previous / next page ── */
+.manual-pager {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 2rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
+}
+.manual-pager:empty { display: none; }
+.manual-pager-btn {
+  flex: 0 1 48%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: calc(8px * var(--radius-mult));
+  padding: 0.55rem 0.8rem;
+  color: var(--text);
+  font-family: var(--sans);
+  text-align: left;
+  transition: border-color 0.15s;
+}
+.manual-pager-btn.next { margin-left: auto; text-align: right; }
+.manual-pager-btn small { font-family: var(--mono); font-size: 0.64rem; color: var(--muted); }
+.manual-pager-btn span { font-size: 0.85rem; font-weight: 600; }
+.manual-pager-btn:hover { border-color: var(--accent); }
+
 /* ── Responsive: stack sidebar above content on narrow screens ── */
 @media (max-width: 760px) {
   .manual-body { flex-direction: column; }
   .manual-sidebar { position: static; width: 100%; flex: 1 1 auto; }
   .manual-content { padding: 1.4rem 1.3rem; width: 100%; }
   .manual-theme-gallery { grid-template-columns: 1fr 1fr; }
+  /* Wide tables scroll sideways instead of widening the page. */
+  .manual-content-body table { display: block; overflow-x: auto; }
 }

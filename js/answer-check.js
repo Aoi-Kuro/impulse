@@ -20,7 +20,6 @@
 // them from the field and joinAnswer() puts them back.
 
 const ANSWER_TYPE = 'numeric';
-const ANSWER_PLACEHOLDER = 'e.g. 9.81 m/s^2';
 
 // What the engine's error codes say in the field's preview.
 const ANSWER_MESSAGES = {
@@ -143,7 +142,7 @@ function markAnswerInput(input, pts) {
 // refuses a whole batch if entered_value or entered_unit is over 200
 // characters; the split pieces can't be longer than what was typed.
 function answerInputHtml(id) {
-  return `<input class="answer-input" id="${id}" type="text" placeholder="${ANSWER_PLACEHOLDER}" maxlength="200"
+  return `<input class="answer-input" id="${id}" type="text" placeholder="Answer" maxlength="200"
     autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Answer: number and unit">`;
 }
 

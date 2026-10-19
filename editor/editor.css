@@ -150,7 +150,9 @@ body.sb-closed .ed-sidebar { margin-left: calc(var(--sb-w) * -1); }
   display: flex; align-items: center; justify-content: center; text-align: center;
   background: var(--bg); border: 1px dashed var(--border); border-radius: calc(6px * var(--radius-mult)); color: var(--muted); font-size: .82rem;
 }
-.ed-stage { aspect-ratio: 8 / 5; width: 100%; font-family: var(--sans); }
+/* Surface, like the site's figure box (.solution-figwrap), so cbg / csurface
+   fills look the same as on the site. */
+.ed-stage { aspect-ratio: 8 / 5; width: 100%; font-family: var(--sans); background: var(--surface); }
 .ed-stage.has-fig { display: block; aspect-ratio: auto; border-style: solid; padding: .6rem; color: var(--text); }
 .ed-solview { min-height: 8rem; padding: 1rem; font-family: var(--sans); }
 /* With content: a normal left-aligned block that grows with the text. */
@@ -953,7 +955,6 @@ body.man-open #edManualBtn { opacity: 1; transform: scale(1.1); }
   display: block; width: 100%; min-height: 9.5rem; resize: vertical; box-sizing: border-box;
   margin: 0; padding: .7rem .85rem; border: 0; border-bottom: 1px solid var(--border); outline: none;
   background: var(--bg); color: var(--text); white-space: pre; overflow: auto; tab-size: 2;
-  scrollbar-color: var(--border) transparent;
   font-family: var(--mono); font-size: .76rem; line-height: 1.55;
 }
 .edm-src:focus { box-shadow: inset 0 0 0 1px var(--accent); }
@@ -1045,4 +1046,29 @@ body.man-open #edManualBtn { opacity: 1; transform: scale(1.1); }
   .edm-ws-split { grid-template-columns: minmax(0, 1fr); }
   .edm-ws-pane + .edm-ws-pane { border-left: 0; border-top: 3px double var(--border); }
   .manual-content-body table { display: block; overflow-x: auto; }
+}
+
+/* Scrollbars keep their room (nothing shifts) but stay invisible until used:
+   editor.js fades --sb-a on an element from 0 to 1 while it scrolls or the
+   pointer is over its bar, and back after. The scrollbar pseudo-elements
+   inherit it from their element (`*` never matches those, so each element
+   still starts from its own 0). Chrome/Safari draw the ::-webkit-scrollbar
+   parts; Chrome ignores those once scrollbar-color is set, so that one
+   (Firefox's) only applies where they don't exist. */
+body.ed * { --sb-a: 0; }
+
+body.ed ::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+body.ed ::-webkit-scrollbar-track,
+body.ed ::-webkit-scrollbar-corner { background: transparent; }
+body.ed ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) calc(var(--sb-a) * 100%), transparent);
+  border-radius: 4px;
+}
+body.ed ::-webkit-scrollbar-button { display: none; }
+
+@supports not selector(::-webkit-scrollbar) {
+  body.ed * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted) calc(var(--sb-a) * 100%), transparent) transparent;
+  }
 }

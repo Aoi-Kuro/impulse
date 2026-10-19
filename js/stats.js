@@ -226,7 +226,7 @@ function renderAttemptReview(attempt) {
 
   metaEl.innerHTML = `
     <span class="review-meta-item"><span class="review-meta-label">Quiz</span>#${attempt.quizNum} · ${quizName}</span>
-    <span class="review-meta-item"><span class="review-meta-label">Mode</span>${attempt.mode === 'cumulative' ? 'Cumulative' : 'Single'}</span>
+    <span class="review-meta-item"><span class="review-meta-label">Mode</span>${attempt.mode === 'cumulative' ? `Sets 1–${attempt.quizNum}` : 'Single Set'}</span>
     <span class="review-meta-item"><span class="review-meta-label">Date</span>${dateStr} ${timeStr}</span>
     <span class="review-meta-item"><span class="review-meta-label">Duration</span>${fmtDuration(attempt.duration)}</span>
     <span class="review-meta-item"><span class="review-meta-label">Score</span>${attempt.score}/${attempt.maxScore}</span>`;
@@ -470,7 +470,7 @@ function renderFilters() {
   const mg = document.createElement('div');
   mg.className = 'sf-group';
   mg.innerHTML = '<span class="sf-label">Mode:</span>';
-  [['all','All'],['single','Single'],['cumulative','Cumul.']].forEach(([val, label]) => {
+  [['all','All'],['single','Single'],['cumulative','Multi-set']].forEach(([val, label]) => {
     const btn = document.createElement('button');
     btn.className = 'sf-chip' + (sfMode === val ? ' active mode-active' : '');
     btn.textContent = label;
@@ -743,7 +743,7 @@ function renderTable() {
           #${a.quizNum} · ${name}
         </span>
       </td>
-      <td><span class="mode-badge ${a.mode}">${a.mode === 'cumulative' ? 'Cumul.' : 'Single'}</span></td>
+      <td><span class="mode-badge ${a.mode}">${a.mode === 'cumulative' ? `Sets 1–${a.quizNum}` : 'Single'}</span></td>
       <td style="white-space:nowrap;color:var(--muted)">
         ${dateStr} <span style="opacity:0.6">${timeStr}</span>
         ${a.synced ? '' : '<div class="attempt-not-synced">not synced</div>'}
@@ -798,6 +798,7 @@ function renderTable() {
   }
 
   if (typeof _setSyncButtonState === 'function') _setSyncButtonState(_attemptsSyncing ? 'syncing' : 'idle');
+  if (typeof updateExportButtonState === 'function') updateExportButtonState();
 }
 
 // ── All-problems overview ────────────────────────────────────────────────────
@@ -982,7 +983,7 @@ function renderProblemsOverview() {
             <span class="po-legend-item"><span class="score-box score-box-unattempted po-legend-swatch"></span>not attempted</span>
           </div>
           <div class="problems-overview-grid">${boxes}</div>
-          <div class="problems-overview-footnote">Results shown are for Random ${QUIZ_SIZE} mode only: Solve Them All attempts aren't reflected here.</div>
+          <div class="problems-overview-footnote">Results shown are for Random ${QUIZ_SIZE} mode only: Entire Set attempts aren't reflected here.</div>
         </div>
       </div>`;
   }).join('');
@@ -1196,7 +1197,7 @@ function renderTopicPerformance() {
         </div>
         <div class="tp-body">
           <div class="tp-groups" id="tpGroups">${groups}</div>
-          <div class="problems-overview-footnote">Average counts every answer, with its 95% interval as |—|; best takes each problem's best score. Random ${QUIZ_SIZE} mode only: Solve Them All attempts aren't reflected here.</div>
+          <div class="problems-overview-footnote">Average counts every answer, with its 95% interval as |—|; best takes each problem's best score. Random ${QUIZ_SIZE} mode only: Entire Set attempts aren't reflected here.</div>
         </div>
       </div>`;
 }

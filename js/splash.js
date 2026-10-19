@@ -98,7 +98,16 @@
     CHAINREACTION:  () => isDate(12, 2),  // First controlled nuclear chain reaction, 1942
     WRIGHTFLIGHT:   () => isDate(12, 17), // Wright brothers' first flight, 1903
     JWST:           () => isDate(12, 25), // James Webb Space Telescope launch, 2021
-    CUSTOM:             () => isDate(9, 26)
+
+    // ── PHYS 161 (mechanics & thermodynamics) ──────────────────────
+    NEWTON:         () => isDate(1, 4),   // Newton's birthday, 1643 (Gregorian)
+    KEPLER:         () => isDate(1, 6),   // Kepler's birthday, 1572 (Gregorian)
+    FOUCAULT:       () => isDate(2, 3),   // Foucault pendulum at the Paris Observatory, 1851
+    GALILEO:        () => isDate(2, 15),  // Galileo's birthday, 1564
+    BOLTZMANN:      () => isDate(2, 20),  // Boltzmann's birthday, 1844
+    NOETHER:        () => isDate(3, 23),  // Emmy Noether's birthday, 1882
+    JOULE:          () => isDate(12, 24), // Joule's birthday, 1818
+    CUSTOM:         () => isDateRange(11, 1, 7) // Exam week
   };
 
   function eligible () {
@@ -163,13 +172,34 @@
     return choice[0];
   }
 
+  /* ── {pct} / {p} / {count} placeholders ───────────────────────────
+     The odds splash states its own real chance: the demon roll (below)
+     takes DEMON_CHANCE of draws, the rest are a uniform pick from the
+     pool eligible right now, so one splash's chance is
+     (1 - DEMON_CHANCE) / pool size. {pct} is that in percent, {p} an
+     upper bound rounded up to 3 decimals. {count} is every splash there
+     is, time- and date-specific ones included, plus the demon's. Filled
+     in on the way out, so the no-repeat window still keys on the raw
+     text. */
+  function fillPlaceholders (text, poolSize) {
+    if (text.indexOf('{') === -1) return text;
+    const p = (1 - DEMON_CHANCE) / poolSize;
+    return text
+      .replace('{pct}', (p * 100).toFixed(2))
+      .replace('{p}', String(Math.ceil(p * 1000) / 1000))
+      .replace('{count}', String(splashes.length + 1));
+  }
+
   function pick () {
     if (!splashes) return null; // init() hasn't resolved yet — extremely unlikely by the
                                  // time anything can call this, but guards eligible()'s
                                  // .filter() against a null splashes either way.
     const pool = eligible();
     if (!pool.length) return null;
+    return fillPlaceholders(pickRaw(pool), pool.length);
+  }
 
+  function pickRaw (pool) {
     // A due holiday/anniversary splash always wins the first draw of
     // the day it's active, regardless of the no-repeat window below.
     const mandatoryChoice = pickDueMandatory(pool);

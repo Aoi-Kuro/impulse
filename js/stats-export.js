@@ -96,7 +96,7 @@ function _exportRow(a) {
   const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   return {
     quiz: `#${a.quizNum} · ${name}`,
-    mode: a.mode === 'cumulative' ? 'Cumulative' : 'Single',
+    mode: a.mode === 'cumulative' ? `Sets 1–${a.quizNum}` : 'Single Set',
     dateTime: `${dateStr} ${timeStr}`,
     duration: fmtDuration(a.duration),
     score: `${a.score}/${a.maxScore}`,

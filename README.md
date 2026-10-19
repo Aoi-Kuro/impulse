@@ -547,10 +547,11 @@ guarded with `typeof fn === 'function'`.
 `js/quiz-engine.js` drives every quiz screen.
 
 **Landing screen.** Quiz buttons are rendered from `QUIZZES`
-(`renderQuizButtons`). A mode switch selects **🎯 Random N** or
-**⚡ Solve Them All**; for quiz 2 and later, a second switch selects
-**Single quiz** or **Cumulative**. Settings can pre-select the latest quiz
-and the cumulative switch.
+(`renderQuizButtons`) and labelled "Set #N". A mode switch selects
+**🎯 Random N** or **⚡ Entire Set** (internally "solve-all"); for set 2 and
+later, a second switch selects **📝 Single Set** or **📚 Sets 1–N**
+(internally "cumulative"; the label follows the selected set). Settings can
+pre-select the latest set and the cumulative switch.
 
 **Random N** (`newQuiz`, `render`, `checkAll`). `QUIZ_SIZE` problems are drawn
 from the selected quiz. In cumulative mode, `QUIZ_CUMULATIVE_PREV_COUNT` come
@@ -578,7 +579,7 @@ row (a P⇄Q toggle switches cumulative rows between problem and quiz labels), a
   a higher-priority banner is up.
 - **Auto-stop** (optional): the attempt is submitted after 50 minutes.
 
-**Solve Them All** (`startSolveAll`, `buildSolveAllCards`,
+**Entire Set** (`startSolveAll`, `buildSolveAllCards`,
 `checkSingleProblem`, `revealAnswer`). Every problem of the quiz (or of all
 quizzes up to it, in cumulative mode) is shown, ordered or shuffled (an order
 picker page appears unless the order is locked in Settings). Each card is

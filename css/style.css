@@ -219,9 +219,13 @@
   }
   /* 350px matches the width="350px" every problem image carries; the CSS
      width wins over that attribute, so the Figure size setting scales all
-     of them. max-width keeps a scaled-up figure inside the card on phones. */
+     of them. max-width keeps a scaled-up figure inside the card on phones.
+     A tall, narrow image is capped at 500px high instead: --fig-ar is its
+     width/height, set once it loads (js/fig-attribution.js); until then
+     the fallback 100 leaves it at 350px. */
   .fig-img-wrap img {
-    width: calc(350px * var(--user-fig-scale, 1));
+    width: min(calc(350px * var(--user-fig-scale, 1)),
+               calc(500px * var(--user-fig-scale, 1) * var(--fig-ar, 100)));
     max-width: 100%;
     height: auto;
   }

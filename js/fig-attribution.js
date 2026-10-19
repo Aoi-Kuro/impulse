@@ -32,3 +32,26 @@ document.addEventListener("keydown", function (e) {
       .forEach((b) => b.classList.remove("is-open"));
   }
 });
+
+// ─── Problem figure height cap ──────────────────────────────────────────────
+// css/style.css shows problem images 350px wide unless that would make them
+// over 500px high; it needs each image's width/height as --fig-ar for that.
+// load doesn't bubble, so this listens in the capture phase; the sweep
+// covers images that finished loading before this (tier-2) script ran.
+function setFigAspect(img) {
+  if (img.naturalWidth && img.naturalHeight) {
+    img.style.setProperty("--fig-ar", String(img.naturalWidth / img.naturalHeight));
+  }
+}
+
+document.addEventListener(
+  "load",
+  function (e) {
+    if (e.target.matches && e.target.matches(".fig-img-wrap img")) setFigAspect(e.target);
+  },
+  true
+);
+
+document.querySelectorAll(".fig-img-wrap img").forEach(function (img) {
+  if (img.complete) setFigAspect(img);
+});

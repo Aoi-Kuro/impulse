@@ -631,7 +631,7 @@ function performResetAllCache() {
 function performResetMathCache() {
   const btn = document.getElementById('resetMathCacheBtn');
   Promise.resolve(typeof clearAllMathCache === 'function' ? clearAllMathCache() : null)
-    .then(() => { if (btn) btn.title = btn.dataset.idleTitle = 'Cleared \u2014 equations will re-render next time you open Solve-All'; })
+    .then(() => { if (btn) btn.title = btn.dataset.idleTitle = 'Cleared \u2014 equations will re-render next time you open Entire Set'; })
     .catch(() => { if (btn) btn.title = btn.dataset.idleTitle = 'Clear failed \u2014 try again'; });
 }
 
@@ -675,7 +675,7 @@ const CACHE_STORAGE_ROWS = [
     id: 'resetCacheBtn',
     icon: '\u21BB',
     title: 'Reset all cache',
-    desc: 'Clears local attempt history and Solve-All progress on this device. Nothing is deleted from the server \u2014 if you\u2019re signed in, the next sync pulls it straight back down.',
+    desc: 'Clears local attempt history and Entire Set progress on this device. Nothing is deleted from the server \u2014 if you\u2019re signed in, the next sync pulls it straight back down.',
     ariaLabel: 'Reset all cache',
     handler: 'performResetAllCache',
   },
@@ -683,7 +683,7 @@ const CACHE_STORAGE_ROWS = [
     id: 'resetMathCacheBtn',
     icon: '\u21BB',
     title: 'Reset prerendered $\\mathrm{La\\TeX}$ equations',
-    desc: 'Clears every cached prerendered equation on this device. They re-render (and re-cache) the next time you open Solve-All.',
+    desc: 'Clears every cached prerendered equation on this device. They re-render (and re-cache) the next time you open Entire Set.',
     ariaLabel: 'Reset prerendered LaTeX equations',
     handler: 'performResetMathCache',
   },

@@ -704,7 +704,6 @@ function render() {
       </div>
       <div class="problem-text">${p.text}</div>
       <div class="answer-row">
-        <span class="answer-label">Answer =</span>
         ${answerInputHtml(`ans-${i}`)}
       </div>
       <div class="feedback" id="fb-${i}"></div>
@@ -1544,7 +1543,6 @@ function buildSolveAllCards(container, batchSize = 12) {
             </div>
             <div class="problem-text">${cached !== null ? cached.html : p.text}</div>
             <div class="answer-row">
-              <span class="answer-label">Answer =</span>
               ${answerInputHtml(`sa-ans-${i}`)}
             </div>
             <div class="feedback" id="sa-fb-${i}"></div>
@@ -2097,7 +2095,7 @@ function renderQuizButtons() {
       (n === selectedQuizNum ? ' selected' : '') +
       (!q.enabled ? ' disabled' : '');
     btn.onclick = () => selectQuiz(n);
-    btn.innerHTML = `Quiz #${n}<span class="quiz-select-name">${
+    btn.innerHTML = `Set #${n}<span class="quiz-select-name">${
       q.enabled ? q.name : 'Coming soon'
     }</span>`;
     grid.appendChild(btn);
@@ -2136,6 +2134,8 @@ function selectQuiz(n) {
   // Show/hide cumulative switch (only for quiz 2+)
   const cWrap = document.getElementById('cumulativeSwitchWrap');
   if (cWrap) cWrap.classList.toggle('visible', n >= 2);
+  // Cumulative draws from sets 1..n (initTopics), so its label names them
+  document.getElementById('cumLabelCumulative').textContent = `📚 Sets 1–${n}`;
 
   // Reset cumulative mode to single when switching to quiz 1
   if (n === 1 && selectedCumulativeMode === 'cumulative') {
@@ -2168,7 +2168,7 @@ function selectQuiz(n) {
   // Practice-mode one (first <header> in document order); the Solve-All
   // header was silently never updated at all, regardless of which quiz
   // was selected.
-  const titleHtml = `${q.name} <span>Quiz</span>`;
+  const titleHtml = `${q.name} <span>Set</span>`;
   document.getElementById('landingTitle').innerHTML = titleHtml;
   const quizHeaderH1 = document.querySelector('#quizHeader h1');
   if (quizHeaderH1) quizHeaderH1.innerHTML = titleHtml;
@@ -2515,7 +2515,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '12.4.2';
+const CURRENT_VERSION = '12.4.3';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

@@ -1050,7 +1050,7 @@ function renderSettingsStudyTab() {
     <div class="settings-row">
       <div class="settings-row-label">
         <div class="settings-row-title">Select cumulative by default</div>
-        <div class="settings-row-desc">Selecting quiz #2 or later starts with the Cumulative switch already on, instead of Single quiz. Applies from your next page load.</div>
+        <div class="settings-row-desc">Selecting quiz #2 or later starts with the Cumulative switch already on, instead of Single Set. Applies from your next page load.</div>
       </div>
       <label class="settings-switch">
         <input type="checkbox" ${getSetting('study', 'cumulativeDefaultOn') === true ? 'checked' : ''}
@@ -1071,7 +1071,7 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
-    <div class="settings-section-header">Solve Them All</div>
+    <div class="settings-section-header">Entire Set</div>
 
     <div class="settings-group">
       <div class="settings-row" data-row-key="lockSolveAllOrder">
@@ -1102,7 +1102,7 @@ function renderSettingsStudyTab() {
     <div class="settings-row" data-row-key="showSolveAllNavRail">
       <div class="settings-row-label">
         <div class="settings-row-title">Line progress</div>
-        <div class="settings-row-desc">Shows the progress rail beside Solve Them All on wide screens — problem ticks, a "you are here" segment, and a pointer that tracks scroll.</div>
+        <div class="settings-row-desc">Shows the progress rail beside Entire Set on wide screens — problem ticks, a "you are here" segment, and a pointer that tracks scroll.</div>
       </div>
       <label class="settings-switch">
         <input type="checkbox" ${navRailOn ? 'checked' : ''}
@@ -1114,7 +1114,7 @@ function renderSettingsStudyTab() {
     <div class="settings-row">
       <div class="settings-row-label">
         <div class="settings-row-title">Show progress window</div>
-        <div class="settings-row-desc">The floating solved-count badge, bottom-right, while Solve Them All is open.</div>
+        <div class="settings-row-desc">The floating solved-count badge, bottom-right, while Entire Set is open.</div>
       </div>
       <label class="settings-switch">
         <input type="checkbox" ${getSetting('study', 'showStickyScore') !== false ? 'checked' : ''}

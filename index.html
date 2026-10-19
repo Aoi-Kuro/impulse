@@ -387,8 +387,8 @@
 <!-- ── Landing screen ── -->
 <div id="landingScreen">
   <div class="landing-box">
-    <div class="landing-eyebrow" id="eyebrowLandingPractice">PHYS162 · Practice Mode</div>
-    <h1 class="landing-title" id="landingTitle">Electricity &amp; Fields <span>Quiz</span></h1>
+    <div class="landing-eyebrow" id="eyebrowLandingPractice">PHYS162 · Practice Platform</div>
+    <h1 class="landing-title" id="landingTitle">Electricity &amp; Fields <span>Set</span></h1>
     <div class="mc-splash-wrap"><span class="mc-splash" id="splashText" role="button" tabindex="0" title="Tap for another" onclick="showNewSplash()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showNewSplash();}"></span></div>
 
     <!-- Signed-in identity avatar — mirrors the splash badge: same height,
@@ -401,7 +401,7 @@
       </button>
     </div>
 
-    <p class="landing-sub">Choose a quiz set, pick a mode, and hit start</p>
+    <p class="landing-sub">Choose a set, pick a mode, and hit start</p>
 
     <div class="quiz-select-grid" id="quizSelectGrid">
       <!-- Buttons are rendered dynamically by renderQuizButtons() -->
@@ -414,15 +414,15 @@
         <div class="mode-toggle-track" id="modeToggle" onclick="toggleMode()">
           <div class="mode-toggle-knob"></div>
         </div>
-        <span class="mode-option" id="modeLabelSolveAll">⚡ Solve Them All</span>
+        <span class="mode-option" id="modeLabelSolveAll">⚡ Entire Set</span>
       </div>
       <div class="cumulative-switch-wrap" id="cumulativeSwitchWrap">
         <div class="mode-switch-row">
-          <span class="mode-option active" id="cumLabelSingle">📝 Single quiz</span>
+          <span class="mode-option active" id="cumLabelSingle">📝 Single Set</span>
           <div class="mode-toggle-track" id="cumulativeToggle" onclick="toggleCumulativeMode()">
             <div class="mode-toggle-knob"></div>
           </div>
-          <span class="mode-option" id="cumLabelCumulative">📚 Cumulative</span>
+          <span class="mode-option" id="cumLabelCumulative">📚 Sets 1–2</span>
         </div>
       </div>
     </div>
@@ -466,7 +466,7 @@
 <!-- ── Solve-all choice page ── -->
 <div id="choicePage" class="hidden">
   <div class="landing-box">
-    <div class="landing-eyebrow" id="eyebrowLandingSolveAll">PHYS162 · Solve them all</div>
+    <div class="landing-eyebrow" id="eyebrowLandingSolveAll">PHYS162 · Entire Set</div>
     <h2 class="landing-title" style="margin-bottom:0.5rem;">Choose order</h2>
     <p class="landing-sub" id="solveAllModalDesc" style="margin-bottom:1.2rem;"></p>
     <div class="modal-choices" style="margin-bottom:1.5rem;">
@@ -562,7 +562,7 @@
 
 <header id="quizHeader">
   <div class="eyebrow" id="eyebrowQuizHeader">PHYS162 · Practice Mode</div>
-  <h1>Electricity &amp; Fields <span>Quiz</span></h1>
+  <h1>Electricity &amp; Fields <span>Set</span></h1>
   <div class="filter-active-note" id="filterActiveNote" style="display:none;">Filter is active: this draw is pulling from a narrowed problem pool</div>
 </header>
 
@@ -693,8 +693,8 @@
   </div>
 
   <header class="solve-all-quiz-header" id="solveAllHeader">
-    <div class="eyebrow" id="eyebrowSolveHeader">PHYS162 · Solve Mode</div>
-    <h1>Electricity &amp; Fields <span>Quiz</span></h1>
+    <div class="eyebrow" id="eyebrowSolveHeader">PHYS162 · Entire Set</div>
+    <h1>Electricity &amp; Fields <span>Set</span></h1>
     <div class="solve-all-tag">All Problems</div>
   </header>
 
@@ -709,7 +709,7 @@
 <div id="mistakesMode">
   <div class="mistakes-header">
     <div class="mistakes-title">📋 Wrong Problems — Retry Quiz</div>
-    <button class="btn-exit-solve" onclick="exitMistakes()">← Back to Solve All</button>
+    <button class="btn-exit-solve" onclick="exitMistakes()">← Back to Entire Set</button>
   </div>
   <div id="mistakesContainer"></div>
 </div>
