@@ -23,8 +23,9 @@
 // PHYS162-only, not something PHYS 161 users should see in their history.
 
 
-// WARNING! The version has to be bumped in three places: here, in version.json and in quiz-engine.js
+// WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 const CHANGELOG = [
+  { version: "12.4.5", note: "Offline page illustration is back in full resolution.", scope: 0 },
   { version: "12.4.4", note: "Updates download much less data and apply on their own after a day.", scope: 0 },
   { version: "12.4.3", note: "Quizzes are now Sets, with the Entire Set mode; tall figures fit the screen.", scope: 0 },
   { version: "12.4.2", note: "Fixed math not rendering in offline mode.", scope: 0 },

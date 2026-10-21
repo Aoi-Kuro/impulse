@@ -3619,39 +3619,62 @@ function toggleTheme() {
 
 
   /* ───────────────────────── site version ─────────────────────────
-     Pale "v12.1.0" in the top bar. The version this page is running is the
-     one version.json said when it loaded (the editor has no copy of
-     CURRENT_VERSION, so there is no extra place to bump). Re-checked every
-     5 minutes and when the tab comes back; once version.json moves on, the
-     label turns red — "(outdated)!" — and tapping it reloads.
+     Pale "site v12.1.0 · editor v1.0.0" in the top bar. site-version.json
+     holds two numbers: "version", the main site's (the one CURRENT_VERSION in
+     js/quiz-engine.js is compared with), and "editor", bumped for a release
+     that changes only the editor — so editors can get an update without
+     every student being asked to reload. The editor shares the site's code
+     (figure.js, solution-render.js, course-config.js, ...), so a new site
+     version outdates it too.
+
+     The versions this page is running are the ones site-version.json said
+     when it loaded (the editor has no copy of CURRENT_VERSION, so there is
+     no extra place to bump). Re-checked every 5 minutes and when the tab
+     comes back; once either number moves on, that part of the label turns
+     red — "(outdated)!" — and tapping it reloads.
 
      Reloading is safe: drafts and history live in localStorage, which a
      reload never touches (they are flushed first, see flushDrafts). Only the
      service worker's file cache is cleared, the same way the main site does,
      so one reload is enough to get the new files. */
-  const VERSION_URL = '/version.json';
+  const VERSION_URL = '/site-version.json';   // not version.json: see VERSION_MANIFEST_URL in js/quiz-engine.js
   const VERSION_CHECK_MS = 5 * 60 * 1000;
-  let versionAtLoad = null;
-  let editorOutdated = false;            // version.json moved on since this window loaded
-  async function fetchSiteVersion() {
+  let versionsAtLoad = null;             // { site, editor } as first read
+  let editorOutdated = false;            // either number moved on since this window loaded
+  async function fetchSiteVersions() {
     try {
       const r = await fetch(VERSION_URL + '?_=' + Date.now(), { cache: 'no-store' });
       if (!r.ok) return null;
       const d = await r.json();
-      return (d && typeof d.version === 'string' && d.version.trim()) || null;
+      const pick = (v) => (typeof v === 'string' && v.trim()) || null;
+      const site = d && pick(d.version);
+      return site ? { site, editor: pick(d.editor) } : null;
     } catch (e) { return null; }
   }
   async function checkSiteVersion() {
-    const v = await fetchSiteVersion();
+    const v = await fetchSiteVersions();
     if (!v) return editorOutdated;                    // offline / server hiccup: keep what is shown
     const el = $('edVer');
-    if (!versionAtLoad) versionAtLoad = v;
-    const outdated = v !== versionAtLoad;
+    if (!versionsAtLoad) versionsAtLoad = v;
+    const parts = [
+      { name: 'site', loaded: versionsAtLoad.site, now: v.site },
+      { name: 'editor', loaded: versionsAtLoad.editor, now: v.editor },
+    ].filter((p) => p.loaded || p.now);
+    parts.forEach((p) => { p.outdated = p.now !== p.loaded; });
+    const outdated = parts.some((p) => p.outdated);
     editorOutdated = outdated;
     el.hidden = false;
     el.classList.toggle('outdated', outdated);
-    el.textContent = outdated ? `v${versionAtLoad} (outdated)!` : `v${versionAtLoad}`;
-    el.title = outdated ? `Version ${v} is out. Tap to reload; drafts are kept.` : 'Site version';
+    el.textContent = '';
+    parts.forEach((p, i) => {
+      if (i) el.append(' · ');
+      const span = document.createElement('span');
+      span.className = 'ed-ver-part' + (p.outdated ? ' outdated' : '');
+      span.textContent = `${p.name} v${p.loaded || '?'}` + (p.outdated ? ' (outdated)!' : '');
+      el.append(span);
+    });
+    const out = parts.filter((p) => p.outdated).map((p) => `${p.name} ${p.now || '(none)'}`);
+    el.title = outdated ? `New ${out.join(' and ')} ${out.length > 1 ? 'are' : 'is'} out. Tap to reload; drafts are kept.` : 'Site and editor versions';
     el.disabled = !outdated;
     return outdated;
   }

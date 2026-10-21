@@ -31,7 +31,7 @@
 // no `document`, so it can't read the data-course attribute the way every
 // other file here does. This is a manual swap item at release time —
 // change the 'phys162' prefix by hand alongside the data-course attribute.
-const CACHE_NAME = 'phys161-offline-v11';
+const CACHE_NAME = 'phys161-offline-v12';
 
 // ── Phase 4: full offline mode (js/offline-mode.js) ──
 // OFFLINE_MODE_CACHE_NAME must match that file's own copy of the same
@@ -304,7 +304,7 @@ self.addEventListener('activate', (event) => {
 // reload #1 serves the stale cached copy instantly while quietly re-fetching
 // in the background, and only reload #2 actually serves what just landed in
 // the cache. quiz-engine.js's checkForUpdate() already knows the instant a
-// real content update exists (version.json vs CURRENT_VERSION) -- when it
+// real content update exists (site-version.json vs CURRENT_VERSION) -- when it
 // does, it messages this listener to wipe CACHE_NAME before the page
 // reloads, so that one reload's fetches all miss cache and go straight to
 // the network, repopulating it fresh. Everyday browsing (no version

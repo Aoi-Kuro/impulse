@@ -283,8 +283,10 @@ body.prob-closed .ed-prob { display: none; }
   color: var(--muted); opacity: .6; white-space: nowrap; cursor: default;
 }
 .ed-ver[hidden] { display: none; }
-.ed-ver.outdated { color: var(--wrong); opacity: 1; font-weight: 600; cursor: pointer; }
-.ed-ver.outdated:hover { text-decoration: underline; }
+.ed-ver.outdated { opacity: 1; cursor: pointer; }
+/* Only the part that moved on is red (editor.js "site version"). */
+.ed-ver-part.outdated { color: var(--wrong); font-weight: 600; }
+.ed-ver.outdated:hover .ed-ver-part.outdated { text-decoration: underline; }
 /* Forum identicon of the main-site sign-in (editor.js "site identicon") */
 /* The row is a flex box, which drops the label's trailing space; restore it. */
 .ed-who-label { margin-right: .4em; }

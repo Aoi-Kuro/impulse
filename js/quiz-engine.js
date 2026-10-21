@@ -2521,15 +2521,24 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '12.4.4';
+const CURRENT_VERSION = '12.4.5';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;
 
-// URL of the tiny JSON manifest file you host next to this HTML.
-// Create a file called version.json with content: {"version":"1.0.0"}
-// Update the version string there whenever you publish a new release.
-const VERSION_MANIFEST_URL = 'version.json';
+// URL of the tiny JSON manifest file you host next to this HTML, with
+// content like {"version":"1.0.0","editor":"1.0.0"}. Update "version" there
+// whenever you publish a new release of the site; "editor" is the editor's
+// own number (editor/editor.js "site version"), which this page ignores, so
+// an editor-only release never asks students to reload.
+//
+// Not "version.json" any more, on purpose: up to 12.4.5 the code polled that
+// name, and up to 12.4.3, on every mismatch, it made its (old) service worker
+// re-download the whole precache list — ~2 MB every 5 minutes for as long as
+// such a tab stayed open. With that name gone, those tabs get a 404, which
+// their checkForUpdate() treats as "server unavailable" and skips (they still
+// get every update on their next reload). Never bring the old name back.
+const VERSION_MANIFEST_URL = 'site-version.json';
 
 let _updateDismissed = false;
 // True once a real version mismatch has actually been seen — independent
@@ -2538,10 +2547,10 @@ let _updateDismissed = false;
 // "Hide update reminder" keeps checkForUpdate() from ever calling
 // BannerManager.request in the first place.
 let _updatePending = false;
-// The version.json value behind _updatePending: what the cache purge below
+// The site-version.json value behind _updatePending: what the cache purge below
 // is keyed to.
 let _latestVersion = null;
-// When the last version.json request went out, so coming back to the tab
+// When the last site-version.json request went out, so coming back to the tab
 // (visibilitychange below) doesn't fire one on every tab switch.
 let _lastUpdateCheckAt = 0;
 
@@ -2607,7 +2616,7 @@ async function maybeForceUpdateOutsideQuiz() {
   location.reload();
 }
 
-// A forced reload that didn't bring the new version (version.json bumped
+// A forced reload that didn't bring the new version (site-version.json bumped
 // without CURRENT_VERSION, say) would land straight back here and reload
 // again, forever, for every visitor. So: one forced reload per outdated
 // version per UPDATE_FORCE_AFTER. Without localStorage there's no way to

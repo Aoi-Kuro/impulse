@@ -111,7 +111,8 @@ impulse/
 │                            fails with no connection (standalone page)
 ├── sw.js                    Service worker: offline fallback, 24h full
 │                            offline mode, update-cache purge, Web Push
-├── version.json             { "version": "X.Y.Z" } — polled by the update
+├── site-version.json        { "version": "X.Y.Z", "editor": "X.Y.Z" } — site
+│                            and editor versions, polled by the update
 │                            checkers of the site and of the editor
 ├── _headers                 Netlify Cache-Control: vendor/, images/, favicon/
 │                            reusable for a day (cuts billed revalidations)
@@ -892,7 +893,7 @@ time: `update` always preempts (others are paused, not lost); `bug`, `theme`
 and the full-screen reminder queue first-come-first-served. API: `register`,
 `request`, `release`, `cancel`.
 
-- **Update banner**: `version.json` is polled every 5 minutes while the tab is
+- **Update banner**: `site-version.json` is polled every 5 minutes while the tab is
   visible (and on return to it, at most once per interval); a mismatch with
   `CURRENT_VERSION` shows "New version available" with Reload (which purges the
   service-worker cache first). With "Hide update reminder" on, the banner is
@@ -1187,9 +1188,10 @@ untouched. Commands, environment names, options, numbers, math regions and
 - **Export all as JSON**: every row, as a backup file.
 - **Keyboard**: Alt+↑ / Alt+↓ previous/next problem (respecting the filter),
   Alt+N next problem with no work.
-- **Version label**: shows the `version.json` value at load; when the site is
-  updated it turns red ("outdated") and a tap reloads after purging the
-  service-worker cache (drafts are kept).
+- **Version label**: shows both numbers of `site-version.json` at load
+  ("site v12.4.5 · editor v1.0.0"); when either moves on, that part turns red
+  ("outdated") and a tap reloads after purging the service-worker cache
+  (drafts are kept).
 - **Manual** (📖 in the top bar, also reachable at the key gate): the
   practice site's manual layout (`css/manual.css`) with editor-only content
   from `editor/manual.json`. Its live examples run on the editor's own
@@ -1525,19 +1527,29 @@ location.
 
 ## Versioning
 
-On every release the version is bumped in **three places**:
+`site-version.json` holds two numbers: `version` (the site) and `editor`
+(the editor). (Never name it `version.json`: tabs still running code up to
+12.4.3 poll that name and re-download the whole precache list on every
+mismatch; with no such file they get a 404 and do nothing.)
+
+On every release of the site the version is bumped in **three places**:
 
 1. `js/data/changelog.js` — a new entry at the top
    (`{ version, note, scope }`; indentation is derived from the version).
-2. `version.json`.
+2. `version` in `site-version.json`.
 3. `CURRENT_VERSION` in `js/quiz-engine.js`.
 
-The running site polls `version.json` and shows the update banner when it
-differs from `CURRENT_VERSION`; the editor's version label turns red when
-`version.json` changes after the editor was loaded, and from then on that
-window refuses to save or rebuild until it is reloaded (drafts are kept), so a
-window left open across a deploy can't publish with old code. This relies on
-`version.json` being bumped with every release that changes the editor. When `PRECACHE_URLS` in
+A release that changes only the editor bumps `editor` in `site-version.json`
+instead, and nothing else: the site ignores that number, so students are not
+asked to reload.
+
+The running site polls `site-version.json` and shows the update banner when
+`version` differs from `CURRENT_VERSION`; the editor's version label turns red
+when either number changes after the editor was loaded (the editor shares the
+site's code, so a site release outdates it too), and from then on that window
+refuses to save or rebuild until it is reloaded (drafts are kept), so a window
+left open across a deploy can't publish with old code. This relies on one of
+the two numbers being bumped with every release that changes the editor. When `PRECACHE_URLS` in
 `sw.js` changes, `CACHE_NAME` is bumped as well, and a change to Solve-All card
 markup or the render pipeline requires bumping `MATH_CACHE_SCHEMA` in
 `js/math-cache.js`. Changes to the TikZ packages, libraries or preamble, to
