@@ -106,6 +106,13 @@ function _onColorFor(varName){
   return yiq >= 140 ? '#0d1117' : '#ffffff';
 }
 function updateOnColorVars(){
+  // cssVarRgb lives in js/theme-colors.js, which offline.html doesn't load
+  // (adding it there would change sw.js's precache list, and every browser
+  // would re-check that whole list). That page has none of the filled
+  // elements these colors are for, and the CSS falls back without them.
+  // Throwing here instead used to stop applyColorTheme() half-way there:
+  // its swatches and day/night button never updated.
+  if (typeof cssVarRgb !== 'function') return;
   const s = document.body.style;
   s.setProperty('--on-accent',  _onColorFor('--accent'));
   s.setProperty('--on-correct', _onColorFor('--correct'));

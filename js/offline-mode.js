@@ -407,6 +407,24 @@ function endOfflineMode() {
 // to fetch it mid-way through, so a failure here means try again rather
 // than "close enough".
 async function startGoOffline() {
+  // One download at a time. A second run alongside the first (tapping
+  // twice more while it downloads) shares the same cache: the first could
+  // finish and switch the 24h window on, then the second fail on the
+  // shared entries and delete the cache in its error branch — the window
+  // on, nothing cached, and every reload without a connection landing on
+  // offline.html instead of the app.
+  if (offlineDownloadState.status === 'downloading') return;
+  try {
+    await _runGoOffline();
+  } catch (e) {
+    // Anything unexpected (storage full, say) must still end the
+    // "downloading" state, or the guard above would block every retry.
+    offlineDownloadState = { status: 'error', done: 0, total: 0, failed: ['(' + ((e && e.message) || 'download failed') + ')'] };
+    _refreshOfflineTabIfOpen();
+  }
+}
+
+async function _runGoOffline() {
   if (typeof caches === 'undefined') {
     offlineDownloadState = { status: 'error', done: 0, total: 0, failed: ['(this browser has no offline storage support)'] };
     _refreshOfflineTabIfOpen();
