@@ -804,7 +804,10 @@ Two independent jobs share `sw.js`:
    (`purge-update-cache` message) to drop `CACHE_NAME`, so a single reload
    fetches fresh files. The purge runs at most once per new version per
    browser, and the refill revalidates (`cache: 'no-cache'`), so unchanged
-   files cost only an empty 304.
+   files cost only an empty 304. The worker itself also ignores a purge
+   within an hour of its last refill or install (time kept in IndexedDB
+   `flux-sw-meta`), which caps tabs still running older code that purge on
+   every poll.
 2. **Full offline mode** (`js/offline-mode.js`, Settings → Sync & Storage →
    "Go offline", tap twice). Pending attempts and Solve-All progress are pushed
    first; then the core files, the MathJax bundle and every image referenced
@@ -1403,6 +1406,7 @@ Course-scoped keys start with `STORAGE_PREFIX` (shown as `<p>`).
 | IndexedDB | `mathRenderCache` | Typeset Solve-All problem HTML + CSS. |
 | IndexedDB | `flux-notif-mute` | "Go silent" flag for `sw.js`. |
 | IndexedDB | `flux-offline-mode` | Offline-mode expiry for `sw.js`. |
+| IndexedDB | `flux-sw-meta` | Time of `sw.js`'s last precache refill (purge limit). |
 | Cache Storage | `CACHE_NAME` (e.g. `phys161-offline-v9`) | offline.html and its assets. |
 | Cache Storage | `flux-offline-mode-v1` | Full offline-mode download. |
 | BroadcastChannel | `<p>-solve-all-sync` | Same-browser Solve-All coordination. |
@@ -1449,7 +1453,18 @@ temporary folder, leaving out `.git`, `superbase/`, `vendor-src/`,
 - minifies inline `<script>`/`<style>` in HTML, removes HTML comments and
   indentation (`<pre>`/`<textarea>` untouched);
 - compacts `.json` and `.webmanifest`;
-- copies `vendor/` unchanged.
+- copies `vendor/` unchanged;
+- **bundles** `index.html` and `editor/index.html` (each page its own
+  bundles): every run of adjacent local `<script src>` tags, the local entries
+  of the tier-2 loader list, and every run of adjacent stylesheets become one
+  file each in `js/bundle/` and `css/bundle/`, named by a hash of their content
+  and cached for a year (`_headers`). A JS bundle runs each original file as
+  its own inline `<script>`, in order, so load-order guards, hoisting and
+  per-file errors behave exactly as with separate files; `//# sourceURL` keeps
+  each file's name in DevTools. `vendor/mathjax` and `vendor/tikzjax` are left
+  out (they locate files from their own URL), and the original files still
+  ship (offline.html, `sw.js` and the editor fetch some by name). A repeat visit
+  re-checks about 6 files instead of 54.
 
 Before zipping, it checks that every minified script (including inline ones)
 still parses, that every top-level name is still present, and that every JSON

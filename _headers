@@ -15,6 +15,15 @@
 # Changing a file under these folders: browsers that already have it may
 # keep the old copy for up to a day, unless its name or URL changes.
 
+# Bundles made by minify.py: the name carries a hash of the content, so a
+# changed bundle is a new URL (index.html, always re-checked, points to it)
+# and an existing one never changes — cached for a year, never re-checked.
+/js/bundle/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/css/bundle/*
+  Cache-Control: public, max-age=31536000, immutable
+
 /vendor/mathjax/*
   Cache-Control: public, max-age=86400
 

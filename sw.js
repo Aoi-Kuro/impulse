@@ -241,8 +241,42 @@ function precacheAll() {
     ));
 }
 
+// ── Purge limit ──
+// Each refill (precacheAll) is ~100 requests, even when they're all empty
+// 304s, and Netlify bills every one. Current pages purge at most once per
+// new version (quiz-engine.js's purgeUpdateCacheAndWait), but a tab still
+// running older code purges on every 5-minute poll for as long as it stays
+// open. So a purge within PURGE_MIN_INTERVAL of the last refill is answered
+// without wiping anything. An install's own precache counts as a refill: it
+// just fetched every file fresh, so the purge the page sends right after
+// would only repeat it. The time lives in IndexedDB, not a variable: the
+// browser stops an idle worker between polls.
+const PURGE_MIN_INTERVAL = 60 * 60 * 1000;
+const SW_META_DB_NAME = 'flux-sw-meta';
+const SW_META_STORE = 'meta';
+
+function swMeta(mode, run) {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(SW_META_DB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(SW_META_STORE); };
+      req.onsuccess = () => {
+        const db = req.result;
+        try {
+          const r = run(db.transaction(SW_META_STORE, mode).objectStore(SW_META_STORE));
+          r.onsuccess = () => { resolve(r.result); db.close(); };
+          r.onerror = () => { resolve(undefined); db.close(); };
+        } catch (e) { resolve(undefined); db.close(); }
+      };
+      req.onerror = () => resolve(undefined);
+    } catch (e) { resolve(undefined); }
+  });
+}
+const readLastRefillAt = () => swMeta('readonly', (s) => s.get('lastRefillAt')).then((t) => t || 0);
+const writeLastRefillAt = () => swMeta('readwrite', (s) => s.put(Date.now(), 'lastRefillAt'));
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(precacheAll().then(() => self.skipWaiting()));
+  event.waitUntil(writeLastRefillAt().then(precacheAll).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -284,10 +318,16 @@ self.addEventListener('message', (event) => {
   // revalidate path below never brings them back), and a reload with no
   // connection then had nothing to fall back to: Chrome's ERR_FAILED page.
   // The page is answered first so its reload isn't held up by the refill.
+  const reply = () => { if (event.ports && event.ports[0]) event.ports[0].postMessage({ ok: true }); };
   event.waitUntil(
-    caches.delete(CACHE_NAME).then(() => {
-      if (event.ports && event.ports[0]) event.ports[0].postMessage({ ok: true });
-      return precacheAll();
+    readLastRefillAt().then((last) => {
+      // A refill within the limit: answer, wipe nothing (see "Purge limit"
+      // above). A time in the future (clock moved back) doesn't count.
+      const age = Date.now() - last;
+      if (age >= 0 && age < PURGE_MIN_INTERVAL) { reply(); return; }
+      return writeLastRefillAt()
+        .then(() => caches.delete(CACHE_NAME))
+        .then(() => { reply(); return precacheAll(); });
     })
   );
 });
