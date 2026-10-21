@@ -355,7 +355,11 @@
 
   async function init () {
     try {
-      const res = await fetch('course/splashes.json', { cache: 'force-cache' });
+      // 'no-cache', not 'force-cache': force-cache kept serving whatever
+      // splashes.json the browser had ever cached, so a redeploy's new
+      // splashes never showed up. Same fix as loadManualData() in
+      // js/manual.js — revalidates first, still a cheap 304 when unchanged.
+      const res = await fetch('course/splashes.json', { cache: 'no-cache' });
       if (!res.ok) throw new Error('bad response');
       const data = await res.json();
       splashes = (Array.isArray(data) && data.length) ? data : FALLBACK_SPLASHES;

@@ -113,6 +113,8 @@ impulse/
 │                            offline mode, update-cache purge, Web Push
 ├── version.json             { "version": "X.Y.Z" } — polled by the update
 │                            checkers of the site and of the editor
+├── _headers                 Netlify Cache-Control: vendor/, images/, favicon/
+│                            reusable for a day (cuts billed revalidations)
 ├── minify.py                Builds the minified Netlify upload zip
 ├── vendor-src/              Sources of vendor/ builds (not deployed)
 │   └── pt-answer/           Answer engine: source, build.py, tests
@@ -194,7 +196,7 @@ impulse/
 │
 ├── images/                  Framework images (not course-specific)
 │   ├── gemini-logo.svg      Gemini bot avatar in the forum
-│   └── offline/{dark,light}.png  offline.html illustration
+│   └── offline/{dark,light}.webp  offline.html illustration
 │
 ├── favicon/                 Favicon set + site.webmanifest ("Flux")
 │
@@ -800,7 +802,9 @@ Two independent jobs share `sw.js`:
    revalidation. `CACHE_NAME` is bumped whenever that list changes. When the
    update checker detects a new version, the page asks the worker
    (`purge-update-cache` message) to drop `CACHE_NAME`, so a single reload
-   fetches fresh files.
+   fetches fresh files. The purge runs at most once per new version per
+   browser, and the refill revalidates (`cache: 'no-cache'`), so unchanged
+   files cost only an empty 304.
 2. **Full offline mode** (`js/offline-mode.js`, Settings → Sync & Storage →
    "Go offline", tap twice). Pending attempts and Solve-All progress are pushed
    first; then the core files, the MathJax bundle and every image referenced
@@ -885,11 +889,14 @@ time: `update` always preempts (others are paused, not lost); `bug`, `theme`
 and the full-screen reminder queue first-come-first-served. API: `register`,
 `request`, `release`, `cancel`.
 
-- **Update banner**: `version.json` is polled every 5 minutes; a mismatch with
+- **Update banner**: `version.json` is polled every 5 minutes while the tab is
+  visible (and on return to it, at most once per interval); a mismatch with
   `CURRENT_VERSION` shows "New version available" with Reload (which purges the
   service-worker cache first). With "Hide update reminder" on, the banner is
   suppressed, and "Update anyway outside quiz mode" reloads silently as soon as
-  no timed attempt is running.
+  no timed attempt is running. An update left waiting for 24 hours (dismissed
+  or not) is applied the same way regardless of settings, and even during a
+  timed attempt once that attempt has run for 3 hours.
 - **Bug-report nudge** ("Report on Telegram"): at most once a day, after 10
   minutes of use.
 - **Theme nudge**: once, suggesting a preset.

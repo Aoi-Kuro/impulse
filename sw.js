@@ -31,7 +31,7 @@
 // no `document`, so it can't read the data-course attribute the way every
 // other file here does. This is a manual swap item at release time —
 // change the 'phys162' prefix by hand alongside the data-course attribute.
-const CACHE_NAME = 'phys161-offline-v10';
+const CACHE_NAME = 'phys161-offline-v11';
 
 // ── Phase 4: full offline mode (js/offline-mode.js) ──
 // OFFLINE_MODE_CACHE_NAME must match that file's own copy of the same
@@ -118,8 +118,8 @@ async function respondFullOffline(event) {
 const OFFLINE_URL = 'offline.html';
 const PRECACHE_URLS = [
   OFFLINE_URL,
-  'images/offline/light.png',
-  'images/offline/dark.png',
+  'images/offline/light.webp',
+  'images/offline/dark.webp',
   'favicon/favicon.svg',
   'course/offline-laws.json',
   // Theme colors/logic are referenced by offline.html, not duplicated —
@@ -226,13 +226,16 @@ const PRECACHE_URLS = [
   'vendor/mathjax/stix2-font/chtml/dynamic/variants.js',
 ];
 
-// cache: 'reload' skips the browser's HTTP cache, so a precache run right
-// after an update stores the new files rather than older HTTP-cached copies.
+// cache: 'no-cache' revalidates every file with the server, so a precache
+// run right after an update stores the new files rather than older
+// HTTP-cached copies — but an unchanged file comes back as an empty 304 and
+// is taken from the HTTP cache. ('reload' downloaded the full ~2.7 MB list
+// again on every install and every update purge.)
 function precacheAll() {
   return caches.open(CACHE_NAME)
     .then((cache) => Promise.all(
       PRECACHE_URLS.map((url) =>
-        cache.add(new Request(url, { cache: 'reload' }))
+        cache.add(new Request(url, { cache: 'no-cache' }))
           .catch((err) => console.warn('[sw] precache failed:', url, err))
       )
     ));
@@ -376,7 +379,7 @@ function respondDefault(event) {
 
 // offline.html is served at whatever URL failed to load, not at
 // /offline.html — so a reload of e.g. /editor/ with no connection would
-// resolve its relative css/style.css, js/themes.js, images/offline/*.png,
+// resolve its relative css/style.css, js/themes.js, images/offline/*.webp,
 // course/offline-laws.json and MathJax font URLs against /editor/, none of
 // which are cached, and the page came up completely unstyled. Pinning a
 // <base> to this worker's scope (where sw.js, offline.html and everything

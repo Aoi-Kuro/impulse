@@ -546,6 +546,11 @@ let _liveQuizTimerInterval = null;
 // attempt is actually still running.
 let _quizTimerActive = false;
 function isQuizTimerActive() { return _quizTimerActive; }
+// How long the current timed attempt has been running (0 when none is) —
+// lets an overdue update interrupt an attempt left open for hours (see
+// maybeForceUpdateOutsideQuiz).
+let _quizTimerStartedAt = 0;
+function quizTimerRunningMs() { return _quizTimerActive ? Date.now() - _quizTimerStartedAt : 0; }
 
 // Settings > Study > "Automatically stop after 50 minutes" — scheduled
 // fresh in newQuiz() (see its own comment there) each time a new Random-N
@@ -594,6 +599,7 @@ function setLiveQuizTimerDisplayEnabled(enabled) {
 function startLiveQuizTimer() {
   stopLiveQuizTimer(); // defensive: never leave a second interval/timer running if this somehow gets called twice in a row
   _quizTimerActive = true;
+  _quizTimerStartedAt = Date.now();
   // Semantic attempt lifecycle for lightweight UI that must exist only in
   // Random N mode (e.g. top-bar clock/battery). This is deliberately not
   // tied to whether the optional floating timer is visually enabled.
@@ -2515,7 +2521,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '12.4.3';
+const CURRENT_VERSION = '12.4.4';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;
@@ -2532,33 +2538,95 @@ let _updateDismissed = false;
 // "Hide update reminder" keeps checkForUpdate() from ever calling
 // BannerManager.request in the first place.
 let _updatePending = false;
+// The version.json value behind _updatePending: what the cache purge below
+// is keyed to.
+let _latestVersion = null;
+// When the last version.json request went out, so coming back to the tab
+// (visibilitychange below) doesn't fire one on every tab switch.
+let _lastUpdateCheckAt = 0;
+
+// An update that has been waiting this long is applied without asking —
+// outside a timed attempt, or during one that has itself run this long.
+// Counted from the first time any tab of this browser saw that the running
+// version (CURRENT_VERSION) is outdated, so a newer release arriving in
+// the meantime doesn't restart the clock.
+const UPDATE_FORCE_AFTER = 24 * 60 * 60 * 1000;
+const UPDATE_FORCE_DURING_QUIZ_AFTER = 3 * 60 * 60 * 1000;
+const UPDATE_OUTDATED_KEY = STORAGE_PREFIX + '-update-outdated';  // { from: CURRENT_VERSION, at }
+let _updateSeenAt = 0;  // same, for this tab only (localStorage can be unavailable)
+
+function _noteOutdated() {
+  if (!_updateSeenAt) _updateSeenAt = Date.now();
+  try {
+    const rec = JSON.parse(localStorage.getItem(UPDATE_OUTDATED_KEY) || 'null');
+    if (rec && rec.from === CURRENT_VERSION) return;
+    localStorage.setItem(UPDATE_OUTDATED_KEY, JSON.stringify({ from: CURRENT_VERSION, at: _updateSeenAt }));
+  } catch (_) {}
+}
+
+function _updateWaitedMs() {
+  let since = _updateSeenAt || Date.now();
+  try {
+    const rec = JSON.parse(localStorage.getItem(UPDATE_OUTDATED_KEY) || 'null');
+    if (rec && rec.from === CURRENT_VERSION && rec.at < since) since = rec.at;
+  } catch (_) {}
+  return Date.now() - since;
+}
 
 // Update always takes top priority — it has no hider, since nothing outranks it.
 BannerManager.register('update', () => {
   document.getElementById('update-banner').classList.add('visible');
 });
 
-// Notifications > "Update anyway outside quiz mode" (settings.js) — only
-// does anything while the reminder itself is hidden; the point is to still
-// actually get the update applied for someone who's opted out of ever
-// seeing the nag banner, just never while it'd cost them an in-progress
-// timed attempt. Called right after a mismatch is first detected, and
-// again the instant a quiz attempt ends (see stopLiveQuizTimer above) so a
-// pending update doesn't sit around for up to another 5-minute poll once
-// it's finally safe to apply.
+// Applies a pending update with a silent reload when either:
+//   • Notifications > "Update anyway outside quiz mode" (settings.js) is on
+//     together with "Hide update reminder" — the point is to still get the
+//     update applied for someone who's opted out of ever seeing the nag
+//     banner; or
+//   • the update has been waiting UPDATE_FORCE_AFTER (24 h), whatever the
+//     settings or a dismissed banner say — a tab kept open for days must
+//     not stay on old code forever.
+// Never during a live timed attempt, except an overdue update once that
+// attempt has run UPDATE_FORCE_DURING_QUIZ_AFTER (3 h): nobody is still
+// working on it by then. Called right after a mismatch is detected, on
+// every poll, and the instant a quiz attempt ends (see stopLiveQuizTimer
+// above) so a pending update doesn't sit around for up to another 5-minute
+// poll once it's finally safe to apply.
 async function maybeForceUpdateOutsideQuiz() {
   if (!_updatePending) return;
-  if (typeof getSetting !== 'function') return;
-  const hidden = getSetting('notifications', 'hideUpdateReminder') === true;
-  const forceOutside = getSetting('notifications', 'forceRefreshOutsideQuiz') === true;
-  if (!hidden || !forceOutside) return;
-  if (isQuizTimerActive()) return; // never interrupt a live timed attempt
+  const overdue = _updateWaitedMs() >= UPDATE_FORCE_AFTER;
+  if (!overdue) {
+    if (typeof getSetting !== 'function') return;
+    const hidden = getSetting('notifications', 'hideUpdateReminder') === true;
+    const forceOutside = getSetting('notifications', 'forceRefreshOutsideQuiz') === true;
+    if (!hidden || !forceOutside) return;
+  }
+  if (isQuizTimerActive() && !(overdue && quizTimerRunningMs() >= UPDATE_FORCE_DURING_QUIZ_AFTER)) return;
+  if (!_claimForcedReload()) return;
   await purgeUpdateCacheAndWait();
   location.reload();
 }
 
+// A forced reload that didn't bring the new version (version.json bumped
+// without CURRENT_VERSION, say) would land straight back here and reload
+// again, forever, for every visitor. So: one forced reload per outdated
+// version per UPDATE_FORCE_AFTER. Without localStorage there's no way to
+// tell, so no forced reload at all.
+const UPDATE_FORCED_KEY = STORAGE_PREFIX + '-update-forced';  // { from: CURRENT_VERSION, at }
+function _claimForcedReload() {
+  try {
+    const rec = JSON.parse(localStorage.getItem(UPDATE_FORCED_KEY) || 'null');
+    if (rec && rec.from === CURRENT_VERSION && Date.now() - rec.at < UPDATE_FORCE_AFTER) return false;
+    localStorage.setItem(UPDATE_FORCED_KEY, JSON.stringify({ from: CURRENT_VERSION, at: Date.now() }));
+    return true;
+  } catch (_) { return false; }
+}
+
 async function checkForUpdate() {
-  if (_updateDismissed) return; // user already dismissed; stop bothering them this session
+  // A dismissed banner stops the polling for this session, but not the
+  // 24 h deadline: _updatePending is already known, nothing to fetch.
+  if (_updateDismissed) { maybeForceUpdateOutsideQuiz(); return; }
+  _lastUpdateCheckAt = Date.now();
   try {
     const res = await fetch(VERSION_MANIFEST_URL + '?_=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) return; // server unavailable — fail silently
@@ -2571,14 +2639,15 @@ async function checkForUpdate() {
       // by the time either actually fires, the purge has usually already
       // completed instead of adding its ~instant caches.delete() latency to
       // the critical path of the click itself.
+      _latestVersion = latest;
+      _noteOutdated();
       purgeUpdateCacheAndWait();
       document.getElementById('banner-new-version').textContent = latest;
-      if (typeof getSetting === 'function' && getSetting('notifications', 'hideUpdateReminder') === true) {
-        // Reminder hidden: never occupy BannerManager's queue for it — just
-        // see if this is already a safe moment to silently apply the update.
-        maybeForceUpdateOutsideQuiz();
-        return;
-      }
+      // Opted in to silent updates, or the update is overdue: see if this
+      // is already a safe moment to apply it.
+      maybeForceUpdateOutsideQuiz();
+      // Reminder hidden: never occupy BannerManager's queue for it.
+      if (typeof getSetting === 'function' && getSetting('notifications', 'hideUpdateReminder') === true) return;
       BannerManager.request('update');
     }
   } catch (_) {
@@ -2594,23 +2663,37 @@ async function checkForUpdate() {
 // browsing never touches this, so the normal cache-first speed is untouched
 // outside of an update. Resolves either way (network error, no controller
 // yet, or the SW just not answering in time) so a reload is never blocked.
+//
+// At most once per new version per browser: the worker refills the whole
+// precache list after every purge, and before this guard a tab left open on
+// an old version repeated that on every 5-minute poll (~2.7 MB each time).
+// The worker's cache is shared by every tab, so one purge (UPDATE_PURGED_KEY)
+// covers them all; _purge covers this tab when localStorage is unavailable.
+const UPDATE_PURGED_KEY = STORAGE_PREFIX + '-update-purged';
+let _purge = null;  // { version, promise }
 function purgeUpdateCacheAndWait() {
-  return new Promise((resolve) => {
+  if (_purge && _purge.version === _latestVersion) return _purge.promise;
+  let purgedFor = null;
+  try { purgedFor = localStorage.getItem(UPDATE_PURGED_KEY); } catch (_) {}
+  const promise = (_latestVersion && purgedFor === _latestVersion) ? Promise.resolve() : new Promise((resolve) => {
     if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) { resolve(); return; }
     const channel = new MessageChannel();
     const timeout = setTimeout(resolve, 2000); // don't let an unresponsive SW hang the reload
     channel.port1.onmessage = () => { clearTimeout(timeout); resolve(); };
     try {
       navigator.serviceWorker.controller.postMessage({ type: 'purge-update-cache' }, [channel.port2]);
+      try { if (_latestVersion) localStorage.setItem(UPDATE_PURGED_KEY, _latestVersion); } catch (_) {}
     } catch (_) {
       clearTimeout(timeout);
       resolve();
     }
   });
+  _purge = { version: _latestVersion, promise };
+  return promise;
 }
 
-// Called by the update banner's Reload button. Purges first (idempotent —
-// safe even if checkForUpdate() below already fired it) so this single
+// Called by the update banner's Reload button. Purges first (a no-op when
+// checkForUpdate() above already fired it for this version) so this single
 // reload actually shows the update, not just schedules it for next time.
 async function reloadForUpdate() {
   await purgeUpdateCacheAndWait();
@@ -2868,17 +2951,21 @@ function dismissBugBanner() {
 // Run immediately on load, then on the set interval
 window.addEventListener('DOMContentLoaded', () => {
   checkForUpdate();
-  setInterval(checkForUpdate, VERSION_CHECK_INTERVAL);
+  // Hidden tabs don't poll: every poll is a billed request, and a tab nobody
+  // is looking at has no use for an update until it's shown again (below).
+  setInterval(() => { if (!document.hidden) checkForUpdate(); }, VERSION_CHECK_INTERVAL);
 
   // Telegram/bug-report nudge: once a day, after 10 minutes of usage.
   setTimeout(showBugBanner, BUG_NUDGE_DELAY);
 
-  // "Update anyway outside quiz mode" was only ever re-checked when
-  // *leaving* a quiz (showLanding() above) or on the next 5-min
-  // checkForUpdate() poll — sitting on the main page (or Solve-All) the
-  // whole time with a pending update meant waiting on that poll. Coming
-  // back to the tab is a natural extra moment to retry right away.
+  // Coming back to the tab: catch up on the polls skipped while it was
+  // hidden — at most one request per interval, however often tabs are
+  // switched. Otherwise just retry a pending silent/overdue update, which
+  // was only ever re-checked when *leaving* a quiz (showLanding() above) or
+  // on the next 5-min poll.
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && typeof maybeForceUpdateOutsideQuiz === 'function') maybeForceUpdateOutsideQuiz();
+    if (document.hidden) return;
+    if (Date.now() - _lastUpdateCheckAt >= VERSION_CHECK_INTERVAL) checkForUpdate();
+    else maybeForceUpdateOutsideQuiz();
   });
 });

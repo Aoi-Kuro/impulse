@@ -25,6 +25,7 @@
 
 // WARNING! The version has to be bumped in three places: here, in version.json and in quiz-engine.js
 const CHANGELOG = [
+  { version: "12.4.4", note: "Updates download much less data and apply on their own after a day.", scope: 0 },
   { version: "12.4.3", note: "Quizzes are now Sets, with the Entire Set mode; tall figures fit the screen.", scope: 0 },
   { version: "12.4.2", note: "Fixed math not rendering in offline mode.", scope: 0 },
   { version: "12.4.1", note: "Fewer sync requests and fixed Solve them all answers.", scope: 0 },

@@ -125,8 +125,11 @@
 
   /* ── "Meanwhile, look at..." law-of-the-moment panel ── */
   .offline-law {
-    width: 100%;
-    max-width: 640px;
+    /* At least 640px (or the full width when narrower), wider when the
+       equation needs it — the equation never gets its own scroll box. */
+    box-sizing: border-box;
+    width: fit-content;
+    min-width: min(640px, 100%);
     margin: 2.5rem auto 0;
     padding: 1.2rem 1.5rem 1.5rem;
     background: var(--surface);
@@ -147,6 +150,7 @@
     margin: 0 0 0.7rem;
   }
   .offline-law-eq { font-size: 1.1rem; min-height: 1.6em; }
+  .offline-law-eq mjx-container { overflow: visible !important; }
 
   @media (max-width: 720px) {
     .offline-wrap { flex-direction: column; gap: 1.5rem; text-align: center; margin-top: 3.5rem; }
@@ -180,7 +184,7 @@
 
 <div class="offline-wrap">
   <div class="offline-art">
-    <img id="offlineArt" src="images/offline/dark.png" alt="A scattered pile of red, white, and blue cubes" />
+    <img id="offlineArt" src="images/offline/dark.webp" alt="A scattered pile of red, white, and blue cubes" />
   </div>
   <div class="offline-copy">
     <h1>You are offline!</h1>
@@ -215,9 +219,10 @@
           norm: ['\\left\\|#1\\right\\|', 1]
         }
       },
-      // displayOverflow: wide display equations (with their \tag) scroll — same as index.html.
+      // displayOverflow: unlike index.html, no scroll box — there is only one
+      // equation here and its panel grows to fit it (.offline-law).
       // fontPath: the font's on-demand glyph files, served locally — see index.html.
-      chtml: { fontURL: 'vendor/mathjax/fonts/woff', fontPath: '[mathjax]/stix2-font', displayOverflow: 'scroll' },
+      chtml: { fontURL: 'vendor/mathjax/fonts/woff', fontPath: '[mathjax]/stix2-font', displayOverflow: 'overflow' },
       options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] },
       // One failed typeset must not fail every later one — see index.html.
       startup: { typeset: false, ready() {
@@ -277,13 +282,13 @@
     var isLight = document.body.classList.toggle('light');
     localStorage.setItem(STORAGE_PREFIX + '-theme', isLight ? 'light' : 'dark');
     if (typeof window.__applyCustomOnModeChange === 'function') window.__applyCustomOnModeChange();
-    document.getElementById('offlineArt').src = isLight ? 'images/offline/light.png' : 'images/offline/dark.png';
+    document.getElementById('offlineArt').src = isLight ? 'images/offline/light.webp' : 'images/offline/dark.webp';
     offlineUpdateDayNightBtn();
     offlineRenderSwatches();
   }
 
   document.getElementById('offlineArt').src = document.body.classList.contains('light')
-    ? 'images/offline/light.png' : 'images/offline/dark.png';
+    ? 'images/offline/light.webp' : 'images/offline/dark.webp';
   offlineUpdateDayNightBtn();
   offlineRenderSwatches();
 
