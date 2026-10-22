@@ -10,9 +10,9 @@
 
    Two kinds of request:
      1. the index — which problem_keys have a published solution and when
-        each was last saved (no bodies). Fetched on load, when the tab comes
-        back into view and hourly while it stays visible; cached in
-        sessionStorage for a fast first paint;
+        each was last saved (no bodies). Fetched at most once every 30
+        minutes per browser: the copy is kept in localStorage, so every tab
+        and reload in between reads it instead of the network;
      2. one row call the first time a given solution is opened, cached in
         memory until the index shows it was unpublished or saved again.
    While Go offline's 24h window runs, both are answered from the copy it
@@ -36,8 +36,8 @@
 
 const SOLUTIONS_REST = `${SUPABASE_URL}/rest/v1/problem_solutions`;
 const SOLUTIONS_INDEX_CACHE_KEY = STORAGE_PREFIX + '-solutions-index';
-const SOLUTIONS_INDEX_TTL_MS = 5 * 60 * 1000;
-const SOLUTIONS_INDEX_POLL_MS = 60 * 60 * 1000;   // re-check while a tab stays open and visible
+const SOLUTIONS_INDEX_MAX_AGE_MS = 30 * 60 * 1000;  // one index fetch per browser per 30 min, shared by all tabs
+const SOLUTIONS_INDEX_CHECK_MS = 5 * 60 * 1000;     // how often a visible tab looks whether that copy has expired (no request)
 // Columns of one published row — also what Go offline downloads (js/offline-mode.js).
 const SOLUTIONS_ROW_COLUMNS = 'problem_key,solution,figure,author,author_link,problem_hash,updated_at';
 
@@ -116,29 +116,50 @@ function solutionsRestHeaders() {
   };
 }
 
+/** Makes `rows` ({ problem_key, updated_at }) the current index. */
+function applySolutionsIndexRows(rows) {
+  const fresh = new Set(rows.map((r) => r.problem_key));
+  const stamps = new Map(rows.map((r) => [r.problem_key, r.updated_at]));
+
+  // A solution opened earlier stays in memory, so drop it when it is no
+  // longer published (or it would still open), or when it was saved
+  // again since (or the student would keep reading the old text).
+  solutionsRowCache.forEach((row, key) => {
+    if (!fresh.has(key) || !row || row.updated_at !== stamps.get(key)) solutionsRowCache.delete(key);
+  });
+
+  solutionsIndex = fresh;
+  return solutionsIndex;
+}
+
+/** The index another tab (or an earlier load) fetched, or null. */
+function readSolutionsIndexCache() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SOLUTIONS_INDEX_CACHE_KEY) || 'null');
+    if (raw && typeof raw.at === 'number' && Array.isArray(raw.rows)) return raw;
+  } catch (e) { /* ignore a corrupt cache */ }
+  return null;
+}
+
 /** Fetches the published keys and applies them. Never throws. */
 function fetchSolutionsIndex() {
   if (solutionsIndexPromise) return solutionsIndexPromise;
 
+  // The offline download is not a fresh server copy, so it never resets
+  // the 30-minute window for the tabs that are back online.
+  const offline = solutionsOfflineActive();
   solutionsIndexPromise = solutionsIndexRows()
     .then((rows) => {
       if (!rows) return solutionsIndex || new Set();      // keep what we had on a server error
-      const fresh = new Set(rows.map((r) => r.problem_key));
-      const stamps = new Map(rows.map((r) => [r.problem_key, r.updated_at]));
-
-      // A solution opened earlier stays in memory, so drop it when it is no
-      // longer published (or it would still open), or when it was saved
-      // again since (or the student would keep reading the old text).
-      solutionsRowCache.forEach((row, key) => {
-        if (!fresh.has(key) || !row || row.updated_at !== stamps.get(key)) solutionsRowCache.delete(key);
-      });
-
-      solutionsIndex = fresh;
-      try {
-        sessionStorage.setItem(SOLUTIONS_INDEX_CACHE_KEY,
-          JSON.stringify({ at: Date.now(), keys: [...fresh] }));
-      } catch (e) { /* private mode / quota */ }
-      return solutionsIndex;
+      if (!offline) {
+        try {
+          localStorage.setItem(SOLUTIONS_INDEX_CACHE_KEY, JSON.stringify({
+            at: Date.now(),
+            rows: rows.map((r) => ({ problem_key: r.problem_key, updated_at: r.updated_at })),
+          }));
+        } catch (e) { /* private mode / quota */ }
+      }
+      return applySolutionsIndexRows(rows);
     })
     .catch(() => {
       // Offline, or the table doesn't exist in this course's project yet.
@@ -151,35 +172,24 @@ function fetchSolutionsIndex() {
   return solutionsIndexPromise;
 }
 
-/* Published keys only. Serve-then-revalidate: a cached list (if recent) is
-   returned at once so buttons appear without waiting on the network, and a
-   fresh copy is ALWAYS fetched in the background, which is what makes
-   publishing and unpublishing show up in a tab that is already open. The
-   caller passes a callback that runs again when the fresh list lands.
+/* Published keys only. The copy in localStorage is used while it is under
+   30 minutes old, whichever tab fetched it; only after that does a tab go
+   to the network, and the copy it stores then serves every other tab.
 
-   Caching the list without revalidating — which this did at first — meant a
-   solution unpublished in the editor stayed visible on the site for the rest
-   of the cache window, and a newly published one stayed hidden. */
-function loadSolutionsIndex(onFresh) {
-  let cached = null;
-  if (!solutionsIndex) {
-    try {
-      const raw = JSON.parse(sessionStorage.getItem(SOLUTIONS_INDEX_CACHE_KEY) || 'null');
-      if (raw && Date.now() - raw.at < SOLUTIONS_INDEX_TTL_MS && Array.isArray(raw.keys)) {
-        solutionsIndex = new Set(raw.keys);
-        cached = solutionsIndex;
-      }
-    } catch (e) { /* ignore a corrupt cache */ }
-  } else {
-    cached = solutionsIndex;
+   So a solution published or unpublished in the editor can take up to 30
+   minutes to gain or lose its button in a tab that is already open. An
+   unpublished one still cannot be read in that time: fetchSolution() only
+   asks for published rows, so its button opens "This solution is no
+   longer published." The page used to refetch on every load and every tab
+   switch to close that gap, which was most of this project's
+   problem_solutions traffic. */
+function loadSolutionsIndex() {
+  if (!solutionsOfflineActive()) {
+    const cached = readSolutionsIndexCache();
+    const age = cached ? Date.now() - cached.at : Infinity;
+    if (age >= 0 && age < SOLUTIONS_INDEX_MAX_AGE_MS) return Promise.resolve(applySolutionsIndexRows(cached.rows));
   }
-
-  const fresh = fetchSolutionsIndex().then((set) => {
-    if (typeof onFresh === 'function') onFresh(set);
-    return set;
-  });
-
-  return cached ? Promise.resolve(cached) : fresh;
+  return fetchSolutionsIndex();
 }
 
 function hasPublishedSolution(quizNum, problemId) {
@@ -219,21 +229,14 @@ function refreshSolutionButtons() {
 }
 
 function initSolutions() {
-  // Both callbacks matter: the first paints buttons from the cached list,
-  // the second corrects them once the live list arrives.
-  loadSolutionsIndex(refreshSolutionButtons).then(refreshSolutionButtons);
+  loadSolutionsIndex().then(refreshSolutionButtons);
 
-  // Coming back to a tab that was left open is the other moment the list
-  // can be out of date (a solution published from the editor meanwhile).
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) fetchSolutionsIndex().then(refreshSolutionButtons);
-  });
-
-  // And a tab that stays in front the whole time: re-check hourly. Skipped
-  // while hidden, since coming back already refreshes (above).
-  setInterval(() => {
-    if (!document.hidden) fetchSolutionsIndex().then(refreshSolutionButtons);
-  }, SOLUTIONS_INDEX_POLL_MS);
+  // Coming back to a tab, and every few minutes while one stays in front,
+  // pick up the newest copy: usually another tab's, read from localStorage
+  // without a request; a fetch only once the 30 minutes are up.
+  const recheck = () => { if (!document.hidden) loadSolutionsIndex().then(refreshSolutionButtons); };
+  document.addEventListener('visibilitychange', recheck);
+  setInterval(recheck, SOLUTIONS_INDEX_CHECK_MS);
 }
 
 /* ── Screen ───────────────────────────────────────────────────────────

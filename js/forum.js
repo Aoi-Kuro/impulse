@@ -220,11 +220,44 @@ function getForumClient() {
 // fallback timer covers the rare case of a dropped/missed socket event, so
 // nothing ever goes silently stale.
 const FORUM_REALTIME_FALLBACK_MS = 90000;
+// Quiet mode: when nobody has posted for 24h, the fallback above slows to
+// once every 15 minutes, since Realtime still delivers a new message the
+// moment it is posted and the fallback is only a safety net. A new message
+// seen through a Realtime insert, the forum screen's refresh or the
+// quarter-hourly check switches straight back to 90s. Never applies while
+// the forum screen itself is open.
+const FORUM_QUIET_AFTER_MS       = 24 * 60 * 60 * 1000;
+const FORUM_QUIET_FALLBACK_MS    = 15 * 60 * 1000;
 let _forumRealtimeChannel      = null;
 let _forumRealtimeFallbackTimer = null;
+let _forumLastFallbackAt       = 0;
+let _forumNewestMessageAt      = null; // ms; null until known, which counts as active
 let _forumUnreadActive         = false;
 let _forumLiveActive           = false;
 let _forumProblemCountsActive  = false;
+
+function _forumNoteMessageAt(iso) {
+  const t = Date.parse(iso);
+  if (Number.isFinite(t) && (_forumNewestMessageAt === null || t > _forumNewestMessageAt)) _forumNewestMessageAt = t;
+}
+
+function _forumIsQuiet() {
+  return !forumScreenOpen
+    && _forumNewestMessageAt !== null
+    && Date.now() - _forumNewestMessageAt > FORUM_QUIET_AFTER_MS;
+}
+
+// One row, one column: when the newest visible message was posted.
+async function _forumRefreshNewestMessageAt() {
+  const client = getForumClient();
+  if (!client) return;
+  const { data, error } = await client
+    .from('forum_messages_public')
+    .select('created_at')
+    .order('id', { ascending: false })
+    .limit(1);
+  if (!error && data && data[0]) _forumNoteMessageAt(data[0].created_at);
+}
 
 function _forumRealtimeWake() {
   // Each callee has its own internal guard (forumScreenOpen, etc.) so it's
@@ -250,8 +283,17 @@ let _forumRealtimeEverConnected = false;
 
 function _ensureForumRealtime() {
   if (!_forumRealtimeFallbackTimer) {
+    _forumLastFallbackAt = Date.now(); // each start*Polling already checks once right away
+    if (_forumNewestMessageAt === null) _forumRefreshNewestMessageAt();
     _forumRealtimeFallbackTimer = setInterval(() => {
       if (document.hidden) return;
+      if (_forumIsQuiet()) {
+        if (Date.now() - _forumLastFallbackAt < FORUM_QUIET_FALLBACK_MS) return;
+        // Catches a message whose Realtime event was missed even when no
+        // poll below is active to notice it, so quiet mode can end.
+        _forumRefreshNewestMessageAt();
+      }
+      _forumLastFallbackAt = Date.now();
       _forumRealtimeWake();
     }, FORUM_REALTIME_FALLBACK_MS);
   }
@@ -260,7 +302,10 @@ function _ensureForumRealtime() {
   if (!client) return;
   _forumRealtimeChannel = client
     .channel('forum-messages-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_messages' }, _forumRealtimeWake)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_messages' }, (payload) => {
+      if (payload && payload.eventType === 'INSERT' && payload.new) _forumNoteMessageAt(payload.new.created_at || new Date().toISOString());
+      _forumRealtimeWake();
+    })
     .subscribe((status) => {
       if (status !== 'SUBSCRIBED') return;
       if (_forumRealtimeEverConnected) _forumRealtimeWake(); // reconnect, not first connect — catch up now
@@ -3961,6 +4006,7 @@ async function forumLiveTick() {
   const reqKey = forumCacheKey();
   const { data, error } = await fetchForumMessages(); // first page of the currently-active filter
   if (error || !data || data.length === 0) return;
+  data.forEach((m) => _forumNoteMessageAt(m.created_at)); // keeps quiet mode's clock current
   // Filter switched while this was in flight — this page belongs to the old
   // filter, so caching/rendering it now would mix it into the new one.
   if (forumCacheKey() !== reqKey) return;

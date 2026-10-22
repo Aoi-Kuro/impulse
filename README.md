@@ -1404,7 +1404,7 @@ Course-scoped keys start with `STORAGE_PREFIX` (shown as `<p>`).
 | localStorage | `<p>_forum_nickname`, `<p>_forum_pin`, `<p>_forum_display_name`, `<p>_forum_avatar_cache`, `<p>_forum_last_seen_id`, `<p>_forum_pin_*` | Forum identity, avatars, unread tracking. |
 | localStorage | `<p>_splash_seen`, `<p>_splash_mandatory_shown`, `<p>-bug-nudge-shown` | Splash and nudge bookkeeping. |
 | localStorage | `<p>-editor-key`, `-editor-drafts`, `-editor-history`, `-editor-last`, `-editor-sidebar`, `-editor-split`, `-editor-server-mock` | Editor state (the last one only with `store-mock.js`). |
-| sessionStorage | `<p>-solutions-index` | Published-solution index cache. |
+| localStorage | `<p>-solutions-index` | Published-solution index (`{at, rows}`), shared by all tabs; refetched once it is 30 minutes old. |
 | IndexedDB | `mathRenderCache` | Typeset Solve-All problem HTML + CSS. |
 | IndexedDB | `flux-notif-mute` | "Go silent" flag for `sw.js`. |
 | IndexedDB | `flux-offline-mode` | Offline-mode expiry for `sw.js`. |
