@@ -275,21 +275,6 @@ html.settings-hide-daylight-btn #themeTrack { display: none; }
 html.settings-hide-forum-fab .forum-fab-wrap { display: none !important; }
 html.settings-hide-top-bar-tip .top-bar-tip { display: none !important; }
 
-/* Display > Match figures to theme: #figThemeFilter is built and kept in
-   sync with the theme by applyFigureTheme() in js/settings.js. Photos and
-   shaded drawings look like negatives once their lightness is flipped (or
-   have no white page to blend away), so these keep their own colors. */
-html.settings-theme-figures .fig-img-wrap img:not(
-  [src$="quiz_1/unnamed(3).webp"],
-  [src$="quiz_1/unnamed(5).webp"],
-  [src$="quiz_1/unnamed(8).webp"],
-  [src$="quiz_2/unnamed(2).webp"],
-  [src$="quiz_2/unnamed(3).webp"],
-  [src$="quiz_2/unnamed(23).webp"],
-  [src$="quiz_2/unnamed(24).webp"],
-  [src$="quiz_2/unnamed(25).webp"]
-) { filter: url(#figThemeFilter); }
-
 /* ── Notifications tab effects ──
    Same <html>-class mechanism as the Display toggles above, applied by
    applyNotificationSettings() (js/settings.js) instead of

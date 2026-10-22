@@ -1459,17 +1459,28 @@ function rerenderSolveAllEquations() {
 // done (see that function for why).
 let _freshlyCachedThisRender = [];
 
+// The problem, and its cache key, that each Solve-All card was built for.
+// Typesetting runs a batch at a time, asynchronously: by the time a batch is
+// cached, Solve-All may already have been reopened for another quiz, and
+// solveAllProblems[i] / selectedQuizNum then describe a different problem.
+// Looking them up that late stored one quiz's cards under another quiz's
+// keys, with a matching text hash, so those problems later showed the wrong
+// text from the cache.
+const _saCardSource = new WeakMap();
+
 async function cacheTypesetBatch(batch) {
   for (const card of batch) {
-    const idx = card.id.replace('sa-card-', '');
-    const p = solveAllProblems[idx];
-    if (!p) continue;
+    const src = _saCardSource.get(card);
+    if (!src) continue;
     const textEl = card.querySelector('.problem-text');
     if (!textEl) continue;
-    const html = textEl.innerHTML;
+    // Figures go into the cache as their original <img> (js/figure-style.js
+    // swaps in the redrawn SVG on display), so a cached card never keeps a
+    // drawing that a later export has changed.
+    const html = typeof figuresAsOriginal === 'function' ? figuresAsOriginal(textEl.innerHTML) : textEl.innerHTML;
     const css = extractCssForHtml(html);
-    await storeCachedMathHTML(mathCacheKeyFor(p), mathCacheHashOf(p.text), html, css);
-    _freshlyCachedThisRender.push(p);
+    await storeCachedMathHTML(src.key, mathCacheHashOf(src.p.text), html, css);
+    _freshlyCachedThisRender.push(src);
   }
 }
 
@@ -1487,8 +1498,7 @@ async function cacheTypesetBatch(batch) {
 async function finalizeFreshMathCache() {
   const entries = _freshlyCachedThisRender;
   _freshlyCachedThisRender = [];
-  for (const p of entries) {
-    const key = mathCacheKeyFor(p);
+  for (const { p, key } of entries) {
     const existing = getCachedMathHTML(key, p.text);
     if (!existing) continue; // text changed again already, or something else invalidated it — skip
     const css = extractCssForHtml(existing.html);
@@ -1527,6 +1537,7 @@ function buildSolveAllCards(container, batchSize = 12) {
           const card = document.createElement('div');
           card.className = 'problem-card';
           card.id = 'sa-card-' + i;
+          _saCardSource.set(card, { p, key: mathCacheKeyFor(p) });
 
           // If this exact problem text was already typeset in a previous
           // visit, reuse that HTML+CSS bundle directly and skip MathJax
@@ -2521,7 +2532,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '12.4.6';
+const CURRENT_VERSION = '12.5.0';
 
 // How often to poll the manifest (milliseconds). Default: every 5 minutes.
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;

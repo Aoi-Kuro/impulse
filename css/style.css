@@ -229,6 +229,24 @@
     max-width: 100%;
     height: auto;
   }
+  /* Redrawn figures (js/figure-style.js, Settings › Study): inline SVGs in
+     place of a problem image. Each is drawn at one user unit per pixel and
+     --fig-w is its viewBox width, so labels come out the size of the problem
+     text in every figure; Figure size scales them like the images. Colours
+     are theme variables: ink is currentColor, the two accents are
+     --svg-blue/--svg-red, --svg-dark stays dark in both modes (tyres) and
+     --svg-gold is the one extra colour (the brass rod). */
+  .fig-img-wrap svg.fig-redrawn {
+    width: calc(var(--fig-w, 350) * 1px * var(--user-fig-scale, 1));
+    max-width: 100%;
+    height: auto;
+    color: var(--text);
+    --svg-fill-white: var(--surface);
+    --svg-dark: var(--bg);
+    --svg-gold: var(--partial);
+  }
+  body.light .fig-img-wrap svg.fig-redrawn { --svg-dark: var(--text); }
+  .fig-img-wrap svg.fig-redrawn text { font-family: 'STIX Two Text', 'Times New Roman', serif; }
 
   /* ── Figure source attribution (i) badge ──
      Sits pinned to the figure's corner, always visible; hover/focus/tap
