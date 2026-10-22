@@ -49,6 +49,10 @@ const SETTINGS_DEFAULTS = {
     // figures) through the --user-fig-scale CSS variable. See
     // applyFigureScale() below.
     figureScale:     100,
+    // Recolor problem figures to the theme (white -> --surface, black ->
+    // --text, lightness flipped in dark mode). Off by default — see
+    // applyFigureTheme() below.
+    themeFigures:    false,
   },
   notifications: {
     hideUpdateReminder: false,
@@ -692,8 +696,8 @@ function renderSettingsBody() {
 }
 
 // One row per Display toggle: {key in SETTINGS_DEFAULTS.display, title, desc}.
-// Checked = shown (default); unchecked = hidden. The one exception is
-// followDeviceTheme (`sub`, grouped under showDaylightBtn — see
+// Checked = shown (default); unchecked = hidden. The exceptions are
+// themeFigures (a plain on/off, off by default) and followDeviceTheme (`sub`, grouped under showDaylightBtn — see
 // renderSettingsDisplayTab): checked means "on" rather than "shown". While
 // it's on, showDaylightBtn's own row renders forced-off and disabled (its
 // stored value is untouched, just not in effect) and applyDisplaySettings()
@@ -745,6 +749,11 @@ const DISPLAY_TOGGLES = [
     key: 'hideFieldLinesByDefault',
     title: 'Hide field lines by default',
     desc: 'Hides field lines animation that appear upon changelog opening.',
+  },
+  {
+    key: 'themeFigures',
+    title: 'Match figures to theme',
+    desc: 'Recolors problem figures to blend into the current theme — light lines on the card background in dark mode. Photo-like figures keep their colors.',
   },
 ];
 
@@ -840,6 +849,65 @@ function setFigureScale(v) {
   applyFigureScale();
   const label = document.getElementById('figureScaleValue');
   if (label) label.textContent = pct + '%';
+}
+
+// ── Match figures to theme ──
+// Problem figures are drawings on a white page. With this on, one SVG
+// filter recolors them in two steps: (1) map the page to 0 and the ink to
+// 1 — in dark mode by flipping lightness only (c + 1 - 2·luma, which keeps
+// hues; a plain invert would turn red arrows cyan), in light mode by
+// plain 1 - c; (2) a linear curve per channel, 0 -> --surface (the problem
+// card) and 1 -> --text. The curve's numbers come from the live theme
+// variables, so a MutationObserver on <body> recomputes them on every
+// theme / day-night / custom-theme change. css/settings.css applies the
+// filter and lists the photo-like figures it leaves alone.
+const FIG_THEME_LUMA = [0.299, 0.587, 0.114];
+let figThemeObserver = null;
+function ensureFigureThemeFilter() {
+  if (document.getElementById('figThemeFilter')) return;
+  // sRGB interpolation so the endpoints land exactly on the hex values.
+  const holder = document.createElement('div');
+  holder.innerHTML = `
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+      <filter id="figThemeFilter" color-interpolation-filters="sRGB">
+        <feColorMatrix id="figThemeFlip" type="matrix"/>
+        <feColorMatrix id="figThemeCurve" type="matrix"/>
+      </filter>
+    </svg>`;
+  document.body.appendChild(holder.firstElementChild);
+}
+function updateFigureThemeFilter() {
+  const flip = document.getElementById('figThemeFlip');
+  const curve = document.getElementById('figThemeCurve');
+  if (!flip || !curve || typeof cssVarRgb !== 'function') return;
+  const s = cssVarRgb('--surface').map(v => v / 255);
+  const t = cssVarRgb('--text').map(v => v / 255);
+  const dark = !document.body.classList.contains('light');
+  const rgb = [0, 1, 2];
+  const alpha = '0 0 0 1 0';
+  flip.setAttribute('values', rgb.map(i => rgb.map(j =>
+    dark ? (i === j ? 1 : 0) - 2 * FIG_THEME_LUMA[j] : (i === j ? -1 : 0)
+  ).concat(0, 1).join(' ')).concat(alpha).join('  '));
+  curve.setAttribute('values', rgb.map(i => rgb.map(j =>
+    i === j ? t[i] - s[i] : 0
+  ).concat(0, s[i]).join(' ')).concat(alpha).join('  '));
+}
+function applyFigureTheme() {
+  const on = getSetting('display', 'themeFigures') === true;
+  if (on) {
+    ensureFigureThemeFilter();
+    updateFigureThemeFilter();
+    if (!figThemeObserver) {
+      figThemeObserver = new MutationObserver(updateFigureThemeFilter);
+      figThemeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
+    }
+  } else if (figThemeObserver) {
+    figThemeObserver.disconnect();
+    figThemeObserver = null;
+  }
+  // Only after the filter exists: a url(#…) to a missing filter can blank
+  // the image in some browsers instead of leaving it unfiltered.
+  document.documentElement.classList.toggle('settings-theme-figures', on);
 }
 
 // In-place counterpart to a full renderSettingsBody() for followDeviceTheme
@@ -1239,6 +1307,7 @@ function applyDisplaySettings() {
     document.documentElement.classList.toggle(cls, !shown);
   }
   applyFigureScale();
+  applyFigureTheme();
 }
 
 // ── Notifications ───────────────────────────────────────────────────────
