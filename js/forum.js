@@ -281,21 +281,35 @@ function _forumRealtimeWake() {
 // fallback; catch up immediately instead.
 let _forumRealtimeEverConnected = false;
 
+// One fallback check, if its interval (90s, or 15 min when quiet) is up.
+// Runs from the timer and when the tab comes back into view; a hidden tab
+// skips it. The few seconds of slack keep a timer tick that fires a little
+// early from being skipped for a whole extra interval.
+function _forumFallbackTick() {
+  if (document.hidden) return;
+  const quiet = _forumIsQuiet();
+  const every = quiet ? FORUM_QUIET_FALLBACK_MS : FORUM_REALTIME_FALLBACK_MS;
+  if (Date.now() - _forumLastFallbackAt < every - 5000) return;
+  // Catches a message whose Realtime event was missed even when no poll
+  // below is active to notice it, so quiet mode can end.
+  if (quiet) _forumRefreshNewestMessageAt();
+  _forumLastFallbackAt = Date.now();
+  _forumRealtimeWake();
+}
+
+// Switching back to the tab checks only if the tab was away longer than the
+// fallback interval. The channel stays subscribed while hidden, so anything
+// posted meanwhile already arrived through Realtime; checking on every
+// switch was one request per tab switch (HAR, 2026-10-22).
+document.addEventListener('visibilitychange', () => {
+  if (_forumRealtimeFallbackTimer) _forumFallbackTick();
+});
+
 function _ensureForumRealtime() {
   if (!_forumRealtimeFallbackTimer) {
     _forumLastFallbackAt = Date.now(); // each start*Polling already checks once right away
     if (_forumNewestMessageAt === null) _forumRefreshNewestMessageAt();
-    _forumRealtimeFallbackTimer = setInterval(() => {
-      if (document.hidden) return;
-      if (_forumIsQuiet()) {
-        if (Date.now() - _forumLastFallbackAt < FORUM_QUIET_FALLBACK_MS) return;
-        // Catches a message whose Realtime event was missed even when no
-        // poll below is active to notice it, so quiet mode can end.
-        _forumRefreshNewestMessageAt();
-      }
-      _forumLastFallbackAt = Date.now();
-      _forumRealtimeWake();
-    }, FORUM_REALTIME_FALLBACK_MS);
+    _forumRealtimeFallbackTimer = setInterval(_forumFallbackTick, FORUM_REALTIME_FALLBACK_MS);
   }
   if (_forumRealtimeChannel) return;
   const client = getForumClient();
@@ -4142,12 +4156,14 @@ function onForumListScroll() {
   }
 }
 
-// Polling only makes sense while the person is actually looking at the main
-// screen with the tab in focus — not mid-quiz, and not in a backgrounded
-// tab. Rather than thread start/stop calls through every screen-transition
-// function elsewhere in the app, watch #landingScreen's own visibility
-// (via its "hidden" class) plus the page's visibility state, and let those
-// two signals drive polling on their own.
+// Polling only makes sense while the person is on the main screen (or one
+// showing the forum button) — not mid-quiz. Rather than thread start/stop
+// calls through every screen-transition function elsewhere in the app,
+// watch #landingScreen's own visibility (via its "hidden" class) and let
+// that drive polling on its own. A backgrounded tab keeps polling "active":
+// the fallback timer already skips hidden ticks, and stopping here used to
+// tear the channel down and re-check on every tab switch (see
+// _forumFallbackTick).
 function initForumPollingWatcher() {
   const landing = document.getElementById('landingScreen');
   const wrap    = document.getElementById('forumFabWrap');
@@ -4159,13 +4175,12 @@ function initForumPollingWatcher() {
     // for every other screen the FAB can appear on, so piggyback on it
     // instead of re-deriving "is the FAB up" from scratch here.
     const fabVisible = wrap && wrap.classList.contains('forum-fab-visible');
-    if ((onMainScreen || fabVisible) && !forumScreenOpen && !document.hidden) startForumPolling();
+    if ((onMainScreen || fabVisible) && !forumScreenOpen) startForumPolling();
     else stopForumPolling();
   };
 
   new MutationObserver(sync).observe(landing, { attributes: true, attributeFilter: ['class'] });
   if (wrap) new MutationObserver(sync).observe(wrap, { attributes: true, attributeFilter: ['class'] });
-  document.addEventListener('visibilitychange', sync);
   sync();
 }
 

@@ -1240,6 +1240,8 @@ function fmtDuration(sec) {
 // doesn't need a 5s refresh since it essentially never changes mid-session
 // (only a rename re-seeds it, which already calls renderSfpIdentity again).
 let _statsPanelPollTimer = null;
+let _statsPanelLastPollAt = 0;           // when pollStatsPanel() last ran, whatever triggered it
+const STATS_PANEL_FALLBACK_MS = 45000;
 
 async function loadStatsPanel() {
   const nickname = (typeof getForumNickname === 'function') ? getForumNickname() : '';
@@ -1443,6 +1445,7 @@ async function pollStatsPanel() {
   const client = (typeof getForumClient === 'function') ? getForumClient() : null;
   const dot = document.getElementById('sfpLiveDot');
   if (!client) return;
+  _statsPanelLastPollAt = Date.now();
 
   if (dot) dot.style.display = '';
   if (typeof _settleLiveDot === 'function') _settleLiveDot(dot, 'syncing', 'Refreshing…');
@@ -1515,7 +1518,7 @@ function startStatsPanelPolling() {
     if (document.hidden) return;
     if (typeof isStatsIdle === 'function' && isStatsIdle()) return;
     pollStatsPanel();
-  }, 45000);
+  }, STATS_PANEL_FALLBACK_MS);
 }
 
 // ── total_visits' Realtime channel ──────────────────────────────────────
@@ -1561,8 +1564,12 @@ function stopStatsPanelPolling() {
   _teardownSiteVisitsRealtime();
 }
 
+// Coming back to the tab refreshes only if the panel was last refreshed
+// longer ago than the fallback interval; Realtime keeps delivering while
+// the tab is hidden, and refreshing on every switch cost three RPCs each.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && _statsPanelPollTimer) pollStatsPanel();
+  if (!document.hidden && _statsPanelPollTimer
+      && Date.now() - _statsPanelLastPollAt >= STATS_PANEL_FALLBACK_MS) pollStatsPanel();
 });
 
 // Draws a hand-tally-counter graphic: chrome body, a ring + thumb lever on

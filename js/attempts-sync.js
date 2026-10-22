@@ -15,6 +15,7 @@
 // machine this dot shares with the Forum & Site panel's dot.
 
 let _attemptsSyncing = false;
+let _attemptsLastSyncAt = 0;    // when syncAttempts() last went to the server, whatever triggered it
 let _lastSyncFailed = false;
 
 // Hashes currently being deleted server-side (deleteAttemptOnServer, below).
@@ -215,7 +216,8 @@ window.addEventListener('offline', () => {
 // one used to run the full set at once: one device sent ~290 requests in 3
 // seconds this way (Supabase logs, 2026-10-17 18:24). A hidden tab loses
 // nothing by waiting: the visibilitychange listeners in this file, js/stats.js
-// and js/solve-all-sync.js already re-sync the moment it is looked at again.
+// and js/solve-all-sync.js re-sync when it is looked at again, once their
+// last sync is older than their fallback interval.
 function reconnectAllLiveSync() {
   if (document.hidden) return;
   syncAttempts();
@@ -255,8 +257,9 @@ async function syncAttempts() {
     _teardownAttemptsRealtime(); // no identity to sync to (or listen for) anymore
     return; // nothing to sync to yet — quiz start already gates on this, but stats can still be opened without ever starting one
   }
+  _attemptsLastSyncAt = Date.now();
 
-  const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
+  const deviceId =(typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
   const deviceSecret = (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null;
   const deviceToken = (typeof getDeviceToken === 'function') ? getDeviceToken() : null;
   const identityToken = (typeof getIdentityToken === 'function') ? getIdentityToken() : null;
@@ -432,8 +435,12 @@ function stopAttemptsSyncPolling() {
   }
 }
 
+// Coming back to the tab re-syncs only if the tab was away longer than the
+// fallback interval: Realtime keeps delivering while it is hidden, and
+// syncing on every switch was one request per tab switch.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && _attemptsSyncPollTimer) syncAttempts();
+  if (!document.hidden && _attemptsSyncPollTimer
+      && Date.now() - _attemptsLastSyncAt >= ATTEMPTS_SYNC_FALLBACK_MS) syncAttempts();
 });
 
 startAttemptsSyncPolling();

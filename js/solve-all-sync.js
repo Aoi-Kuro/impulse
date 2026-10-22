@@ -15,12 +15,12 @@
 //     the old blind 15s-while-open poll.
 //   - A slow fallback tick (SA_SYNC_FALLBACK_MS) as a safety net in case a
 //     ping is ever missed.
-//   - Immediately again the moment the tab regains focus (visibilitychange,
-//     bottom of this file) — background tabs get their timers throttled
-//     hard by the browser, so without this a session left open but
-//     unfocused could sit stale far longer than expected; the moment you
-//     switch back is exactly when you want it caught up, same pattern
-//     already used by js/attempts-sync.js and js/stats.js.
+//   - Immediately again when the tab regains focus after being away longer
+//     than SA_SYNC_FALLBACK_MS (visibilitychange, bottom of this file) —
+//     background tabs get their timers throttled hard by the browser, so
+//     without this a session left open but unfocused could sit stale far
+//     longer than expected; same pattern used by js/attempts-sync.js and
+//     js/stats.js.
 //   - One more push on exit (best-effort, catches whatever the last
 //     periodic tick missed).
 //   - Reset upserts a *tombstone* (data: null), not a delete. A missing row
@@ -46,6 +46,7 @@ const SA_SYNC_POLL_MS = 15000; // kept as the reset-guard duration below (resetS
 const SA_SYNC_FALLBACK_MS = 60000; // safety net only now — Realtime (see _ensureSaRealtime) handles the normal case
 let _saSyncPollTimer = null;
 let _saSyncActive = null;        // { quizNum, cumulative } while a session is open
+let _saLastRoundTripAt = 0;      // when _saSyncRoundTrip() last went to the server, whatever triggered it
 const _saPendingReset = new Set(); // "quizNum_cum" keys mid-reset — pushes for that key are skipped
 // Signature (see _saSnapshotSignature below) of the last snapshot
 // successfully pushed for the currently-open session — lets
@@ -368,6 +369,7 @@ async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
 
   const identityName = (typeof getForumNickname === 'function') ? getForumNickname() : '';
   if (!identityName) { _setSolveAllSyncDot('gray'); return; }
+  _saLastRoundTripAt = Date.now();
 
   const pulled = await pullSolveAllProgress(quizNum, cumulative);
   if (pulled === null) {
@@ -449,8 +451,14 @@ function stopSolveAllSync() {
 // an "opening" event, so isInitial is false here — a tombstone found this
 // way is a genuine externally-triggered reset, not this session's own
 // fresh start.
+//
+// Only once the tab was away longer than the fallback interval, though:
+// Realtime keeps delivering while it is hidden (and a dropped socket
+// catches up on reconnect), and a round trip on every switch was one or two
+// requests per tab switch. A throttled background tab misses at most that
+// one interval.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && _saSyncActive) {
+  if (!document.hidden && _saSyncActive && Date.now() - _saLastRoundTripAt >= SA_SYNC_FALLBACK_MS) {
     _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
   }
 });
