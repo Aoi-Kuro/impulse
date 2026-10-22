@@ -2467,6 +2467,18 @@
     text-align: center;
   }
   #stickyScore.visible { display: block; }
+  /* #stickyScore and #saNavRail (js/solve-all-nav.js) are position:fixed on
+     <body>, outside #appPage, so they stayed on screen when another screen
+     replaced #appPage: the Manual opened from Solve-All showed both on top of
+     it. They belong to #appPage, so they hide whenever it isn't the visible
+     screen or is fading out. One rule for every screen that opens over it
+     (Manual, Forum, Settings, Solution, ...); the per-screen rules in
+     css/settings.css, css/solutions.css and css/solve-all-nav.css predate it. */
+  body:has(#appPage:not(.visible)) #saNavRail,
+  body:has(#appPage:not(.visible)) #stickyScore.visible,
+  body:has(#appPage.fading-out) #stickyScore.visible {
+    display: none !important;
+  }
   .sticky-score-val {
     font-size: 1.4rem;
     font-weight: 600;
