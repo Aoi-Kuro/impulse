@@ -25,6 +25,7 @@
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 const CHANGELOG = [
+  { version: "12.5.1", note: "Important fixes now reach open tabs faster, with fewer repeated background requests.", scope: 0 },
   { version: "12.5.0", note: "Custom figures!", scope: 1 },
   { version: "12.4.6", note: "Optimized traffic consumption.", scope: 0 },
   { version: "12.4.5", note: "Offline page illustration is back in full resolution.", scope: 0 },

@@ -218,16 +218,15 @@ function getForumClient() {
 // (same start/stop functions and gating as before — see startForumPolling,
 // startForumLivePolling, startForumProblemCountsPolling below). A slow
 // fallback timer covers the rare case of a dropped/missed socket event, so
-// nothing ever goes silently stale.
-const FORUM_REALTIME_FALLBACK_MS = 90000;
+// nothing ever goes silently stale. Its interval is site-version.json's
+// "poll.forum" (js/site-config.js), 90 s by default.
 // Quiet mode: when nobody has posted for 24h, the fallback above slows to
-// once every 15 minutes, since Realtime still delivers a new message the
-// moment it is posted and the fallback is only a safety net. A new message
-// seen through a Realtime insert, the forum screen's refresh or the
-// quarter-hourly check switches straight back to 90s. Never applies while
-// the forum screen itself is open.
+// "poll.forum_quiet" (15 minutes by default), since Realtime still delivers
+// a new message the moment it is posted and the fallback is only a safety
+// net. A new message seen through a Realtime insert, the forum screen's
+// refresh or the quiet check switches straight back to "poll.forum". Never
+// applies while the forum screen itself is open.
 const FORUM_QUIET_AFTER_MS       = 24 * 60 * 60 * 1000;
-const FORUM_QUIET_FALLBACK_MS    = 15 * 60 * 1000;
 let _forumRealtimeChannel      = null;
 let _forumRealtimeFallbackTimer = null;
 let _forumLastFallbackAt       = 0;
@@ -288,7 +287,7 @@ let _forumRealtimeEverConnected = false;
 function _forumFallbackTick() {
   if (document.hidden) return;
   const quiet = _forumIsQuiet();
-  const every = quiet ? FORUM_QUIET_FALLBACK_MS : FORUM_REALTIME_FALLBACK_MS;
+  const every = sitePollMs(quiet ? 'forum_quiet' : 'forum');
   if (Date.now() - _forumLastFallbackAt < every - 5000) return;
   // Catches a message whose Realtime event was missed even when no poll
   // below is active to notice it, so quiet mode can end.
@@ -309,9 +308,9 @@ function _ensureForumRealtime() {
   if (!_forumRealtimeFallbackTimer) {
     _forumLastFallbackAt = Date.now(); // each start*Polling already checks once right away
     if (_forumNewestMessageAt === null) _forumRefreshNewestMessageAt();
-    _forumRealtimeFallbackTimer = setInterval(_forumFallbackTick, FORUM_REALTIME_FALLBACK_MS);
+    _forumRealtimeFallbackTimer = startSitePoll('forum', _forumFallbackTick);
   }
-  if (_forumRealtimeChannel) return;
+  if (_forumRealtimeChannel || siteOff('realtime')) return; // "off" in site-version.json: the fallback tick carries it alone
   const client = getForumClient();
   if (!client) return;
   _forumRealtimeChannel = client
@@ -332,7 +331,11 @@ function _ensureForumRealtime() {
 // isn't showing, the forum isn't open, and solve-all isn't open.
 function _maybeTeardownForumRealtime() {
   if (_forumUnreadActive || _forumLiveActive || _forumProblemCountsActive) return;
-  if (_forumRealtimeFallbackTimer) { clearInterval(_forumRealtimeFallbackTimer); _forumRealtimeFallbackTimer = null; }
+  _forumRealtimeFallbackTimer = stopSitePoll(_forumRealtimeFallbackTimer);
+  _forumDropRealtimeChannel();
+}
+
+function _forumDropRealtimeChannel() {
   if (_forumRealtimeChannel) {
     const client = getForumClient();
     if (client) client.removeChannel(_forumRealtimeChannel);
@@ -340,6 +343,14 @@ function _maybeTeardownForumRealtime() {
     _forumRealtimeEverConnected = false; // next _ensureForumRealtime() starts a fresh channel/first-connect
   }
 }
+
+// Realtime switched off in site-version.json (js/site-config.js): keep the
+// fallback tick, drop only the socket. Switched back on: reopen it if
+// anything still uses it.
+document.addEventListener('site-config-changed', (e) => {
+  if (e.detail.after.off.includes('realtime')) _forumDropRealtimeChannel();
+  else if (_forumUnreadActive || _forumLiveActive || _forumProblemCountsActive) _ensureForumRealtime();
+});
 
 // ── Local "last seen" tracking (drives the unread badge) ────────────────────
 function getForumLastSeenId() {
@@ -1120,6 +1131,12 @@ async function submitForumMessage(opts = {}) {
     statusEl.classList.add('forum-composer-status-error');
     return;
   }
+  // "off": ["forum_posting"] in site-version.json (js/site-config.js).
+  if (siteOff('forum_posting')) {
+    statusEl.textContent = 'Posting is paused for now. You can still read the forum.';
+    statusEl.classList.add('forum-composer-status-error');
+    return;
+  }
 
   // Shows the ↻/"Post as is" pair in place of the plain Send button, or
   // switches back — see the latex_assist_failed branch below for when this
@@ -1768,6 +1785,11 @@ async function submitForumEditMessage() {
 
   if (!newBody) {
     statusEl.textContent = "Message can't be empty.";
+    statusEl.classList.add('forum-composer-status-error');
+    return;
+  }
+  if (siteOff('forum_posting')) { // site-version.json, as in submitForumMessage
+    statusEl.textContent = 'Editing is paused for now. Your message is unchanged.';
     statusEl.classList.add('forum-composer-status-error');
     return;
   }

@@ -2532,18 +2532,20 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '12.5.0';
+const CURRENT_VERSION = '12.5.1';
 
-// How often to poll the manifest (milliseconds). Default: every 5 minutes.
-const VERSION_CHECK_INTERVAL = 5 * 60 * 1000;
+// The manifest is polled every "poll.update" of site-version.json
+// (js/site-config.js), 5 minutes by default, while the tab is visible.
 
 // URL of the tiny JSON manifest file you host next to this HTML, with
 // content like {"version":"1.0.0","editor":"1.0.0"}. Update "version" there
 // whenever you publish a new release of the site; "editor" is the editor's
 // own number (editor/editor.js "site version"), which this page ignores, so
-// an editor-only release never asks students to reload.
+// an editor-only release never asks students to reload. The optional
+// settings next to them (min_version, poll, off, sync_paused, purge_id) are
+// described in js/site-config.js.
 //
-// Not "version.json" any more, on purpose: up to 12.4.5 the code polled that
+// Not "version.json" any more, on purpose: up to 12.4.4 the code polled that
 // name, and up to 12.4.3, on every mismatch, it made its (old) service worker
 // re-download the whole precache list — ~2 MB every 5 minutes for as long as
 // such a tab stayed open. With that name gone, those tabs get a 404, which
@@ -2574,6 +2576,20 @@ const UPDATE_FORCE_AFTER = 24 * 60 * 60 * 1000;
 const UPDATE_FORCE_DURING_QUIZ_AFTER = 3 * 60 * 60 * 1000;
 const UPDATE_OUTDATED_KEY = STORAGE_PREFIX + '-update-outdated';  // { from: CURRENT_VERSION, at }
 let _updateSeenAt = 0;  // same, for this tab only (localStorage can be unavailable)
+// site-version.json's "min_version" is above CURRENT_VERSION: the update is
+// overdue at once instead of after UPDATE_FORCE_AFTER. No min_version (or
+// an unreadable one) means no minimum.
+let _belowMinVersion = false;
+
+// -1, 0 or 1 for dotted numeric versions ("12.4.10" > "12.4.9").
+function compareVersions(a, b) {
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
 
 function _noteOutdated() {
   if (!_updateSeenAt) _updateSeenAt = Date.now();
@@ -2603,7 +2619,8 @@ BannerManager.register('update', () => {
 //     together with "Hide update reminder" — the point is to still get the
 //     update applied for someone who's opted out of ever seeing the nag
 //     banner; or
-//   • the update has been waiting UPDATE_FORCE_AFTER (24 h), whatever the
+//   • the update has been waiting UPDATE_FORCE_AFTER (24 h), or this
+//     version is below site-version.json's "min_version", whatever the
 //     settings or a dismissed banner say — a tab kept open for days must
 //     not stay on old code forever.
 // Never during a live timed attempt, except an overdue update once that
@@ -2614,7 +2631,7 @@ BannerManager.register('update', () => {
 // poll once it's finally safe to apply.
 async function maybeForceUpdateOutsideQuiz() {
   if (!_updatePending) return;
-  const overdue = _updateWaitedMs() >= UPDATE_FORCE_AFTER;
+  const overdue = _belowMinVersion || _updateWaitedMs() >= UPDATE_FORCE_AFTER;
   if (!overdue) {
     if (typeof getSetting !== 'function') return;
     const hidden = getSetting('notifications', 'hideUpdateReminder') === true;
@@ -2642,15 +2659,19 @@ function _claimForcedReload() {
   } catch (_) { return false; }
 }
 
+// A dismissed banner keeps polling: the manifest also carries the settings
+// in js/site-config.js, which have to reach every open tab. It just isn't
+// shown again this session.
 async function checkForUpdate() {
-  // A dismissed banner stops the polling for this session, but not the
-  // 24 h deadline: _updatePending is already known, nothing to fetch.
-  if (_updateDismissed) { maybeForceUpdateOutsideQuiz(); return; }
   _lastUpdateCheckAt = Date.now();
   try {
     const res = await fetch(VERSION_MANIFEST_URL + '?_=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) return; // server unavailable — fail silently
     const data = await res.json();
+    // Kept apart so a fault in the settings can never stop update detection.
+    try { applySiteConfig(data); } catch (e) { console.error('site-version.json settings not applied:', e); }
+    const min =typeof data.min_version === 'string' ? data.min_version.trim() : '';
+    _belowMinVersion = /^\d+(\.\d+)*$/.test(min) && compareVersions(CURRENT_VERSION, min) < 0;
     const latest = (data.version || '').trim();
     if (latest && latest !== CURRENT_VERSION) {
       _updatePending = true;
@@ -2666,7 +2687,8 @@ async function checkForUpdate() {
       // Opted in to silent updates, or the update is overdue: see if this
       // is already a safe moment to apply it.
       maybeForceUpdateOutsideQuiz();
-      // Reminder hidden: never occupy BannerManager's queue for it.
+      // Dismissed, or reminder hidden: never occupy BannerManager's queue for it.
+      if (_updateDismissed) return;
       if (typeof getSetting === 'function' && getSetting('notifications', 'hideUpdateReminder') === true) return;
       BannerManager.request('update');
     }
@@ -2973,7 +2995,7 @@ window.addEventListener('DOMContentLoaded', () => {
   checkForUpdate();
   // Hidden tabs don't poll: every poll is a billed request, and a tab nobody
   // is looking at has no use for an update until it's shown again (below).
-  setInterval(() => { if (!document.hidden) checkForUpdate(); }, VERSION_CHECK_INTERVAL);
+  startSitePoll('update', () => { if (!document.hidden && sitePollDue('update', _lastUpdateCheckAt)) checkForUpdate(); });
 
   // Telegram/bug-report nudge: once a day, after 10 minutes of usage.
   setTimeout(showBugBanner, BUG_NUDGE_DELAY);
@@ -2985,7 +3007,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // on the next 5-min poll.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
-    if (Date.now() - _lastUpdateCheckAt >= VERSION_CHECK_INTERVAL) checkForUpdate();
+    if (Date.now() - _lastUpdateCheckAt >= sitePollMs('update')) checkForUpdate();
     else maybeForceUpdateOutsideQuiz();
   });
 });

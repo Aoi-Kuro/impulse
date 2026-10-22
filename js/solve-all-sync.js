@@ -13,10 +13,10 @@
 //   - Whenever a Realtime Broadcast ping says this exact session changed on
 //     another device (see _ensureSaRealtime below) — this is what replaced
 //     the old blind 15s-while-open poll.
-//   - A slow fallback tick (SA_SYNC_FALLBACK_MS) as a safety net in case a
+//   - A slow fallback tick ("poll.solve_all") as a safety net in case a
 //     ping is ever missed.
 //   - Immediately again when the tab regains focus after being away longer
-//     than SA_SYNC_FALLBACK_MS (visibilitychange, bottom of this file) —
+//     than that interval (visibilitychange, bottom of this file) —
 //     background tabs get their timers throttled hard by the browser, so
 //     without this a session left open but unfocused could sit stale far
 //     longer than expected; same pattern used by js/attempts-sync.js and
@@ -42,8 +42,10 @@
 // file — since they don't need to wait on a network round trip to talk to
 // each other at all.
 
-const SA_SYNC_POLL_MS = 15000; // kept as the reset-guard duration below (resetSolveAllProgressOnServer) — see SA_SYNC_FALLBACK_MS for the (much slower, now Realtime-backed) periodic tick
-const SA_SYNC_FALLBACK_MS = 60000; // safety net only now — Realtime (see _ensureSaRealtime) handles the normal case
+const SA_SYNC_POLL_MS = 15000; // kept as the reset-guard duration below (resetSolveAllProgressOnServer) — the (much slower, now Realtime-backed) periodic tick is site-version.json's "poll.solve_all"
+// The fallback tick's interval is "poll.solve_all" in site-version.json
+// (js/site-config.js), 60 s by default: a safety net only now, since
+// Realtime (see _ensureSaRealtime) handles the normal case.
 let _saSyncPollTimer = null;
 let _saSyncActive = null;        // { quizNum, cumulative } while a session is open
 let _saLastRoundTripAt = 0;      // when _saSyncRoundTrip() last went to the server, whatever triggered it
@@ -179,37 +181,41 @@ function _onSaBroadcast(msg) {
 }
 
 function _ensureSaRealtime(identityId, quizNum, cumulative) {
-  if (!identityId) return;
+  if (!identityId || siteOff('realtime')) return; // "off" in site-version.json: the fallback tick carries it alone
   const key = _saRealtimeTopicKey(identityId, quizNum, cumulative);
   if (_saRealtimeChannel && _saRealtimeKey === key) return; // already on the right channel
   _teardownSaRealtime();
   _saRealtimeKey = key;
   const client = (typeof getForumClient === 'function') ? getForumClient() : null;
   if (!client) return;
-  _saRealtimeChannel = client
+  const channel = client
     .channel('solveall:' + key)
-    .on('broadcast', { event: 'changed' }, _onSaBroadcast)
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        // Reconnected after actually dropping — something could have
-        // changed while we were gone, so catch up now rather than wait on
-        // the next ping or the slow fallback timer. The round trip's own
-        // push/pull results will settle the dot back to green.
-        if (_saRealtimeEverConnected && _saSyncActive) _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
-        _saRealtimeEverConnected = true;
-        return;
-      }
-      // CLOSED / CHANNEL_ERROR / TIMED_OUT — the socket itself is down, not
-      // just a failed push. Without this, the dot just keeps showing
-      // whatever it last happened to be (usually a stale green from the
-      // last successful push) while realtime pings from other devices are
-      // silently not arriving — the exact "malfunction" this dot was meant
-      // to surface. Reflect that honestly; SUBSCRIBED above flips it back
-      // once the client reconnects on its own.
-      if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        _setSolveAllSyncDot('red');
-      }
-    });
+    .on('broadcast', { event: 'changed' }, _onSaBroadcast);
+  _saRealtimeChannel = channel;
+  channel.subscribe((status) => {
+    // Closed by _teardownSaRealtime (session ended, another session or
+    // Realtime turned off), not a dropped socket: nothing to show.
+    if (channel !== _saRealtimeChannel) return;
+    if (status === 'SUBSCRIBED') {
+      // Reconnected after actually dropping — something could have
+      // changed while we were gone, so catch up now rather than wait on
+      // the next ping or the slow fallback timer. The round trip's own
+      // push/pull results will settle the dot back to green.
+      if (_saRealtimeEverConnected && _saSyncActive) _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
+      _saRealtimeEverConnected = true;
+      return;
+    }
+    // CLOSED / CHANNEL_ERROR / TIMED_OUT — the socket itself is down, not
+    // just a failed push. Without this, the dot just keeps showing
+    // whatever it last happened to be (usually a stale green from the
+    // last successful push) while realtime pings from other devices are
+    // silently not arriving — the exact "malfunction" this dot was meant
+    // to surface. Reflect that honestly; SUBSCRIBED above flips it back
+    // once the client reconnects on its own.
+    if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      _setSolveAllSyncDot('red');
+    }
+  });
 }
 
 function _teardownSaRealtime() {
@@ -250,6 +256,7 @@ async function pullSolveAllProgress(quizNum, cumulative) {
 async function pushSolveAllProgress(quizNum, cumulative, snapshot) {
   const key = _saSyncKey(quizNum, cumulative);
   if (_saPendingReset.has(key)) return false; // a reset just fired for this session — don't resurrect it
+  if (siteSyncPaused()) { _setSolveAllSyncDot('paused'); return false; } // the exit push too; the next round trip after the pause sends it
   const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
   const deviceSecret = (typeof getForumDeviceSecret === 'function') ? getForumDeviceSecret() : null;
   const deviceToken = (typeof getDeviceToken === 'function') ? getDeviceToken() : null;
@@ -315,6 +322,7 @@ function _setSolveAllSyncDot(state) {
   if (typeof _settleLiveDot !== 'function') return;
   if (state === 'green') _settleLiveDot(dot, 'ok', 'Synced');
   else if (state === 'red') _settleLiveDot(dot, 'error', "Couldn't sync — will retry automatically");
+  else if (state === 'paused') _settleLiveDot(dot, 'syncing', 'Sync is paused for now. Your progress is saved on this device.');
   else _settleLiveDot(dot, 'syncing', 'Not synced yet');
 }
 
@@ -354,7 +362,7 @@ async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
     // that would finally overwrite the server's tombstone with a real,
     // if empty, row — gets silently dropped by pushSolveAllProgress's own
     // guard check. The tombstone would then just sit there until either a
-    // Realtime ping or the next fallback tick (SA_SYNC_FALLBACK_MS later)
+    // Realtime ping or the next fallback tick (one "poll.solve_all" later)
     // re-pulled it — which, being a periodic/pinged re-check rather than an
     // else reset this" and discards whatever the user solved in the
     // meantime, bouncing them back to the choice/order picker. The
@@ -369,6 +377,9 @@ async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
 
   const identityName = (typeof getForumNickname === 'function') ? getForumNickname() : '';
   if (!identityName) { _setSolveAllSyncDot('gray'); return; }
+  // site-version.json "sync_paused": progress keeps being saved locally, and
+  // the round trip after the pause is lifted merges and pushes it.
+  if (siteSyncPaused()) { _setSolveAllSyncDot('paused'); return; }
   _saLastRoundTripAt = Date.now();
 
   const pulled = await pullSolveAllProgress(quizNum, cumulative);
@@ -420,15 +431,16 @@ async function syncSolveAllOnOpen(quizNum, cumulative) {
   _saLastPushedJson = null; // new session — never skip its first push
   await _saSyncRoundTrip(quizNum, cumulative, /* isInitial */ true);
 
-  if (_saSyncPollTimer) clearInterval(_saSyncPollTimer);
-  _saSyncPollTimer = setInterval(() => {
+  stopSitePoll(_saSyncPollTimer);
+  _saSyncPollTimer = startSitePoll('solve_all', () => {
     if (document.hidden || !_saSyncActive) return;
+    if (!sitePollDue('solve_all', _saLastRoundTripAt)) return; // a ping or tab return already did it
     _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
-  }, SA_SYNC_FALLBACK_MS);
+  });
 }
 
 function stopSolveAllSync() {
-  if (_saSyncPollTimer) { clearInterval(_saSyncPollTimer); _saSyncPollTimer = null; }
+  _saSyncPollTimer = stopSitePoll(_saSyncPollTimer);
   _saSyncActive = null;
   _saLastPushedJson = null;
   _teardownSaRealtime();
@@ -458,9 +470,16 @@ function stopSolveAllSync() {
 // requests per tab switch. A throttled background tab misses at most that
 // one interval.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && _saSyncActive && Date.now() - _saLastRoundTripAt >= SA_SYNC_FALLBACK_MS) {
+  if (!document.hidden && _saSyncActive && Date.now() - _saLastRoundTripAt >= sitePollMs('solve_all')) {
     _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
   }
+});
+
+// Realtime turned off in site-version.json: drop the session's channel. The
+// next round trip reopens it once it's back on (the pause being lifted is
+// caught up by reconnectAllLiveSync, js/attempts-sync.js).
+document.addEventListener('site-config-changed', (e) => {
+  if (e.detail.after.off.includes('realtime')) _teardownSaRealtime();
 });
 
 // ── Same-browser, cross-tab/window instant sync (BroadcastChannel) ─────────

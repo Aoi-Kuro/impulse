@@ -27,6 +27,11 @@ Checks before zipping (the build fails instead of shipping a broken site)
   - every minified script, including inline ones, still parses
   - every top-level name of the originals is still present
   - every JSON file holds the same data
+  - site-version.json: only known keys and sane values (js/site-config.js),
+    "version" matching CURRENT_VERSION and the changelog, "min_version" not
+    above "version". What the file will make open tabs do, compared with the
+    last commit (reloads, slower polling, Realtime off, sync paused, cache
+    refills), is listed at the end of the build.
 
 esbuild is downloaded once from the npm registry into a cache folder in
 your user profile (not this project); nothing else needs installing.
@@ -287,6 +292,177 @@ def check_html(rel, minified, problems):
             problems.append(f'{rel}: inline script #{i} does not parse: {e.strip()}')
 
 
+# ── site-version.json ───────────────────────────────────────────────────
+# Every open tab reads this file every few minutes, and besides the version
+# it can carry settings that act on all of them at once (js/site-config.js
+# describes each key). A typo there reaches everyone within minutes, so the
+# build checks it and lists what it will do. The poll limits and the "off"
+# names are read from js/site-config.js itself, so the two can't drift apart.
+MANIFEST = 'site-version.json'
+MANIFEST_KEYS = {'version', 'editor', 'min_version', 'poll', 'off', 'sync_paused', 'purge_id'}
+VERSION_RE = re.compile(r'^\d+(?:\.\d+)*$')
+OFF_EFFECT = {
+    'realtime': 'Realtime is OFF: no live connections, every tab relies on its poll intervals.',
+    'forum_posting': 'The forum is READ-ONLY: new messages, replies and edits are refused.',
+}
+
+def _vcmp(a, b):
+    pa, pb = [int(x) for x in a.split('.')], [int(x) for x in b.split('.')]
+    n = max(len(pa), len(pb))
+    pa, pb = pa + [0] * (n - len(pa)), pb + [0] * (n - len(pb))
+    return (pa > pb) - (pa < pb)
+
+def _read(rel):
+    return open(os.path.join(SRC, rel), encoding='utf-8').read()
+
+def _site_config_tables():
+    """SITE_POLL as {name: (default, min, max, label)} and SITE_OFF_NAMES."""
+    js = _read('js/site-config.js')
+    body = re.search(r'const SITE_POLL = \{(.*?)\n\};', js, re.S).group(1)
+    poll = {}
+    for m in re.finditer(r'^\s*(\w+):\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\],\s*//\s*(.*)$', body, re.M):
+        label = re.sub(r'\s*\(js/[^)]*\)\s*$', '', m.group(5)).strip()
+        label = label[:1].upper() + label[1:]
+        poll[m.group(1)] = (int(m.group(2)), int(m.group(3)), int(m.group(4)), label)
+    off = re.findall(r"'([^']+)'", re.search(r'const SITE_OFF_NAMES = \[(.*?)\];', js).group(1))
+    return poll, off
+
+def _committed_manifest():
+    try:
+        r = subprocess.run(['git', 'show', f'HEAD:{MANIFEST}'], cwd=SRC, capture_output=True, timeout=10)
+        return json.loads(r.stdout.decode('utf-8')) if r.returncode == 0 else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+def _version_ok(v):
+    return isinstance(v, str) and bool(VERSION_RE.match(v))
+
+def check_manifest(problems):
+    """Checks site-version.json; returns lines saying what it makes open tabs do."""
+    def bad(msg):
+        problems.append(f'{MANIFEST}: {msg}')
+    try:
+        data = json.loads(_read(MANIFEST))
+    except (OSError, ValueError) as e:
+        bad(f'cannot be read: {e}')
+        return []
+    if not isinstance(data, dict):
+        bad('must be one JSON object')
+        return []
+    poll_table, off_names = _site_config_tables()
+    if 'update' not in poll_table or not off_names:
+        bad('could not read SITE_POLL / SITE_OFF_NAMES from js/site-config.js to check against')
+        return []
+    prev = _committed_manifest()
+    old = prev if isinstance(prev, dict) else {}
+    actions = []
+
+    for key in sorted(set(data) - MANIFEST_KEYS):
+        bad(f'unknown key "{key}" (a typo? tabs would ignore it). Known: {", ".join(sorted(MANIFEST_KEYS))}')
+
+    # version: must match the page's CURRENT_VERSION and the changelog, or
+    # every tab sees an update it can never reach.
+    version = data.get('version')
+    if not _version_ok(version):
+        bad(f'"version" must look like "12.5.1", got {version!r}')
+        version = None
+    else:
+        m = re.search(r"const CURRENT_VERSION = '([^']+)'", _read('js/quiz-engine.js'))
+        if not m or m.group(1) != version:
+            bad(f'"version" is {version} but CURRENT_VERSION in js/quiz-engine.js is {m.group(1) if m else "missing"}: '
+                'tabs would be told to update to a version the page never reports')
+        m = re.search(r'const CHANGELOG = \[\s*\{\s*version:\s*"([^"]+)"', _read('js/data/changelog.js'))
+        if not m or m.group(1) != version:
+            bad(f'"version" is {version} but the newest entry in js/data/changelog.js is {m.group(1) if m else "missing"}')
+        prev_v = old.get('version')
+        if _version_ok(prev_v) and prev_v != version:
+            if _vcmp(version, prev_v) < 0:
+                actions.append(f'Version goes DOWN, {prev_v} -> {version}: open tabs on {prev_v} are told to "update" to the older one.')
+            else:
+                actions.append(f'New version {version} (was {prev_v}): open tabs show the update banner and reload by themselves after 24 h.')
+
+    editor = data.get('editor')
+    if editor is not None and not _version_ok(editor):
+        bad(f'"editor" must look like "1.0.1", got {editor!r}')
+    elif editor is not None and _version_ok(old.get('editor')) and old.get('editor') != editor:
+        actions.append(f'Editor version {old.get("editor")} -> {editor} (students are not asked to reload).')
+
+    update_s = poll_table['update'][0]
+    if isinstance(data.get('poll'), dict) and isinstance(data['poll'].get('update'), (int, float)):
+        update_s = data['poll']['update']
+
+    if data.get('min_version', '') != '':               # "" is the placeholder: no minimum
+        mv = data['min_version']
+        if not _version_ok(mv):
+            bad(f'"min_version" must look like "12.4.6", got {mv!r} (tabs would ignore it)')
+        elif version and _vcmp(mv, version) > 0:
+            bad(f'"min_version" {mv} is above "version" {version}: every tab would reload trying to reach a version '
+                'that is not deployed (once a day each, the reload guard stops more)')
+        else:
+            same = ' (unchanged)' if old.get('min_version') == mv else ''
+            actions.append(f'Tabs below {mv} reload within one update check (~{update_s / 60:.0f} min) instead of after 24 h; '
+                           f'a timed quiz first, unless it has run 3 h{same}.')
+
+    if 'poll' in data:
+        poll = data['poll']
+        if not isinstance(poll, dict):
+            bad('"poll" must be an object like {"attempts": 120}')
+            poll = {}
+        effective = {}
+        for name, value in poll.items():
+            if name not in poll_table:
+                bad(f'"poll.{name}" is not a known interval. Known: {", ".join(poll_table)}')
+                continue
+            default, lo, hi, label = poll_table[name]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                bad(f'"poll.{name}" must be a number of seconds, got {value!r}')
+                continue
+            if value <= 0:
+                bad(f'"poll.{name}" is {value}: tabs ignore zero or less and keep the default {default} s; '
+                    'remove the key instead')
+                continue
+            if not lo <= value <= hi:
+                bad(f'"poll.{name}" is {value} s, outside {lo}-{hi} s (tabs would clamp it to {min(hi, max(lo, value))} s)')
+                continue
+            effective[name] = value
+            if value != default:
+                actions.append(f'{label}: every {value:g} s instead of {default} s '
+                               f'(~{3600 / value:.1f} instead of {3600 / default:.1f} an hour per open tab).')
+        fq = effective.get('forum_quiet', poll_table['forum_quiet'][0])
+        fn = effective.get('forum', poll_table['forum'][0])
+        if fq < fn:
+            actions.append(f'Note: the quiet forum check ({fq:g} s) is MORE frequent than the normal one ({fn:g} s), '
+                           'so quiet mode saves nothing.')
+
+    if 'off' in data:
+        off = data['off']
+        if not isinstance(off, list) or not all(isinstance(x, str) for x in off):
+            bad('"off" must be a list like ["realtime"]')
+        else:
+            for name in off:
+                if name not in off_names:
+                    bad(f'"off" has unknown "{name}". Known: {", ".join(off_names)}')
+                else:
+                    actions.append(OFF_EFFECT.get(name, f'"{name}" is turned off.'))
+
+    if 'sync_paused' in data:
+        if not isinstance(data['sync_paused'], bool):
+            bad(f'"sync_paused" must be true or false, got {data["sync_paused"]!r}')
+        elif data['sync_paused']:
+            actions.append('Sync is PAUSED: attempts and Solve-All progress stay in each browser until you remove it.')
+
+    if data.get('purge_id', '') != '':                  # "" is the placeholder: no refill
+        pid = data['purge_id']
+        if not isinstance(pid, str) or not pid.strip() or len(pid.strip()) > 100:
+            bad(f'"purge_id" must be a short string (or "" for none), got {pid!r}')
+        elif old.get('purge_id') != pid:
+            actions.append(f'New purge_id "{pid}": every browser refills its offline cache once (a few MB each).')
+
+    if prev is None:
+        actions.append(f'(Could not read {MANIFEST} from the last commit, so nothing is compared with it.)')
+    return actions
+
+
 # ── build ───────────────────────────────────────────────────────────────
 def main():
     global ESBUILD
@@ -298,6 +474,7 @@ def main():
     out = os.path.join(stage, 'site')
     stats = {k: [0, 0, 0] for k in ('js', 'css', 'html', 'json', 'copied')}
     problems = []
+    manifest_actions = check_manifest(problems)
     try:
         for root, dirs, files in os.walk(SRC):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -365,6 +542,9 @@ def main():
             print(f'  {k:7s} {n:4d} files  {b / 1024:9.1f} KB -> {a / 1024:9.1f} KB')
     for rel, refs in bundles:
         print(f'  bundle  {rel}  <- {len(refs)} files')
+    print(f'{MANIFEST}, once deployed (compared with the last commit):')
+    for line in manifest_actions or ['Nothing unusual: no new version, no settings that change what open tabs do.']:
+        print('  *', line)
     print(f'All checks passed. {count} files -> {zip_path} ({os.path.getsize(zip_path) / 1024 / 1024:.2f} MB)')
 
 

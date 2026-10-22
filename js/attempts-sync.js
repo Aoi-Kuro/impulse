@@ -95,6 +95,10 @@ function _updateAttemptsSyncDot(syncing) {
   }
   dot.style.display = '';
 
+  if (siteSyncPaused()) {
+    _settleLiveDot(dot, 'syncing', 'Sync is paused for now. Your attempts are saved on this device.');
+    return;
+  }
   if (syncing) {
     _settleLiveDot(dot, 'syncing', 'Syncing…');
     return;
@@ -147,6 +151,7 @@ function _onAttemptsBroadcast() {
 }
 
 function _ensureAttemptsRealtime(identityId) {
+  if (siteOff('realtime')) return; // site-version.json "off": the fallback poll carries it alone
   if (!identityId || identityId === _attemptsIdentityId) return; // already on the right channel (or nothing to subscribe to yet)
   _teardownAttemptsRealtime();
   _attemptsIdentityId = identityId;
@@ -257,6 +262,9 @@ async function syncAttempts() {
     _teardownAttemptsRealtime(); // no identity to sync to (or listen for) anymore
     return; // nothing to sync to yet — quiz start already gates on this, but stats can still be opened without ever starting one
   }
+  // site-version.json "sync_paused": new attempts stay queued (synced:false)
+  // and go up on the first sync after it is lifted (see the listener below).
+  if (siteSyncPaused()) { _updateAttemptsSyncDot(false); return; }
   _attemptsLastSyncAt = Date.now();
 
   const deviceId =(typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
@@ -412,27 +420,27 @@ async function syncAttempts() {
 // screen" reasoning as before — since it's a once-every-few-minutes no-op
 // rather than a real cost. Each tick is also a cheap no-op if there's no
 // claimed identity yet (syncAttempts() itself gates on that first).
-const ATTEMPTS_SYNC_FALLBACK_MS = 45000; // matches the stats panel's own fallback poll — was 180s, which is what left attempts stuck for ~90s on average after reconnecting
+// Interval: site-version.json "poll.attempts" (js/site-config.js), 45 s by
+// default to match the stats panel's own fallback poll — it was 180s, which
+// is what left attempts stuck for ~90s on average after reconnecting.
 let _attemptsSyncPollTimer = null;
 
 function startAttemptsSyncPolling() {
   stopAttemptsSyncPolling();
-  _attemptsSyncPollTimer = setInterval(() => {
+  _attemptsSyncPollTimer = startSitePoll('attempts', () => {
     if (document.hidden) return; // resumes on visibilitychange below instead
     // isStatsIdle() (js/stats.js) only ever returns true while the stats
     // screen is open AND idle for 5+ minutes — it's always false whenever
     // the screen is closed, so this never affects the "keep syncing
     // regardless" background behavior away from the stats screen.
     if (typeof isStatsIdle === 'function' && isStatsIdle()) return;
+    if (!sitePollDue('attempts', _attemptsLastSyncAt)) return; // synced since for another reason
     syncAttempts();
-  }, ATTEMPTS_SYNC_FALLBACK_MS);
+  });
 }
 
 function stopAttemptsSyncPolling() {
-  if (_attemptsSyncPollTimer) {
-    clearInterval(_attemptsSyncPollTimer);
-    _attemptsSyncPollTimer = null;
-  }
+  _attemptsSyncPollTimer = stopSitePoll(_attemptsSyncPollTimer);
 }
 
 // Coming back to the tab re-syncs only if the tab was away longer than the
@@ -440,7 +448,19 @@ function stopAttemptsSyncPolling() {
 // syncing on every switch was one request per tab switch.
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && _attemptsSyncPollTimer
-      && Date.now() - _attemptsLastSyncAt >= ATTEMPTS_SYNC_FALLBACK_MS) syncAttempts();
+      && Date.now() - _attemptsLastSyncAt >= sitePollMs('attempts')) syncAttempts();
+});
+
+// site-version.json changed (js/site-config.js). Realtime turned off: drop
+// the channel (syncAttempts() reopens it once it's back on). Sync pause
+// lifted: catch up everywhere at once, the same as coming back online.
+document.addEventListener('site-config-changed', (e) => {
+  const { before, after } = e.detail;
+  if (after.off.includes('realtime')) _teardownAttemptsRealtime();
+  if (before.sync_paused !== after.sync_paused) {
+    _updateAttemptsSyncDot(false);
+    if (!after.sync_paused) reconnectAllLiveSync();
+  }
 });
 
 startAttemptsSyncPolling();

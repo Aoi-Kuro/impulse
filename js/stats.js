@@ -1239,9 +1239,9 @@ function fmtDuration(sec) {
 // screen-open instead (loadSfpAvatar below), via get_author_stats — it
 // doesn't need a 5s refresh since it essentially never changes mid-session
 // (only a rename re-seeds it, which already calls renderSfpIdentity again).
+// The fallback interval is site-version.json's "poll.stats" (js/site-config.js), 45 s by default.
 let _statsPanelPollTimer = null;
 let _statsPanelLastPollAt = 0;           // when pollStatsPanel() last ran, whatever triggered it
-const STATS_PANEL_FALLBACK_MS = 45000;
 
 async function loadStatsPanel() {
   const nickname = (typeof getForumNickname === 'function') ? getForumNickname() : '';
@@ -1514,11 +1514,12 @@ function startStatsPanelPolling() {
   // Realtime (the listeners above) handles the normal case now — this
   // interval is just a safety net for a missed ping, so it can be far
   // slower than the old blind 5s poll.
-  _statsPanelPollTimer = setInterval(() => {
+  _statsPanelPollTimer = startSitePoll('stats', () => {
     if (document.hidden) return;
     if (typeof isStatsIdle === 'function' && isStatsIdle()) return;
+    if (!sitePollDue('stats', _statsPanelLastPollAt)) return; // refreshed since by a ping or tab return
     pollStatsPanel();
-  }, STATS_PANEL_FALLBACK_MS);
+  });
 }
 
 // ── total_visits' Realtime channel ──────────────────────────────────────
@@ -1531,7 +1532,7 @@ function startStatsPanelPolling() {
 let _siteVisitsRealtimeChannel = null;
 
 function _ensureSiteVisitsRealtime() {
-  if (_siteVisitsRealtimeChannel) return;
+  if (_siteVisitsRealtimeChannel || siteOff('realtime')) return;
   const client = (typeof getForumClient === 'function') ? getForumClient() : null;
   if (!client) return;
   _siteVisitsRealtimeChannel = client
@@ -1555,10 +1556,7 @@ function _statsPanelReactiveHandler() {
 }
 
 function stopStatsPanelPolling() {
-  if (_statsPanelPollTimer) {
-    clearInterval(_statsPanelPollTimer);
-    _statsPanelPollTimer = null;
-  }
+  _statsPanelPollTimer = stopSitePoll(_statsPanelPollTimer);
   document.removeEventListener('forum-data-changed', _statsPanelReactiveHandler);
   document.removeEventListener('attempts-data-changed', _statsPanelReactiveHandler);
   _teardownSiteVisitsRealtime();
@@ -1569,7 +1567,14 @@ function stopStatsPanelPolling() {
 // the tab is hidden, and refreshing on every switch cost three RPCs each.
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && _statsPanelPollTimer
-      && Date.now() - _statsPanelLastPollAt >= STATS_PANEL_FALLBACK_MS) pollStatsPanel();
+      && Date.now() - _statsPanelLastPollAt >= sitePollMs('stats')) pollStatsPanel();
+});
+
+// Realtime switched off or back on in site-version.json (js/site-config.js),
+// while the panel is open.
+document.addEventListener('site-config-changed', (e) => {
+  if (e.detail.after.off.includes('realtime')) _teardownSiteVisitsRealtime();
+  else if (_statsPanelPollTimer) _ensureSiteVisitsRealtime();
 });
 
 // Draws a hand-tally-counter graphic: chrome body, a ring + thumb lever on

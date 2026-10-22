@@ -36,7 +36,8 @@
 
 const SOLUTIONS_REST = `${SUPABASE_URL}/rest/v1/problem_solutions`;
 const SOLUTIONS_INDEX_CACHE_KEY = STORAGE_PREFIX + '-solutions-index';
-const SOLUTIONS_INDEX_MAX_AGE_MS = 30 * 60 * 1000;  // one index fetch per browser per 30 min, shared by all tabs
+// One index fetch per browser per "poll.solutions" in site-version.json
+// (js/site-config.js, 30 min by default), shared by all tabs.
 const SOLUTIONS_INDEX_CHECK_MS = 5 * 60 * 1000;     // how often a visible tab looks whether that copy has expired (no request)
 // Columns of one published row — also what Go offline downloads (js/offline-mode.js).
 const SOLUTIONS_ROW_COLUMNS = 'problem_key,solution,figure,author,author_link,problem_hash,updated_at';
@@ -187,7 +188,7 @@ function loadSolutionsIndex() {
   if (!solutionsOfflineActive()) {
     const cached = readSolutionsIndexCache();
     const age = cached ? Date.now() - cached.at : Infinity;
-    if (age >= 0 && age < SOLUTIONS_INDEX_MAX_AGE_MS) return Promise.resolve(applySolutionsIndexRows(cached.rows));
+    if (age >= 0 && age < sitePollMs('solutions')) return Promise.resolve(applySolutionsIndexRows(cached.rows));
   }
   return fetchSolutionsIndex();
 }
