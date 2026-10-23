@@ -65,6 +65,14 @@ function figAnimSpeed() {
   return figAnimSpeedChoice;
 }
 
+// Settings › Display: default speed (the chip multiplies it), repeating
+// one-shots, looped animations played once (js/settings.js loads later;
+// until it has, the defaults).
+function figAnimSetting(key, dflt) {
+  const v = typeof getSetting === 'function' ? getSetting('display', key) : undefined;
+  return v === undefined || v === null ? dflt : v;
+}
+
 function figAnimSpeedLabel(v) {
   return v + '×';
 }
@@ -92,6 +100,7 @@ function attachFigureAnimation(svg) {
 
   const state = spec.init(svg);
   let raf = 0, last = 0, u = 0, playing = false, stopping = false, draining = false, stage = 'fwd', held = 0;
+  let repeat = false, once = false;     // Settings › Display, read when play is pressed
   const player = { windDown };
   svg._figAnimWindDown = windDown;      // for figAnimView
 
@@ -115,12 +124,12 @@ function attachFigureAnimation(svg) {
   }
 
   function show() {
-    const pause = spec.loop && playing && !stopping;
+    const stoppable = spec.loop || repeat, pause = stoppable && playing && !stopping;
     playBtn.innerHTML = pause ? FIG_ANIM_ICON.pause : FIG_ANIM_ICON.play;
     playBtn.setAttribute('aria-label', pause ? 'Pause animation' : 'Play animation');
     playBtn.title = pause ? 'Pause' : 'Play';
     playBtn.classList.toggle('is-playing', playing);
-    playBtn.disabled = !spec.loop && playing;
+    playBtn.disabled = !stoppable && playing;
   }
 
   function stop() {
@@ -142,11 +151,11 @@ function attachFigureAnimation(svg) {
     }
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    const k = figAnimSpeed();
+    const k = figAnimSpeed() * figAnimSetting('figAnimSpeed', 1);
     if (spec.loop) {
       u += dt * k / spec.period;
       if (u >= 1 && !draining) {
-        if (!stopping) u -= Math.floor(u);
+        if (!stopping && !once) u -= Math.floor(u);
         else if (spec.drain) draining = true;
         else return stop();
       }
@@ -159,7 +168,11 @@ function attachFigureAnimation(svg) {
       if (held >= spec.hold) stage = 'back';
     } else {
       u = Math.max(0, u - dt * k / spec.back);
-      if (u <= 0) return stop();
+      if (u <= 0) {
+        if (!repeat || stopping) return stop();
+        stage = 'fwd';                    // repeating one-shot: round again
+        held = 0;
+      }
     }
     spec.frame(state, u);
     raf = requestAnimationFrame(tick);
@@ -168,7 +181,10 @@ function attachFigureAnimation(svg) {
   playBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (playing) {
-      if (!spec.loop) return;
+      if (!spec.loop) {                 // a repeating one-shot: pause finishes this round
+        if (repeat) { stopping = !stopping; show(); }
+        return;
+      }
       if (stopping) {                   // play again before the cycle ended: keep going
         stopping = false;
         if (draining) { draining = false; u -= 1; }   // already into the next cycle
@@ -184,6 +200,8 @@ function attachFigureAnimation(svg) {
     playing = true;
     stopping = false;
     draining = false;
+    repeat = !spec.loop && figAnimSetting('figAnimRepeatOneShot', false) === true;
+    once = spec.loop && figAnimSetting('figAnimLoopOnce', false) === true;
     if (spec.loop) {
       setCounted(true);
       if (figAnimView) figAnimView.observe(svg);

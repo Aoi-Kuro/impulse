@@ -903,7 +903,13 @@ A few redrawn figures can be played: a small ▶ under the figure's right
 edge runs a short **qualitative** animation of what happens in the problem
 (no numbers that would give the answer away). Next to it, a speed chip
 cycles 0.5× / 1× / 2×; the choice is shared by every figure and kept per
-device (`<prefix>-fig-anim-speed`). There is no other control.
+device (`<prefix>-fig-anim-speed`). It multiplies Settings › Display ›
+*Default animation speed* (0.25–5×, `display.figAnimSpeed`). Two more
+Display switches change the two kinds below: *Repeat one-shot animations*
+(`figAnimRepeatOneShot`: a one-shot goes round again, and gets a ⏸ that
+lets it finish the round) and *Play looped animations only once*
+(`figAnimLoopOnce`: a loop plays one cycle and stops). The player reads
+them when play is pressed (`figAnimSetting()`).
 
 - **Two kinds.** A *one-shot* animation plays forward for 2–3 s, holds, runs
   back quickly and stops on the drawing as published; it cannot be paused
@@ -1090,7 +1096,7 @@ saved values over `SETTINGS_DEFAULTS`. `getSetting(tab, key)` /
 
 | Tab | Settings |
 |---|---|
-| **Display** | Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme) · Show floating forum button · Show running line (top-bar tips) · Hide field lines by default · Figure size slider (50–200%, scales problem images, redrawn figures and solution figures) |
+| **Display** | Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme) · Show floating forum button · Show running line (top-bar tips) · Hide field lines by default · Figure size slider (50–200%, scales problem images, redrawn figures and solution figures) · Default animation speed slider (0.25–5×; the speed chip under a figure multiplies it) · Repeat one-shot animations (they go round again until ⏸, which then finishes the round) · Play looped animations only once (one cycle, then they stop by themselves) |
 | **Notifications** | Hide update reminder (sub: Update anyway outside quiz mode) · Hide try-new-theme reminder · Hide bug report reminder · Go silent — hides every badge and banner and mutes push (sub: Turn off automatically after 24 hours) |
 | **Study** | Reduce motion · Redrawn figures (on: theme-coloured SVGs, off: original images) · Show live timer · Reset filter on page load · Automatically stop after 50 minutes · Full screen for Random N (sub: Don't show full-screen reminder) · Select latest quiz by default · Select cumulative by default · Hide topic while active · Solve-All: Lock order + Order · Line progress (rail) · Show progress window (sticky score) · Reveal wrong answer instantly |
 | **Sync & Storage** | Go offline (24 h) · Cache & storage tools · Backup |

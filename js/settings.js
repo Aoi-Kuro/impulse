@@ -49,6 +49,12 @@ const SETTINGS_DEFAULTS = {
     // figures) through the --user-fig-scale CSS variable. See
     // applyFigureScale() below.
     figureScale:     100,
+    // Animated figures (js/figure-anim.js): the base speed (the speed chip
+    // under a figure multiplies it), whether one-shot animations repeat
+    // until stopped, and whether looped ones stop after one cycle.
+    figAnimSpeed:    1,
+    figAnimRepeatOneShot: false,
+    figAnimLoopOnce: false,
   },
   notifications: {
     hideUpdateReminder: false,
@@ -818,7 +824,50 @@ function renderSettingsDisplayTab() {
       </div>
     </div>
   `);
+  const animSpeed = clampFigAnimSpeed(getSetting('display', 'figAnimSpeed'));
+  const animSwitch = (key, title, desc) => `
+    <div class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-title">${title}</div>
+        <div class="settings-row-desc">${desc}</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('display', key) === true ? 'checked' : ''}
+               onchange="setSetting('display', '${key}', this.checked)">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>`;
+  html.push(`
+    <div class="settings-row" data-row-key="figAnimSpeed">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Default animation speed</div>
+        <div class="settings-row-desc">How fast animated figures play. The speed chip under a figure multiplies it. Double-click the slider to reset to 1×.</div>
+      </div>
+      <div class="settings-slider">
+        <input type="range" min="0.25" max="5" step="0.25" value="${animSpeed}"
+               aria-label="Default animation speed" oninput="setFigAnimDefaultSpeed(this.value)"
+               ondblclick="this.value = 1; setFigAnimDefaultSpeed(1)">
+        <span class="settings-slider-value" id="figAnimSpeedValue">${animSpeed}×</span>
+      </div>
+    </div>
+    ${animSwitch('figAnimRepeatOneShot', 'Repeat one-shot animations',
+      'Animations that play once and run back (like a falling mug) start again until you press ⏸, instead of stopping by themselves.')}
+    ${animSwitch('figAnimLoopOnce', 'Play looped animations only once',
+      'Animations that repeat (like a spinning shell) play one cycle and stop by themselves, instead of repeating until you press ⏸.')}
+  `);
   return html.join('');
+}
+
+// ── Animated figures: default speed ──
+function clampFigAnimSpeed(v) {
+  const n = Number(v);
+  return isFinite(n) ? Math.min(5, Math.max(0.25, Math.round(n * 4) / 4)) : 1;
+}
+function setFigAnimDefaultSpeed(v) {
+  const k = clampFigAnimSpeed(v);
+  setSetting('display', 'figAnimSpeed', k);
+  const label = document.getElementById('figAnimSpeedValue');
+  if (label) label.textContent = k + '×';
 }
 
 // ── Figure size ──
