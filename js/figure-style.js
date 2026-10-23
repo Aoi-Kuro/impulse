@@ -30,9 +30,11 @@ function redrawnSvgFor(src) {
 
 let figIdSerial = 0;
 
-function toRedrawn(img) {
-  let svgText = redrawnSvgFor(img.getAttribute('src'));
-  if (!svgText) return;
+// The drawing for an image path, as a new <svg> element (null if there is
+// none). Also used by the manual's figure demo (js/manual.js).
+function redrawnFigure(src, alt) {
+  let svgText = redrawnSvgFor(src);
+  if (!svgText) return null;
   // A few drawings define ids (clip paths). Each copy on the page gets its
   // own, or two copies of one drawing would share them and a copy inside a
   // hidden screen could leave the visible one unclipped.
@@ -45,12 +47,20 @@ function toRedrawn(img) {
   const svg = holder.firstElementChild;
   svg.classList.add('fig-redrawn');
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', img.getAttribute('alt') || 'figure');
-  svg.dataset.figSrc = img.getAttribute('src');
+  svg.setAttribute('aria-label', alt || 'figure');
+  svg.dataset.figSrc = src;
   // Drawn at one user unit per pixel: the viewBox width is the figure's
   // natural width (css/style.css scales it with the Figure size setting).
   svg.style.setProperty('--fig-w', String(svg.viewBox.baseVal.width || 350));
+  return svg;
+}
+
+function toRedrawn(img) {
+  const svg = redrawnFigure(img.getAttribute('src'), img.getAttribute('alt'));
+  if (!svg) return;
   img.replaceWith(svg);
+  // A drawing with an animation (course/animations/) gets its play button.
+  if (typeof attachFigureAnimation === 'function') attachFigureAnimation(svg);
 }
 
 function toOriginal(svg) {
@@ -58,7 +68,9 @@ function toOriginal(svg) {
   img.src = svg.dataset.figSrc;
   img.alt = svg.getAttribute('aria-label') || 'figure';
   img.setAttribute('width', '350px');
-  svg.replaceWith(img);
+  // An animated drawing sits in a .fig-anim wrapper with its controls.
+  const host = svg.parentElement && svg.parentElement.classList.contains('fig-anim') ? svg.parentElement : svg;
+  host.replaceWith(img);
 }
 
 // HTML for the MathJax cache (js/quiz-engine.js): redrawn figures put back as

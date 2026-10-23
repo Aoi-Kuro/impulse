@@ -21,6 +21,10 @@
 //   .manual-mock  an inert copy of a real screen, built from the site's own
 //     classes (css/manual.css), with .manual-n numbered dots;
 //   .manual-answer-demo  a live answer field graded by the real checker;
+//   .manual-fig-demo  real redrawn figures with their play buttons, from
+//     <span class="manual-fig-demo-fig" data-fig="…">: a problem image's path,
+//     or images/manual/<name> for the manual's own drawings
+//     (tools/figures/manual.py → course/figures/manual.js);
 //   plus the older live widgets below (avatar, LaTeX, splash, themes, GitHub).
 
 let MANUAL_SECTIONS = null;
@@ -389,6 +393,7 @@ function renderManualContent() {
   // math is done and MathJax never works on the same nodes twice.
   Promise.resolve(typeof renderMathIn === 'function' ? renderMathIn(content) : null)
     .then(() => manualAnswerDemoInitAll(content));
+  manualFigureDemoInitAll(content);
   manualAvatarDemoInitAll(content);
   manualLatexDemoInitAll(content);
   manualSplashDemoInitAll(content);
@@ -626,6 +631,26 @@ function manualAnswerDemoRender(demo) {
   fb.className = 'feedback show ' + (res.pts === 1 ? 'correct-fb' : res.pts === 0.9 ? 'partial-fb' : 'wrong-fb');
   fb.innerHTML = answerFeedbackHtml(res, p, true);
   if (typeof markAnswerInput === 'function') markAnswerInput(input, res.pts);
+}
+
+// ── Live figures (used inline on the "Figures & animations" manual page) ──
+// Not a reimplementation: each placeholder becomes the problem's own redrawn
+// drawing (redrawnFigure in js/figure-style.js) with the real player
+// (attachFigureAnimation in js/figure-anim.js), so it plays, keeps the speed
+// and shares the one-at-a-time limit exactly like a figure in a quiz. Shown
+// redrawn even while Settings › Study › Redrawn figures is off: the page is
+// about them. A placeholder, not an <img>, so the original isn't downloaded.
+function manualFigureDemoInitAll(container) {
+  if (!container) return;
+  container.querySelectorAll('.manual-fig-demo-fig[data-fig]').forEach(ph => {
+    const svg = typeof redrawnFigure === 'function' ? redrawnFigure(ph.dataset.fig, ph.dataset.alt) : null;
+    if (!svg) {
+      ph.textContent = 'This figure hasn’t loaded yet. Reopen this page in a moment.';
+      return;
+    }
+    ph.replaceWith(svg);
+    if (typeof attachFigureAnimation === 'function') attachFigureAnimation(svg);
+  });
 }
 
 // ── Theme gallery (used inline on the "Themes & fonts" manual page) ──

@@ -235,8 +235,10 @@
      text in every figure; Figure size scales them like the images. Colours
      are theme variables: ink is currentColor, the two accents are
      --svg-blue/--svg-red, --svg-dark stays dark in both modes (tyres) and
-     --svg-gold is the one extra colour (the brass rod). */
-  .fig-img-wrap svg.fig-redrawn {
+     --svg-gold is the one extra colour (the brass rod). The manual's figure
+     demo (.manual-fig-demo) shows drawings the same way. */
+  .fig-img-wrap svg.fig-redrawn,
+  .manual-fig-demo svg.fig-redrawn {
     width: calc(var(--fig-w, 350) * 1px * var(--user-fig-scale, 1));
     max-width: 100%;
     height: auto;
@@ -245,8 +247,54 @@
     --svg-dark: var(--bg);
     --svg-gold: var(--partial);
   }
-  body.light .fig-img-wrap svg.fig-redrawn { --svg-dark: var(--text); }
-  .fig-img-wrap svg.fig-redrawn text { font-family: 'STIX Two Text', 'Times New Roman', serif; }
+  body.light .fig-img-wrap svg.fig-redrawn,
+  body.light .manual-fig-demo svg.fig-redrawn { --svg-dark: var(--text); }
+  .fig-img-wrap svg.fig-redrawn text,
+  .manual-fig-demo svg.fig-redrawn text { font-family: 'STIX Two Text', 'Times New Roman', serif; }
+
+  /* Animated figures (js/figure-anim.js): the drawing and, under its right
+     edge, a small speed chip and play/pause button — below the figure, so
+     they never cover a label. */
+  .fig-anim {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    max-width: 100%;
+    min-width: 0;
+    line-height: 0;
+  }
+  .fig-anim-ctl {
+    display: flex;
+    gap: 5px;
+    margin-top: 4px;
+    line-height: 1;
+  }
+  .fig-anim-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 22px;
+    min-width: 22px;
+    padding: 0 7px;
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--text) 10%, var(--surface));
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--mono, inherit);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .fig-anim-play { width: 22px; padding: 0; }
+  .fig-anim-btn:hover:not(:disabled),
+  .fig-anim-play.is-playing {
+    background: var(--accent);
+    color: var(--chrome-light, #fff);
+    border-color: var(--accent);
+  }
+  .fig-anim-play:disabled { cursor: default; }
 
   /* ── Figure source attribution (i) badge ──
      Sits pinned to the figure's corner, always visible; hover/focus/tap

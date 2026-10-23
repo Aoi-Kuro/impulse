@@ -64,8 +64,14 @@ def f02():  # takeoff runway, length "?"
     g = Fig(410, 112)
     g.line(62, 72, 382, 72, w=2.6)
     s = 0.95
+    # data-part/data-geom (the first plane's wheels, the run to the second, its
+    # tilt): course/animations/quiz1.js accelerates the first plane from rest
+    # down the runway into the second one's place
+    g.raw('<g data-part="plane-start" data-geom="85 72 253 -8">')
     g.raw(f'<g transform="translate({n(85 - 52 * s)},{n(72 - 43 * s)}) scale({s})">{PLANE}</g>')
+    g.raw('</g><g data-part="plane-end">')
     g.raw(f'<g transform="translate({n(338 - 52 * s)},{n(72 - 43 * s)}) scale({s}) rotate(-8 52 43)">{PLANE}</g>')
+    g.raw('</g>')
     g.arrow(196, 96, 80, 96, w=1)
     g.arrow(226, 96, 362, 96, w=1)
     g.text(211, 96, '?', 18, italic=False, c=RED)
@@ -95,6 +101,9 @@ def f03():  # fireworks shell: launch v0 at θ, burst at the top
     g.text(*pt(lx, ly, 43, ang / 2), 'θ')
     g.arrow(lx, ly, lx + ux * 66, ly + uy * 66, BLUE, w=2.4, size=11)
     g.sub(lx + ux * 66 - 20, ly + uy * 66 + 4, 'v', '0')
+    # data-part/data-geom: course/animations/quiz1.js flies the shell (the
+    # centre dot) up the path (launch, control point, top) and bursts it there
+    g.raw(f'<g data-part="burst" data-geom="{axp} {ayp}">')
     for k in range(16):  # burst
         a = k * 22.5 + 11
         r1 = 34 if k % 2 == 0 else 26
@@ -103,7 +112,9 @@ def f03():  # fireworks shell: launch v0 at θ, burst at the top
         x2, y2 = pt(axp, ayp, r1, a)
         g.line(x1, y1, x2, y2, c, w=1.6)
         g.circle(*pt(axp, ayp, r1 + 3.5, a), 2, stroke=None, fill=c)
+    g.raw(f'</g><g data-part="shell" data-geom="{lx} {ly} {n(cx)} {ayp} {axp} {ayp}">')
     g.circle(axp, ayp, 3.2, stroke=None, fill=INK)
+    g.raw('</g>')
     return g
 
 
@@ -121,7 +132,8 @@ def f04():  # mug sliding off a counter
     g.path(f'M{x0},{top} Q{n((x0 + lx) / 2)},{top} {lx},{ly}', INK, 1.1)
     g.sub(116, 128, 'y', 'i', 17)
     g.sub(240, 196, 'x', 'f', 17)
-    g.raw(f'<g transform="translate(286 196) rotate(-38)">'
+    # data-part/data-geom: what course/animations/quiz1.js moves (the path's start and end)
+    g.raw(f'<g data-part="mug" data-geom="{x0} {top} {lx} {ly}" transform="translate(286 196) rotate(-38)">'
           f'<path d="M-11,-12 L9,-12 L8,10 Q8,13 5,13 L-8,13 Q-11,13 -11,10 Z" fill="{RED}" fill-opacity=".45" stroke="{INK}" stroke-width="1.2"/>'
           f'<path d="M9,-6 C16,-6 16,6 8.5,6" stroke="{INK}" stroke-width="1.6"/>'
           f'<ellipse cx="-1" cy="-12" rx="10" ry="2.4" fill="{INK}" fill-opacity=".2" stroke="{INK}" stroke-width="1"/></g>')
@@ -182,11 +194,19 @@ def f06():  # block m circling on a table, M hanging through a hole
     g.ellipse(hx, hy + 1, 82, 22, w=1, dash='4 3')
     g.head(122, hy + 23, 1, 0, INK, 7)
     g.head(118, hy - 21, -1, 0, INK, 7)
+    # data-part/data-geom: what course/animations/quiz1.js moves (the dashed circle's centre and radii)
+    g.raw(f'<g data-part="cord" data-geom="{hx} {hy + 1} 82 22">')
     g.line(50, hy + 1, hx, hy, w=1.1)
+    g.raw('</g>')
     g.ellipse(hx, hy, 4, 2, stroke=None, fill=INK)
+    g.raw('<g data-part="block">')
     g.rect(27, hy - 6, 24, 13, fill=RED, fop=0.55, w=1.1, rx=2)
+    g.raw('</g>')
+    g.raw('<g data-part="r-label">')
     g.text(86, hy - 10, 'r', 15)
+    g.raw('</g><g data-part="m-label">')
     g.text(38, 72, 'm', 15)
+    g.raw('</g>')
     g.line(hx, 97, hx, 150, w=1.1)
     g.path(f'M104,150 L104,192 A16,5 0 0 0 136,192 L136,150', INK, 1.1, fill=BLUE, fop=0.4)
     g.ellipse(120, 150, 16, 5, fill=PAPER, w=1.1)
@@ -212,15 +232,24 @@ def f07():  # conical pendulum: ball on a string of length L at θ to the vertic
     g.ellipse(cx, cy, rx, ry, w=1.2, dash='6 4')
     g.line(px, py, cx, cy, w=1.1, dash='6 4')
     g.circle(cx, cy, 3.4, stroke=None, fill=INK)
-    a = math.radians(-26)
+    a0 = -26
+    a = math.radians(a0)
     bx, by = cx + rx * math.cos(a), cy - ry * math.sin(a)
+    # data-part/data-geom: what course/animations/quiz1.js moves (pivot, path centre and radii, ball angle)
+    g.raw('<g data-part="string">')
     g.line(px, py, bx, by, w=1.6)
+    g.raw('</g>')
     ang = math.degrees(math.atan2(-(by - py), bx - px))
     vert = math.degrees(math.atan2(-(cy - py), cx - px))
+    g.raw('<g data-part="theta-arc">')
     g.arc(px, py, 64, vert, ang, w=1.1)
+    g.raw('</g><g data-part="theta">')
     g.text(*pt(px, py, 80, (vert + ang) / 2 - 2), 'θ', 18)
+    g.raw('</g><g data-part="L">')
     g.text((px + bx) / 2 + 18, (py + by) / 2 - 4, 'L', 19)
+    g.raw(f'</g><g data-part="ball" data-geom="{px} {py} {cx} {cy} {rx} {ry} {a0}">')
     g.disc(bx, by, 19, RED, 0.75, w=1.3)
+    g.raw('</g>')
     g.circle(px, py, 2.6, stroke=None, fill=INK)
     return g
 
@@ -321,15 +350,26 @@ def f09():  # m1 on table, string over pulley, m2 hanging
     g.line(10, 80, 222, 80, w=3, cap='square')
     g.line(222, 80, 222, 182, w=3, cap='square')
     px, py, r = 248, 48, 18
+    # data-part: course/animations/quiz1.js lets m₂ fall and drag m₁ along,
+    # the two strings following; where m₂ is "increased smoothly" (P94) the
+    # plates go on one by one first
+    g.raw('<g data-part="string-h">')
     g.line(140, py - r, px, py - r, w=1.1)
+    g.raw('</g><g data-part="string-v">')
     g.line(px + r, py, px + r, 118, w=1.1)
+    g.raw('</g>')
     pulley(g, px, py, r, [(px, py), (222, 80), (206, 80)])
+    g.raw('<g data-part="m1">')
     g.rect(70, 24, 70, 56, fill=BLUE, fop=0.35, w=1.2)
     g.sub(105, 52, 'm', '1')
+    g.raw('</g><g data-part="m2">')
     for k in range(3):
+        g.raw('<g data-part="plate">')
         g.rect(px + r - 18, 118 + 9 * k, 36, 9, fill=RED, fop=0.4, w=0.9)
+        g.raw('</g>')
     g.rect(px + r - 22, 145, 44, 5, stroke=None, fill=INK)
     g.sub(296, 130, 'm', '2', anchor='start')
+    g.raw('</g>')
     return g
 
 
@@ -338,13 +378,21 @@ def f10():  # m1 pulled by F at θ, string over pulley to m2
     g.line(30, 140, 335, 140, w=3, cap='square')
     g.line(335, 140, 335, 245, w=3, cap='square')
     px, py, r = 372, 100, 20
+    # data-part: course/animations/quiz1.js drags m₁ (and F with it) to the
+    # left and lifts m₂, the two strings following
+    g.raw('<g data-part="string-h">')
     g.line(235, py - r, px, py - r, w=1.1)
+    g.raw('</g><g data-part="string-v">')
     g.line(px + r, py, px + r, 168, w=1.1)
+    g.raw('</g>')
     pulley(g, px, py, r, [(px, py), (335, 140), (316, 140)])
+    g.raw('<g data-part="m1">')
     g.rect(145, 62, 90, 78, fill=BLUE, fop=0.35, w=1.2)
     g.sub(190, 101, 'm', '1')
+    g.raw('</g><g data-part="m2">')
     g.rect(px + r - 23, 168, 46, 70, fill=BLUE, fop=0.35, w=1.2)
     g.sub(px + r, 203, 'm', '2')
+    g.raw('</g><g data-part="m1">')
     ax, ay = 145, 100
     g.line(ax, ay, 58, ay, w=1, dash='2 3', op=0.7)
     g.arc(ax, ay, 46, 180, 150, w=1)
@@ -352,18 +400,22 @@ def f10():  # m1 pulled by F at θ, string over pulley to m2
     fx, fy = pt(ax, ay, 112, 150)
     g.arrow(ax, ay, fx, fy, RED, w=2.2, size=11)
     g.text(fx - 10, fy - 10, 'F')
+    g.raw('</g>')
     return g
 
 
 def f11():  # F presses m1 against m2, frictionless floor
     g = Fig(500, 205)
     g.rect(20, 170, 410, 24, fill=INK, fop=0.1, w=1.1)
+    # data-part: course/animations/quiz1.js pushes both blocks (and F) along together
+    g.raw('<g data-part="move">')
     g.rect(225, 40, 130, 130, fill=BLUE, fop=0.3, w=1.2)
     g.rect(175, 66, 50, 52, fill=BLUE, fop=0.7, w=1.2)
     g.sub(200, 52, 'm', '1')
     g.sub(290, 26, 'm', '2')
     g.arrow(72, 92, 173, 92, RED, w=2.2, size=11)
     g.text(56, 92, 'F')
+    g.raw('</g>')
     g.text(440, 92, 'No friction', 15, italic=False, anchor='middle')
     g.arrow(420, 106, 362, 166, w=1.1, size=9)
     return g
@@ -374,6 +426,8 @@ def f12():  # block pulled by F at θ on a rough floor
     g.rect(6, 98, 220, 14, fill=INK, fop=0.08, stroke=None)
     g.line(6, 98, 226, 98, w=1.5)
     g.hatch(6, 226, 98, step=8, length=12, op=0.6)
+    # data-part: course/animations/quiz1.js pulls the block (and F) along the floor
+    g.raw('<g data-part="move">')
     g.rect(16, 30, 84, 68, fill=BLUE, fop=0.45, w=1.2, rx=5)
     ax, ay = 100, 52
     g.line(ax, ay, 162, ay, w=0.9)
@@ -382,6 +436,7 @@ def f12():  # block pulled by F at θ on a rough floor
     fx, fy = pt(ax, ay, 88, 26)
     g.arrow(ax, ay, fx, fy, RED, w=2.2, size=11)
     g.text(fx + 11, fy - 6, 'F')
+    g.raw('</g>')
     return g
 
 
@@ -430,21 +485,34 @@ def f15():  # movable + fixed pulley, worker pulls with F
     g = Fig(240, 312)
     g.rect(5, 4, 230, 12, fill=INK, fop=0.16, stroke=None)
     g.line(5, 16, 235, 16, w=1.5)
-    lx, ly, ux, uy, r = 110, 176, 150, 96, 22
+    lx, ly, ux, uy, r, end = 110, 176, 150, 96, 22, 208
+    # data-part/data-geom: what course/animations/quiz1.js moves. The movable
+    # pulley, its strap, chain and weight ("load", two groups to keep the
+    # rope between the wheel and the strap) rise as the free end ("pull") is
+    # pulled down; the rope is redrawn from the geometry.
     for cx, cy in ((lx, ly), (ux, uy)):
+        if cx == lx:
+            g.raw('<g data-part="load">')
         g.circle(cx, cy, r, fill=BLUE, fop=0.25, w=1.4)
         g.circle(cx, cy, r - 7, w=0.8)
+        if cx == lx:
+            g.raw('</g>')
+    g.raw(f'<g data-part="rope" data-geom="{lx} {ly} {ux} {uy} {r} {end}">')
     g.path(f'M{lx - r},16 L{lx - r},{ly} A{r},{r} 0 0 0 {lx + r},{ly} L{ux - r},{uy} '
-           f'A{r},{r} 0 0 1 {ux + r},{uy} L{ux + r},208', INK, 1.6)
+           f'A{r},{r} 0 0 1 {ux + r},{uy} L{ux + r},{end}', INK, 1.6)
+    g.raw('</g>')
     g.rect(ux - 4, 16, 8, uy - 10, fill=INK, fop=0.45, w=0.8, rx=2)
-    g.rect(lx - 4, ly - 26, 8, 36, fill=INK, fop=0.45, w=0.8, rx=2)
     g.circle(ux, uy, 4.5, stroke=None, fill=INK)
+    g.raw('<g data-part="load">')
+    g.rect(lx - 4, ly - 26, 8, 36, fill=INK, fop=0.45, w=0.8, rx=2)
     g.circle(lx, ly, 4.5, stroke=None, fill=INK)
     chain(g, lx, ly + 10, 268)
     g.poly([(98, 270), (122, 270), (128, 302), (92, 302)], fill=BLUE, fop=0.45, w=1.2)
     g.text(80, 292, 'w')
+    g.raw('</g><g data-part="pull">')
     g.arrow(ux + r, 210, ux + r, 272, RED, w=2.6, size=12)
     g.vec(ux + r + 16, 246, 'F')
+    g.raw('</g>')
     return g
 
 
@@ -482,16 +550,25 @@ def f17():  # block on incline over a pulley, m2 hanging
     off = 5 + r
     tx, ty = cx + nx * r, cy + ny * r
     s1, s2, hb = 118, 182, 50
+    # data-part/data-geom (the slope's direction): course/animations/quiz1.js
+    # moves m₁ along the slope (up or down, as the problem says) at steady
+    # speed and m₂ the other way, the strings following
+    g.raw('<g data-part="string-slope">')
     g.line(*P(s2, off), tx, ty, w=1.1)
+    g.raw('</g><g data-part="string-v">')
     g.line(cx + r, cy, cx + r, 148, w=1.1)
+    g.raw('</g>')
     g.poly([(cx, cy), P(s2 + 70, 0), (xt, yt + 22)], stroke=None, fill=INK, fop=0.35)
     g.circle(cx, cy, r, fill=PAPER, w=2.2)
     g.circle(cx, cy, 7, stroke=None, fill=INK)
+    g.raw(f'<g data-part="m1" data-geom="{n(ux)} {n(uy)}">')
     g.poly([P(s1, 0), P(s2, 0), P(s2, hb), P(s1, hb)], fill=BLUE, fop=0.45, w=1.2)
     g.circle(*P(s2 + 3, off), 3, w=1.1, fill=PAPER)
-    g.rect(cx + r - 26, 148, 52, 48, fill=RED, fop=0.5, w=1.2)
     g.sub(*P(s1 - 12, hb + 12), 'm', '1')
+    g.raw('</g><g data-part="m2">')
+    g.rect(cx + r - 26, 148, 52, 48, fill=RED, fop=0.5, w=1.2)
     g.sub(cx + r, 216, 'm', '2')
+    g.raw('</g>')
     g.arc(x0, y0, 52, 0, 30, w=1.1, end_head=True)
     g.text(*pt(x0, y0, 70, 12), 'α', 16)
     return g
@@ -518,25 +595,38 @@ def f18():  # block A on a table, cord to a knot, cord to the wall at α, weight
     g.arc(kx, ky, 34, 0, al, w=1.1, end_head=True)
     g.text(*pt(kx, ky, 50, al / 2), 'α', 16)
     g.line(kx, ky, kx, 172, w=1.2)
+    # data-part/data-geom: course/animations/quiz1.js hangs the weight on
+    # gradually (scaled from its hook) while the cord's pull on A and the
+    # static friction holding A grow together (drawn into "forces" from A's
+    # hook and the middle of its base)
+    g.raw(f'<g data-part="weight" data-geom="{kx} 172">')
     g.poly([(212, 172), (232, 172), (246, 214), (198, 214)], fill=RED, fop=0.5, w=1.2)
+    g.raw('</g>')
     g.text(kx, 232, 'w')
+    g.raw('<g data-part="forces" data-geom="110 100 84 118"></g>')
     return g
 
 
 def blocks_ab(cord):
-    g = Fig(200, 100)
-    g.line(4, 84, 184, 84, w=1.3)
-    g.hatch(4, 184, 84, op=0.45)
-    g.line(184, 8, 184, 84, w=1.3)
-    g.vhatch(184, 8, 84, op=0.45)
-    g.rect(44, 60, 112, 24, fill=BLUE, fop=0.3, w=1.2)
-    g.rect(80, 38, 38, 22, fill=BLUE, fop=0.65, w=1.2)
-    g.text(99, 26, 'A')
-    g.text(166, 72, 'B')
+    t = 34  # room on the left: the animation drags B (and F) that way
+    g = Fig(200 + t, 100)
+    g.line(4, 84, 184 + t, 84, w=1.3)
+    g.hatch(4, 184 + t, 84, op=0.45)
+    g.line(184 + t, 8, 184 + t, 84, w=1.3)
+    g.vhatch(184 + t, 8, 84, op=0.45)
+    # data-part: course/animations/quiz1.js drags B to the left at steady
+    # speed; A is held by the cord where there is one, and rides on B otherwise
+    g.raw('<g data-part="b">')
+    g.rect(44 + t, 60, 112, 24, fill=BLUE, fop=0.3, w=1.2)
+    g.text(166 + t, 72, 'B')
+    g.arrow(44 + t, 72, 8 + t, 72, RED, w=2.2, size=10)
+    g.vec(22 + t, 54, 'F', 15)
+    g.raw('</g><g data-part="a">')
+    g.rect(80 + t, 38, 38, 22, fill=BLUE, fop=0.65, w=1.2)
+    g.text(99 + t, 26, 'A')
+    g.raw('</g>')
     if cord:
-        g.line(118, 47, 184, 47, w=1.1)
-    g.arrow(44, 72, 8, 72, RED, w=2.2, size=10)
-    g.vec(22, 54, 'F', 15)
+        g.line(118 + t, 47, 184 + t, 47, w=1.1)
     return g
 
 
@@ -592,13 +682,21 @@ def loop(bottom):
     ex, ey = pt(cx, cy, R - 4, 30)
     g.arrow(cx, cy, ex, ey, w=1.3, size=10)
     g.text(*pt(cx, cy, 68, 48), 'R', 17, italic=False)
+    # data-part/data-geom (the loop's centre and radius): course/animations/
+    # quiz1.js drives the car (with its velocity arrow) round the loop at
+    # steady speed and draws the wall's normal force and the weight on it
+    # into "forces", the normal force changing with the place on the loop
+    g.raw(f'<g data-part="car" data-geom="{cx} {cy} {R} {1 if bottom else -1}">')
     if bottom:
-        g.raw(f'<g transform="translate({cx - 24.5} {cy + R - 3 - 23.5})">{TOYCAR}</g>')
+        g.raw(f'<g transform="translate({cx - 24.5} {cy + R - 3 - 23.5})">{TOYCAR}</g><g data-part="velocity">')
         g.arrow(124, cy + R - 44, 178, cy + R - 44, BLUE, w=3, size=12)
+    else:
+        g.raw(f'<g transform="translate({cx} {cy - R + 3}) rotate(180) translate(-24.5 -23.5)">{TOYCAR}</g><g data-part="velocity">')
+        g.arrow(176, cy - R + 44, 122, cy - R + 44, BLUE, w=3, size=12)
+    g.raw('</g></g><g data-part="forces"></g>')   # velocity: hidden while the car goes round
+    if bottom:
         g.text(cx, cy + R + 22, 'A', 16)
     else:
-        g.raw(f'<g transform="translate({cx} {cy - R + 3}) rotate(180) translate(-24.5 -23.5)">{TOYCAR}</g>')
-        g.arrow(176, cy - R + 44, 122, cy - R + 44, BLUE, w=3, size=12)
         g.text(cx, cy - R - 16, 'B', 16)
     return g
 

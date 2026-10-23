@@ -44,30 +44,43 @@ def f02():  # three stars revolving round their centre, 120° apart
     g = Fig(300, 300)
     cx, cy, R = 150, 156, 112
     g.path(f'M{cx - R},{cy} a{R},{R} 0 1 0 {2 * R},0 a{R},{R} 0 1 0 {-2 * R},0', INK, 1.1, dash='5 4', op=0.6)
+    # data-part/data-geom: course/animations/quiz3.js turns "spin" about the
+    # centre and carries the 120° labels round with it, upright
+    g.raw(f'<g data-part="spin" data-geom="{cx} {cy}">')
     for a in (90, 210, 330):
         x, y = pt(cx, cy, R, a)
         g.line(cx, cy, x, y, w=1, dash='7 5', op=0.6)
     for a in (90, 210, 330):
         g.arc(cx, cy, R, a + 13, a + 42, BLUE, 2.4, end_head=True, size=10)
         g.disc(*pt(cx, cy, R, a), 16, RED, 0.75)
+    g.raw('</g><g data-part="labels">')
     for a, r in ((150, 40), (30, 40), (270, 32)):
         g.text(*pt(cx, cy, r, a), '120°', 15, italic=False)
+    g.raw('</g>')
     return g
 
 
 def f03():  # two stars M orbiting their centre of mass
-    g = Fig(250, 192)
-    cx, cy, R = 125, 96, 78
+    # tall enough for the M labels (radius ~97 from cm) to pass over the top
+    # and under the bottom as the animation turns the pair round
+    g = Fig(250, 216)
+    cx, cy, R = 125, 108, 78
     g.circle(cx, cy, R, stroke=BLUE, w=1.8)
+    # data-part/data-geom: course/animations/quiz3.js turns "spin" about the
+    # centre of mass and carries the labels round with it, upright
+    g.raw(f'<g data-part="spin" data-geom="{cx} {cy}">')
     g.line(cx - R, cy, cx + R, cy, w=1.8)
     for x in (cx - R, cx + R):
         g.disc(x, cy, 8, RED, 0.85)
+    g.raw('</g>')
     g.circle(cx, cy, 4, stroke=None, fill=INK)
+    g.raw('<g data-part="labels">')
     g.text(cx, cy - 15, 'cm', 15, italic=False)
     g.text(cx - R / 2, cy - 13, 'R', 16)
     g.text(cx + R / 2, cy - 13, 'R', 16)
     g.text(cx - R - 18, cy + 12, 'M', 16)
     g.text(cx + R + 18, cy + 12, 'M', 16)
+    g.raw('</g>')
     return g
 
 
@@ -87,10 +100,17 @@ def f04():  # horizontal spring and block, x to the right
     g.line(16, 6, 16, 112, w=2)
     g.vhatch(16, 6, 112, side=-1, op=0.6)
     g.arrow(16, y, 304, y, w=1.3, size=11)
+    # data-part/data-geom: course/animations/quiz3.js redraws the spring from
+    # these zigzag() arguments as the block (and its label) oscillates
+    g.raw(f'<g data-part="spring" data-geom="16 166 {y} 6 8 18">')
     g.path(zigzag(16, 166, y, 6, 8, 18), BLUE, 1.6)
+    g.raw('</g><g data-part="block">')
     g.rect(166, 80, 42, 26, fill=RED, fop=0.5, w=1.2)
+    g.raw('</g><g data-part="k-label">')
     g.text(92, 72, 'k', 17)
+    g.raw('</g><g data-part="block">')
     g.text(187, 64, 'm', 17)
+    g.raw('</g>')
     return g
 
 
@@ -106,12 +126,18 @@ def f05():  # spring from a brick wall to block M2 with M1 on top
         x = 11 if k % 2 else 15
         rows.append(f'M{x},{y} L{x},{min(y + 9, fy)}')
     g.path(' '.join(rows), INK, 0.7, op=0.6)
+    # data-part/data-geom: course/animations/quiz3.js redraws the spring from
+    # these spring() arguments as both blocks (M₁ riding on M₂) oscillate
+    g.raw('<g data-part="spring" data-geom="26 240 60 13 19 8">')
     g.spring(26, 240, 60, 13, amp=19, w=1.3, lead=8)
+    g.raw('</g><g data-part="block">')
     g.rect(240, 34, 102, 62, fill=BLUE, fop=0.32, w=1.2)
     g.rect(270, 10, 38, 24, fill=RED, fop=0.55, w=1.2)
     g.sub(289, 22, 'M', '1', 15)
     g.sub(291, 66, 'M', '2', 17)
+    g.raw('</g><g data-part="k-label">')
     g.text(132, 24, 'k', 17)
+    g.raw('</g>')
     return g
 
 
@@ -148,7 +174,10 @@ def f07():  # two posts inclined at θ, held by a wire across their tops
     p1, p2 = (110, gy), (222, gy)
     t1 = pt(*p1, L, 180 - th)
     t2 = pt(*p2, L, th)
-    g.line(*t1, *t2, BLUE, 1.8)
+    # data-part/data-geom: the wire's ends; course/animations/quiz3.js bends it into a standing wave
+    g.raw(f'<g data-part="wire" data-geom="{n(t1[0])} {n(t1[1])} {n(t2[0])} {n(t2[1])}">')
+    g.path(f'M{n(t1[0])},{n(t1[1])} L{n(t2[0])},{n(t2[1])}', BLUE, 1.8)
+    g.raw('</g>')
     g.text((t1[0] + t2[0]) / 2, t1[1] - 14, 'Wire', 16, italic=False)
     for p, t in ((p1, t1), (p2, t2)):
         g.line(*p, *t, INK, 11)
@@ -170,9 +199,14 @@ def f08():  # beam hanging from two vertical wires, weight W off-centre
     g = Fig(330, 272)
     ceiling(g, 8, 322, y=4, h=16)
     xa, xb, by = 72, 252, 178
+    # data-part/data-geom: each wire (x, top, bottom) with its tension arrowhead
+    # ("head", carried sideways with the wire); course/animations/quiz3.js bends them
     for x, lab in ((xa, 'A'), (xb, 'B')):
-        g.line(x, 20, x, by, w=1.3)
+        g.raw(f'<g data-part="wire-{lab.lower()}" data-geom="{x} 20 {by}">')
+        g.path(f'M{x},20 L{x},{by}', INK, 1.3)
+        g.raw('<g data-part="head">')
         g.head(x, 132, 0, -1, RED, 10)
+        g.raw('</g></g>')
         g.text(x - 14, 96, lab, 16)
     g.rect(xa - 4, by, xb - xa + 8, 10, fill=BLUE, fop=0.45, w=1.1)
     wx = xa + (xb - xa) / 3
@@ -186,8 +220,11 @@ def f09():  # bar on two wires A and B, lead cube 3/4 of the way to B
     g.rect(4, 4, 312, 12, fill=INK, fop=0.14, stroke=None)
     g.line(4, 16, 316, 16, w=1.4)
     xa, xb, by = 30, 290, 134
-    for x in (xa, xb):
-        g.line(x, 16, x, by, w=1.3)
+    # data-part/data-geom: each wire (x, top, bottom); course/animations/quiz3.js bends them
+    for x, lab in ((xa, 'a'), (xb, 'b')):
+        g.raw(f'<g data-part="wire-{lab}" data-geom="{x} 16 {by}">')
+        g.path(f'M{x},16 L{x},{by}', INK, 1.3)
+        g.raw('</g>')
     g.text(14, 86, 'A', 17)
     g.text(306, 86, 'B', 17)
     g.rect(xa - 2, by, xb - xa + 4, 8, fill=RED, fop=0.5, w=1.1)
