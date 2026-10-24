@@ -599,3 +599,73 @@ html.settings-screen-open #stickyScore.visible {
 .settings-backup-btn-row .settings-offline-btn {
   align-self: auto;
 }
+
+/* ── Search tab (js/settings-search.js) ── The box, then each match as its
+   real row (or row + sub-row group, or Go offline / Backup block) with a
+   small "Tab · Section ›" link above it that opens it on its own tab. */
+.settings-search-bar {
+  position: relative;
+  margin-bottom: 0.9rem;
+}
+.settings-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.settings-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--sans);
+  font-size: 16px; /* 16px+ keeps iOS from zooming the page on focus */
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(8px * var(--radius-mult));
+  padding: 0.6rem 0.8rem 0.6rem 2.2rem;
+  transition: border-color 0.15s;
+}
+.settings-search-input::placeholder { color: var(--muted); }
+.settings-search-input:focus { outline: none; border-color: var(--accent); }
+.settings-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.settings-search-note {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding: 0.3rem 0.1rem 0.6rem;
+  line-height: 1.5;
+}
+.settings-search-result {
+  border-bottom: 1px solid var(--border);
+  padding-top: 0.55rem;
+}
+.settings-search-result:last-child { border-bottom: none; }
+.settings-search-result > .settings-row,
+.settings-search-result > .settings-group .settings-row:last-child { border-bottom: none; }
+.settings-search-result > .settings-offline-panel,
+.settings-search-result > .settings-backup-section { margin: 0.3rem 0 0.9rem; }
+.settings-search-path {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  cursor: pointer;
+}
+.settings-search-path:hover,
+.settings-search-path:focus-visible { color: var(--accent); }
+
+/* A setting opened from a search result, on its own tab: a short glow. */
+.settings-row-flash { animation: settingsRowFlash 1.6s ease; }
+@keyframes settingsRowFlash {
+  0%, 35% { background: rgba(var(--accent-rgb), 0.16); }
+  100%    { background: transparent; }
+}

@@ -101,6 +101,7 @@ const OFFLINE_CORE_FILES = [
   'js/license.js',
   'LICENSE',
   'js/settings.js',
+  'js/settings-search.js',
   'js/offline-mode.js',
   'js/site-visits.js',
   'js/forum.js',
@@ -383,7 +384,8 @@ function isOfflineModeActive() {
 // — same guard renderSettingsBody() itself already needs, just called from
 // outside a settings.js onchange this time.
 function _refreshOfflineTabIfOpen() {
-  if (typeof settingsActiveTab !== 'undefined' && settingsActiveTab === 'offline' && typeof renderSettingsBody === 'function') {
+  // Also on Search, which can be showing the Go offline panel as a result.
+  if (typeof settingsActiveTab !== 'undefined' && (settingsActiveTab === 'offline' || settingsActiveTab === 'search') && typeof renderSettingsBody === 'function') {
     renderSettingsBody();
   }
 }
@@ -741,7 +743,7 @@ const CACHE_STORAGE_ROWS = [
 
 function renderCacheStorageSection() {
   const rows = CACHE_STORAGE_ROWS.map(r => `
-    <div class="settings-row settings-row-danger">
+    <div class="settings-row settings-row-danger" data-row-key="${r.id}">
       <div class="settings-row-label">
         <div class="settings-row-title">${r.title}</div>
         <div class="settings-row-desc">${r.desc}</div>
@@ -782,7 +784,7 @@ function _renderSettingsOfflineSections() {
   if (state.status === 'downloading') {
     const pct = state.total ? Math.round((state.done / state.total) * 100) : 0;
     return `
-      <div class="settings-offline-panel">
+      <div class="settings-offline-panel" data-row-key="goOffline">
         <div class="settings-offline-heading">\u{1F4E5} Downloading\u2026</div>
         <div class="settings-offline-desc">Fetching everything needed to study with zero connection. Don\u2019t close the app until this finishes.</div>
         <div class="settings-offline-progress-track"><div class="settings-offline-progress-fill" style="width:${pct}%"></div></div>
@@ -793,7 +795,7 @@ function _renderSettingsOfflineSections() {
 
   if (state.status === 'error') {
     return `
-      <div class="settings-offline-panel">
+      <div class="settings-offline-panel" data-row-key="goOffline">
         <div class="settings-offline-heading">\u26A0\uFE0F Download didn\u2019t finish</div>
         <div class="settings-offline-desc">${state.failed.length} of ${state.total} files couldn\u2019t be fetched: check your connection and try again. Offline mode wasn\u2019t turned on, and nothing was blocked.</div>
         <button type="button" class="settings-offline-btn" onclick="startGoOffline()">
@@ -808,7 +810,7 @@ function _renderSettingsOfflineSections() {
     const h = Math.floor(msLeft / 3600000);
     const m = Math.floor((msLeft % 3600000) / 60000);
     return `
-      <div class="settings-offline-panel">
+      <div class="settings-offline-panel" data-row-key="goOffline">
         <div class="settings-offline-heading">\u2705 Offline mode is active</div>
         <div class="settings-offline-desc">Every request to the server is blocked \u2014 including from other open tabs, and even if you\u2019re actually back online \u2014 and the app runs entirely off what was downloaded. Expires automatically in ${h}h ${m}m, or end it early below.</div>
         <button type="button" class="settings-offline-btn settings-offline-btn-secondary" onclick="endOfflineMode()">
@@ -819,7 +821,7 @@ function _renderSettingsOfflineSections() {
   }
 
   return `
-    <div class="settings-offline-panel">
+    <div class="settings-offline-panel" data-row-key="goOffline">
       <div class="settings-offline-heading">Go offline</div>
       <div class="settings-offline-desc">Downloads every quiz, image, worked solution and app file needed to study with zero connection, then blocks all server requests for the next 24 hours, even if you\u2019re back online before then. Tap once, then tap again to confirm; the download starts right away. Helpful for in-travel study.</div>
       <button type="button" class="settings-offline-btn" id="goOfflineBtn" onclick="handleGoOfflineClick()" title="Download everything needed and go offline for 24 hours">

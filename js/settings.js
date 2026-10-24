@@ -601,7 +601,7 @@ function handleSettingsImportFileSelected(event) {
 // is always the very last section of the Settings screen.) ──
 function renderSettingsBackupSection() {
   return `
-    <div class="settings-backup-section">
+    <div class="settings-backup-section" data-row-key="backup">
       <div class="settings-offline-heading">Backup</div>
       <div class="settings-offline-desc">Save every setting on this device to a file, or restore one saved earlier \u2014 including on another device, or after clearing site data. A setting added since an old backup was made just keeps its default; one removed since is skipped.</div>
       <div class="settings-backup-btn-row">
@@ -622,6 +622,7 @@ const SETTINGS_TABS = [
   { id: 'notifications', label: 'Notifications' },
   { id: 'study',         label: 'Study' },
   { id: 'offline',       label: 'Sync & Storage' },
+  { id: 'search',        label: 'Search' }, // js/settings-search.js
 ];
 
 function switchSettingsTab(tabId) {
@@ -665,6 +666,8 @@ function renderSettingsBody() {
     // other dynamically-inserted math, since MathJax only ever looks at
     // elements it's told to.
     if (typeof renderMathIn === 'function') renderMathIn(body);
+  } else if (settingsActiveTab === 'search' && typeof renderSettingsSearchTab === 'function') {
+    renderSettingsSearchTab(body); // js/settings-search.js
   }
 }
 
@@ -875,7 +878,7 @@ function renderFigureSettingsRows() {
   `);
   const animSpeed = clampFigAnimSpeed(getSetting('display', 'figAnimSpeed'));
   const animSwitch = (key, title, desc) => `
-    <div class="settings-row">
+    <div class="settings-row" data-row-key="${key}">
       <div class="settings-row-label">
         <div class="settings-row-title">${title}</div>
         <div class="settings-row-desc">${desc}</div>
@@ -1175,7 +1178,7 @@ function renderSettingsStudyTab() {
   const navRailOn       = getSetting('study', 'showSolveAllNavRail') !== false;
 
   return `
-    <div class="settings-row">
+    <div class="settings-row" data-row-key="redrawnFigures">
       <div class="settings-row-label">
         <div class="settings-row-title">Redrawn figures</div>
         <div class="settings-row-desc">Shows problem figures redrawn in your theme's colours. Turn off to see the original images.</div>
@@ -1189,7 +1192,7 @@ function renderSettingsStudyTab() {
 
     <div class="settings-section-header">Random Quiz</div>
 
-    <div class="settings-row">
+    <div class="settings-row" data-row-key="showLiveTimer">
       <div class="settings-row-label">
         <div class="settings-row-title">Show live timer</div>
         <div class="settings-row-desc">Shows a floating clock, bottom-right, counting up while you take a Random 6 or cumulative quiz.</div>
@@ -1201,7 +1204,7 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
-    <div class="settings-row">
+    <div class="settings-row" data-row-key="resetFilterOnLoad">
       <div class="settings-row-label">
         <div class="settings-row-title">Reset filter on page load</div>
         <div class="settings-row-desc">Clears any saved topic/number/type filter back to "everything" the moment the page loads, instead of remembering what you last had set.</div>
@@ -1213,7 +1216,7 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
-    <div class="settings-row">
+    <div class="settings-row" data-row-key="autoStopAt50Min">
       <div class="settings-row-label">
         <div class="settings-row-title">Automatically stop after 50 minutes</div>
         <div class="settings-row-desc">Submits the attempt on its own if 50 minutes pass without you finishing.</div>
@@ -1250,7 +1253,7 @@ function renderSettingsStudyTab() {
       </div>
     </div>
 
-    <div class="settings-row">
+    <div class="settings-row" data-row-key="selectLatestQuizByDefault">
       <div class="settings-row-label">
         <div class="settings-row-title">Select latest quiz by default</div>
         <div class="settings-row-desc">Landing on the main page selects the newest available quiz instead of always Quiz #1. Applies from your next page load.</div>
@@ -1262,7 +1265,7 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
-    <div class="settings-row">
+    <div class="settings-row" data-row-key="cumulativeDefaultOn">
       <div class="settings-row-label">
         <div class="settings-row-title">Select cumulative by default</div>
         <div class="settings-row-desc">Selecting quiz #2 or later starts with the Cumulative switch already on, instead of Single Set. Applies from your next page load.</div>
@@ -1274,7 +1277,7 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
-    <div class="settings-row">
+    <div class="settings-row" data-row-key="hideTopicWhileActive">
       <div class="settings-row-label">
         <div class="settings-row-title">Hide topic while active</div>
         <div class="settings-row-desc">Hides each problem's topic label (top-right of the card) while the attempt is in progress. Comes back once your score is revealed.</div>
@@ -1326,7 +1329,7 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
-    <div class="settings-row">
+    <div class="settings-row" data-row-key="showStickyScore">
       <div class="settings-row-label">
         <div class="settings-row-title">Show progress window</div>
         <div class="settings-row-desc">The floating solved-count badge, bottom-right, while Entire Set is open.</div>
@@ -1338,7 +1341,7 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
-    <div class="settings-row">
+    <div class="settings-row" data-row-key="revealWrongInstantly">
       <div class="settings-row-label">
         <div class="settings-row-title">Reveal wrong answer instantly</div>
         <div class="settings-row-desc">Skips the "See correct answer" step. A wrong answer (not partial credit) shows the correct one right away.</div>

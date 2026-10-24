@@ -200,6 +200,7 @@ impulse/
 │   ├── manual.js            User manual screen (reads course/manual.json)
 │   ├── license.js           Copyright screen (statements + LICENSE text)
 │   ├── settings.js          Settings schema, storage, panel, backup
+│   ├── settings-search.js   Settings > Search tab: matching + keyword lists
 │   ├── offline-mode.js      "Go offline" download + Cache & storage tools
 │   ├── site-visits.js       Records one visit per page load
 │   ├── forum.js             The class forum
@@ -580,7 +581,7 @@ attempts.
    `figure-style.js`,
    `top-bar-scroll.js`, `top-bar-tips.js`, `top-bar-quiz-status.js`,
    `solve-all-nav.js`, `changelog.js`, `manual.js`, `license.js`,
-   `settings.js`, `offline-mode.js`, the Supabase JS client (jsDelivr CDN),
+   `settings.js`, `settings-search.js`, `offline-mode.js`, the Supabase JS client (jsDelivr CDN),
    `site-visits.js`, `forum.js`, `push-notifications.js`. When the last one
    has loaded, the loader sets `window.tier2Loaded` and fires `tier2-loaded`
    (`logo-tumble.js` waits for it). Problems are first
@@ -1114,14 +1115,22 @@ and to `OFFLINE_CORE_FILES` in `js/offline-mode.js`).
 [Cross-device sync](#cross-device-sync)) as
 `localStorage.flux_settings` with a schema version and a migration that merges
 saved values over `SETTINGS_DEFAULTS`. `getSetting(tab, key)` /
-`setSetting(tab, key, value)` are the accessors. The screen has four tabs:
+`setSetting(tab, key, value)` are the accessors. The screen has five tabs:
 
 | Tab | Settings |
 |---|---|
-| **Display** | *Main screen*: Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme). *Animations and figures*: Reduce motion (sub, independent of it: Off / XX% with ▲▼ arrows, 10–40% — reduce motion automatically while the battery is below that and not charging; `navigator.getBattery()`, Chromium only, blocked elsewhere) · Figure size slider (50–200%, scales problem images, redrawn figures and solution figures) · Default animation speed slider (0.25–5×; the speed chip under a figure multiplies it) · Repeat one-shot animations (they go round again until ⏸, which then finishes the round) · Play looped animations only once (one cycle, then they stop by themselves) · Hide animation control buttons (the play button and speed chip, so animated figures stay still) · Hide field lines by default. *Extra*: Show floating forum button · Show running line (top-bar tips) |
+| **Display** | *Main screen*: Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme). *Animations and figures*: Reduce motion (sub, independent of it: Off / XX% with ▲▼ arrows, 10–40% — reduce motion automatically while the battery is below that and not charging; `navigator.getBattery()`, Chromium only, blocked elsewhere) · Figure size slider (50–200%, scales problem images, redrawn figures and solution figures) · Default animation speed slider (0.25–5×; the speed chip under a figure multiplies it) · Repeat one-shot animations (they go round again until ⏸, which then finishes the round) · Play looped animations only once (one cycle, then they stop by themselves) · Hide animation control buttons (the play button and speed chip, so animated figures stay still) · Logo animation (the logo cube's tumble, `js/logo-tumble.js`) · Hide field lines by default. *Extra*: Show floating forum button · Show running line (top-bar tips) |
 | **Notifications** | Hide update reminder (sub: Update anyway outside quiz mode) · Hide try-new-theme reminder · Hide bug report reminder · Go silent — hides every badge and banner and mutes push (sub: Turn off automatically after 24 hours) |
 | **Study** | Redrawn figures (on: theme-coloured SVGs, off: original images) · Show live timer · Reset filter on page load · Automatically stop after 50 minutes · Full screen for Random N (sub: Don't show full-screen reminder) · Select latest quiz by default · Select cumulative by default · Hide topic while active · Solve-All: Lock order + Order · Line progress (rail) · Show progress window (sticky score) · Reveal wrong answer instantly |
 | **Sync & Storage** | Sync settings on this device (on by default; never synced itself) · Go offline (24 h) · Cache & storage tools · Backup |
+| **Search** | A search box; matching settings appear under it as their real rows, with a link to their own tab (`js/settings-search.js`) |
+
+**Search** renders the other tabs off-screen and picks every element with a
+`data-row-key` out of them, so a new setting is searchable by its title and
+description as long as its row has that attribute. To make it easier to find,
+add the ways people would describe it to `SETTINGS_SEARCH_KEYWORDS` in
+`js/settings-search.js` under the same key: other words for it, what they want
+to do ("hide", "turn off"), and the problem they're solving ("too small").
 
 Display toggles only add classes to `<html>`; the hiding itself is CSS in
 `css/settings.css`. **Icon style** (Classic = drawn line icons, the default; Modern = emoji) is
