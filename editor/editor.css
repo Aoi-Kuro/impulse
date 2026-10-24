@@ -902,6 +902,15 @@ body.state-closed .ed-state { display: none; }
 .ed-manual .manual-wrap { padding-top: 1.4rem; }
 .ed-manual .manual-sidebar { top: 1rem; }
 body.man-open #edManualBtn { opacity: 1; transform: scale(1.1); }
+/* ✕ in the header, same as the site manual's. css/stats.css (where
+   .stats-close-btn lives) isn't loaded here, so its look is repeated. */
+.stats-close-btn {
+  background: none; border: 1px solid var(--border); color: var(--muted);
+  font-family: var(--mono); font-size: .82rem; padding: .38rem .6rem;
+  border-radius: calc(6px * var(--radius-mult)); cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.stats-close-btn:hover { color: var(--text); border-color: var(--text); }
 .manual-content-body kbd {
   font-family: var(--mono); font-size: .76em; white-space: nowrap; color: var(--text);
   padding: .05em .4em; border: 1px solid var(--border); border-bottom-width: 2px;

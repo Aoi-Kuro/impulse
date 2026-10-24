@@ -66,6 +66,7 @@
     setTimeout(() => { screen.hidden = true; screen.classList.remove('fading-out'); }, 200);
   }
   btn.addEventListener('click', () => (isOpen() ? close() : open()));
+  $('edManualClose')?.addEventListener('click', close);
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !isOpen() || document.querySelector('.ed-lc-back')) return;
     const t = e.target;
