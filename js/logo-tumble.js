@@ -14,9 +14,9 @@
 // The animation is a real 3D cube made of six faces (css/style.css, "Site
 // logo tumble"), laid over the <img> and shown only while it plays; at rest
 // it is pixel-for-pixel the same isometric view as favicon.svg, so the swap
-// back to the <img> is invisible. Skipped when Settings > Display > Reduce
-// motion is on (html.settings-reduce-motion) or the device asks for reduced
-// motion.
+// back to the <img> is invisible. Skipped when Settings > Display > Logo
+// animation is off, Reduce motion is on (html.settings-reduce-motion) or the
+// device asks for reduced motion.
 
 (function () {
   const link    = document.getElementById('siteLogoLink');
@@ -35,6 +35,17 @@
     '</span></span>';
   link.appendChild(cube);
 
+  // Settings > Display > Logo animation. settings.js loads in tier 2, after
+  // this file and possibly after the first tumble, so until getSetting
+  // exists the stored value is read straight from localStorage.
+  function tumbleOff() {
+    if (typeof getSetting === 'function') return getSetting('display', 'showLogoTumble') === false;
+    try {
+      const raw = JSON.parse(localStorage.getItem('flux_settings') || 'null');
+      return !!(raw && raw.display && raw.display.showLogoTumble === false);
+    } catch (e) { return false; }
+  }
+
   function reducedMotion() {
     return document.documentElement.classList.contains('settings-reduce-motion') ||
       (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -46,7 +57,7 @@
   }
 
   function playLogoTumble() {
-    if (reducedMotion()) return;
+    if (reducedMotion() || tumbleOff()) return;
     // Restart from the first frame if it's already mid-tumble.
     link.classList.remove('logo-tumbling');
     void link.offsetWidth;

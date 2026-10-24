@@ -45,6 +45,8 @@ const SETTINGS_DEFAULTS = {
     showForumFab:    true,
     hideFieldLinesByDefault: false,
     showTopBarTip:   true,
+    // The logo cube's tumble when the main menu appears (js/logo-tumble.js).
+    showLogoTumble:  true,
     // Percent applied to every figure (problem images/SVGs and solution
     // figures) through the --user-fig-scale CSS variable. See
     // applyFigureScale() below.
@@ -730,6 +732,12 @@ const DISPLAY_TOGGLES = [
     section: 'anim',
     title: 'Hide animation control buttons',
     desc: 'Hides the play button and speed chip under animated figures, so they stay as the still drawing.',
+  },
+  {
+    key: 'showLogoTumble',
+    section: 'anim',
+    title: 'Logo animation',
+    desc: 'Tumbles the logo when the main menu opens.',
   },
   {
     key: 'hideFieldLinesByDefault',
