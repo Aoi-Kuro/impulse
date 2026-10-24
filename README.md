@@ -202,7 +202,8 @@ impulse/
 │   ├── offline-mode.js      "Go offline" download + Cache & storage tools
 │   ├── site-visits.js       Records one visit per page load
 │   ├── forum.js             The class forum
-│   └── push-notifications.js  Web Push subscribe/unsubscribe UI
+│   ├── push-notifications.js  Web Push subscribe/unsubscribe UI
+│   └── settings-sync.js     Settings + theme sync across devices
 │
 ├── editor/                  Solutions editor, served at /editor/
 │   ├── index.html           Editor page (key gate + app)
@@ -698,7 +699,7 @@ refreshes immediately.
 
 ### Cross-device sync
 
-Both sync modules identify the device with `device_id` + `device_secret` (see
+All three sync modules identify the device with `device_id` + `device_secret` (see
 [Device ownership](#device-ownership-device_secret-and-tokens)); the server
 resolves the device to its claimed identity.
 
@@ -727,8 +728,25 @@ resolves the device to its claimed identity.
   (`data: null`) rather than deleting, so the reset sticks on other devices;
   a device that discovers one mid-session returns to the order picker. Tabs of
   the same browser additionally coordinate through a `BroadcastChannel`.
+- **Settings** (`js/settings-sync.js` ↔ `sync-settings`, migration 011): each
+  synced setting keeps `{v, t, d}` (value, change time on the server's clock,
+  device), and the server merges per setting: newer `t` wins, a tie goes to
+  the higher `d`. Never-stamped values count as `t = 0` at their default and
+  `t = 1` otherwise, so on the first sync a non-default choice beats an
+  untouched default and any real change beats both. Changes are found by
+  diffing against the last-seen values, so every writer is covered. Requests:
+  one per burst of changes (3 s debounce, sent at once on hide), one cheap
+  `known_rev` check per page load (skipped if another tab checked < 30 s
+  ago), one per change on another device (the ping on `settings:<identity_id>`
+  carries the new `rev`, so a caught-up tab asks nothing, hidden tabs wait
+  until shown and visible tabs claim the fetch so only one asks), and a
+  fallback every 15 min (`poll.settings`) shared by all tabs. Tabs of one
+  browser update each other through the `storage` event, with no request.
+  Device-only: Follow device theme (and the day/night mode while it's on),
+  Figure size, battery reduce-motion, Go silent, the Solve-All rail and the
+  whole Sync & Storage tab. Off per device via *Sync settings on this device*.
 - **Remote switches** ([Remote settings](#remote-settings-site-versionjson)):
-  `sync_paused` stops both kinds of sync (the dots show "Sync is paused";
+  `sync_paused` stops all three kinds of sync (the dots show "Sync is paused";
   work stays in the browser, deleting an attempt and resetting Solve-All
   still go through) and catches up as soon as it is removed; `off: ["realtime"]`
   drops the ping channels and leaves the fallback timers alone.
@@ -1089,17 +1107,18 @@ and to `OFFLINE_CORE_FILES` in `js/offline-mode.js`).
 
 ### Settings
 
-`js/settings.js` stores device-local settings (never synced) as
+`js/settings.js` stores settings (synced by `js/settings-sync.js`, see
+[Cross-device sync](#cross-device-sync)) as
 `localStorage.flux_settings` with a schema version and a migration that merges
 saved values over `SETTINGS_DEFAULTS`. `getSetting(tab, key)` /
 `setSetting(tab, key, value)` are the accessors. The screen has four tabs:
 
 | Tab | Settings |
 |---|---|
-| **Display** | Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme) · Show floating forum button · Show running line (top-bar tips) · Hide field lines by default · Figure size slider (50–200%, scales problem images, redrawn figures and solution figures) · Default animation speed slider (0.25–5×; the speed chip under a figure multiplies it) · Repeat one-shot animations (they go round again until ⏸, which then finishes the round) · Play looped animations only once (one cycle, then they stop by themselves) |
+| **Display** | *Main screen*: Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme). *Animations and figures*: Reduce motion (sub, independent of it: Off / XX% with ▲▼ arrows, 10–40% — reduce motion automatically while the battery is below that and not charging; `navigator.getBattery()`, Chromium only, blocked elsewhere) · Figure size slider (50–200%, scales problem images, redrawn figures and solution figures) · Default animation speed slider (0.25–5×; the speed chip under a figure multiplies it) · Repeat one-shot animations (they go round again until ⏸, which then finishes the round) · Play looped animations only once (one cycle, then they stop by themselves) · Hide animation control buttons (the play button and speed chip, so animated figures stay still) · Hide field lines by default. *Extra*: Show floating forum button · Show running line (top-bar tips) |
 | **Notifications** | Hide update reminder (sub: Update anyway outside quiz mode) · Hide try-new-theme reminder · Hide bug report reminder · Go silent — hides every badge and banner and mutes push (sub: Turn off automatically after 24 hours) |
-| **Study** | Reduce motion · Redrawn figures (on: theme-coloured SVGs, off: original images) · Show live timer · Reset filter on page load · Automatically stop after 50 minutes · Full screen for Random N (sub: Don't show full-screen reminder) · Select latest quiz by default · Select cumulative by default · Hide topic while active · Solve-All: Lock order + Order · Line progress (rail) · Show progress window (sticky score) · Reveal wrong answer instantly |
-| **Sync & Storage** | Go offline (24 h) · Cache & storage tools · Backup |
+| **Study** | Redrawn figures (on: theme-coloured SVGs, off: original images) · Show live timer · Reset filter on page load · Automatically stop after 50 minutes · Full screen for Random N (sub: Don't show full-screen reminder) · Select latest quiz by default · Select cumulative by default · Hide topic while active · Solve-All: Lock order + Order · Line progress (rail) · Show progress window (sticky score) · Reveal wrong answer instantly |
+| **Sync & Storage** | Sync settings on this device (on by default; never synced itself) · Go offline (24 h) · Cache & storage tools · Backup |
 
 Display toggles only add classes to `<html>`; the hiding itself is CSS in
 `css/settings.css`. "↺ Reset all" restores defaults (tap twice to confirm).
@@ -1157,7 +1176,7 @@ re-register, reload).
 ### Theming
 
 Presets are CSS blocks in `css/style.css` (`body[data-theme="x"]`, each with a
-`.light` variant): **Default, Nord, Sakura, Cyber, Forest, Solar**. `body.light`
+`.light` variant): **Default, Nord, Sakura, Cyber, Forest, Solar, Dusk, Ocean**. `body.light`
 is day mode. `js/themes.js` provides the picker, the **custom theme builder**
 (background, text, two accents, roundness, font pairing — Plex, Grotesk,
 Quicksand or All-mono — separately for night and day, with surface/border/
@@ -1270,9 +1289,9 @@ check.
 | Key | Effect | Default |
 |---|---|---|
 | `min_version` | Tabs on an older version reload as soon as they're outside a timed quiz (a timed quiz once it has run 3 h), instead of after 24 h. Must not be above `version`. | no minimum |
-| `poll` | Background intervals in seconds, each clamped to its limits: `attempts` 45 (15–3600), `solve_all` 60 (15–3600), `stats` 45 (15–3600), `forum` 90 (15–3600), `forum_quiet` 900 (60–21600), `solutions` 1800 (60–86400, how long one solutions index fetch is reused), `update` 300 (60–1800). Zero or a negative value is ignored (default), not clamped to the fastest rate. A changed value takes effect at once. A timer tick is skipped when the same work already ran less than an interval ago (tab return, Realtime ping), so a catch-up isn't repeated seconds later. | values shown |
+| `poll` | Background intervals in seconds, each clamped to its limits: `attempts` 45 (15–3600), `solve_all` 60 (15–3600), `settings` 900 (60–86400), `stats` 45 (15–3600), `forum` 90 (15–3600), `forum_quiet` 900 (60–21600), `solutions` 1800 (60–86400, how long one solutions index fetch is reused), `update` 300 (60–1800). Zero or a negative value is ignored (default), not clamped to the fastest rate. A changed value takes effect at once. A timer tick is skipped when the same work already ran less than an interval ago (tab return, Realtime ping), so a catch-up isn't repeated seconds later. | values shown |
 | `off` | `realtime`: no Realtime connections; everything runs on its `poll` interval. `forum_posting`: the forum is read-only (no new messages, replies or edits). | nothing off |
-| `sync_paused` | `true`: attempts and Solve-All progress stay in each browser and are neither sent nor fetched; deleting an attempt and resetting Solve-All still go through. Removing it syncs every visible tab at once. | `false` |
+| `sync_paused` | `true`: attempts, Solve-All progress and settings stay in each browser and are neither sent nor fetched; deleting an attempt and resetting Solve-All still go through. Removing it syncs every visible tab at once. | `false` |
 | `purge_id` | Each browser refills its offline cache once per new value (`sw.js` refills at most once an hour, so a fresh install skips it). | none |
 
 Once a key has shipped, never rename it or change its meaning: tabs on older
@@ -1697,6 +1716,7 @@ never meant to be run.
 | `008_problem_solutions.sql` | `problem_solutions` (anon may read published rows only) and `solution_editors` (no policies). |
 | `009_editor_links.sql` | `solution_editors.link`, `problem_solutions.author_link`, and the trigger that keeps them in sync. |
 | `010_solution_credit.sql` | `problem_solutions.saved_by` (who saved last), so `author` can be the credited editor. Run before deploying the `solutions-admin` that writes it. |
+| `011_settings_sync.sql` | `settings_sync` (one row per identity, RLS on, no policies), `merge_settings_sync()` (per-setting merge, bumps `rev` only on a real change) and the trigger pinging `settings:<identity_id>` with `{rev, device_id}`. Run before deploying `sync-settings`. |
 
 **Tables**
 
@@ -1746,6 +1766,7 @@ stand between the public key and the database. Request bodies carry
 | `sync-quiz-attempts.ts` | Push/pull attempts. With a matching `known_fingerprint` it answers `unchanged` (confirmed hashes only) instead of the full list; a client without one always gets the full list. |
 | `delete-quiz-attempt.ts` | Delete one synced attempt. |
 | `sync-solve-all.ts` | Pull, push or reset (tombstone) Solve-All progress. |
+| `sync-settings.ts` | Push changed settings and get back the merged set in one call; with no changes and a matching `known_rev` it answers `unchanged`. Clamps future timestamps to server time and returns `server_now` for the client's clock offset. |
 | `save-push-subscription.ts` | Register/remove a Web Push subscription. |
 | `solutions-admin.ts` | Everything the editor needs: `whoami`, `editors`, `index`, `get`, `save` (with 409 conflict check), `delete`, `export`; and, with the admin key, `create-editor`, `set-editor-link`, `revoke-editor`. Validates sizes (solution ≤ 60 000 chars, ≤ 12 steps, SVG ≤ 400 000 chars per step, TikZ ≤ 20 000, caption ≤ 500) and rejects SVG containing `<script>`, `<foreignObject>`, `<iframe>`, `<object>`, `<embed>`, `on…=` handlers, `javascript:`, `data:text/html` or `<!ENTITY` before storing; DOMPurify in the browser remains the real defence. |
 
@@ -1756,15 +1777,15 @@ stand between the public key and the database. Request bodies carry
 | `OPENAI_API_KEY` | post-message, edit-message, claim-nickname | OpenAI moderation. |
 | `GEMINI_API_KEY` | post-message, flag-message | `@gemini`, LaTeX assist, flag review. |
 | `PIN_PEPPER` | claim-nickname | Mixed into PIN hashes. `openssl rand -hex 32`. |
-| `DEVICE_SECRET_PEPPER` | all nine device-authenticated functions | Mixed into `device_secret` hashes. `openssl rand -hex 32`. |
-| `DEVICE_TOKEN_SECRET` | same nine | HMAC key for device/identity tokens. When unset, the functions run in DB-only mode. |
+| `DEVICE_SECRET_PEPPER` | all ten device-authenticated functions | Mixed into `device_secret` hashes. `openssl rand -hex 32`. |
+| `DEVICE_TOKEN_SECRET` | same ten | HMAC key for device/identity tokens. When unset, the functions run in DB-only mode. |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | post-message | Web Push signing (`npx web-push generate-vapid-keys`). |
 | `SOLUTIONS_KEY_PEPPER` | solutions-admin | Mixed into editor key hashes. `openssl rand -hex 32`. |
 | `SOLUTIONS_ADMIN_KEY` | solutions-admin | The owner-only key for editor management. `openssl rand -hex 32`. |
 
-The nine device-authenticated functions are post-message, edit-message,
+The ten device-authenticated functions are post-message, edit-message,
 flag-message, claim-nickname, drop-nickname, sync-quiz-attempts,
-delete-quiz-attempt, sync-solve-all and save-push-subscription. `check-ban`
+delete-quiz-attempt, sync-solve-all, sync-settings and save-push-subscription. `check-ban`
 and `record-visit` deliberately need no secret; `solutions-admin` uses editor
 keys instead.
 

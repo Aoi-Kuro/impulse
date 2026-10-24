@@ -1,6 +1,6 @@
 // ─── Settings ────────────────────────────────────────────────────────────
-// Phase 0 built: a versioned, device-local (localStorage only — no
-// cross-device sync, by design) settings schema + migration; the settings
+// Phase 0 built: a versioned, localStorage settings schema + migration
+// (synced across devices since by js/settings-sync.js); the settings
 // panel shell (gear button -> full-screen panel, same open/close fade
 // pattern as #manualScreen — see js/manual.js); and grouped tabs (Display /
 // Notifications / Study / Sync & Storage).
@@ -55,6 +55,17 @@ const SETTINGS_DEFAULTS = {
     figAnimSpeed:    1,
     figAnimRepeatOneShot: false,
     figAnimLoopOnce: false,
+    // Hides the play button + speed chip under animated figures (CSS only,
+    // css/settings.css), so they stay as the published drawing.
+    hideFigAnimControls: false,
+    // Cuts CSS animations/transitions site-wide (applyReduceMotion). Lived
+    // under study before — migrateSettings and the backup import
+    // still read the old study.reduceMotion.
+    reduceMotion:    false,
+    // Sub of reduceMotion, but independent of it: also reduce motion while
+    // the battery is below reduceMotionBatteryPct (10-40) and not charging.
+    reduceMotionBatteryOn:  false,
+    reduceMotionBatteryPct: 20,
   },
   notifications: {
     hideUpdateReminder: false,
@@ -71,7 +82,6 @@ const SETTINGS_DEFAULTS = {
   },
   study: {
     showLiveTimer: true,
-    reduceMotion: false,
     // Problem figures as the redrawn, theme-coloured SVGs (on) or the
     // original images (off). See js/figure-style.js.
     redrawnFigures: true,
@@ -103,6 +113,11 @@ const SETTINGS_DEFAULTS = {
     // to know the key exists so getSetting/setSetting/migrateSettings work
     // the same way for it as for every other setting.
     until: null,
+    // Settings > Sync & Storage > "Sync settings on this device"
+    // (js/settings-sync.js). Lives in this tab because the tab is never
+    // synced and never in a backup: whether a device syncs is that
+    // device's own choice.
+    syncSettings: true,
   },
 };
 
@@ -137,6 +152,13 @@ function migrateSettings(raw) {
     const savedTab = (raw && typeof raw[tab] === 'object' && raw[tab]) ? raw[tab] : {};
     merged[tab] = { ...SETTINGS_DEFAULTS[tab], ...savedTab };
   }
+  // Reduce motion moved from Study to Display: carry an old save over.
+  const oldStudy = raw && typeof raw.study === 'object' && raw.study;
+  if (oldStudy && typeof oldStudy.reduceMotion === 'boolean'
+      && !(raw.display && typeof raw.display.reduceMotion === 'boolean')) {
+    merged.display.reduceMotion = oldStudy.reduceMotion;
+  }
+  delete merged.study.reduceMotion;
   return merged;
 }
 
@@ -159,6 +181,7 @@ function setSetting(tab, key, value) {
   if (!s[tab]) s[tab] = {};
   s[tab][key] = value;
   saveSettings();
+  if (typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges(); // js/settings-sync.js
 }
 
 // ── Screen state ────────────────────────────────────────────────────────
@@ -523,6 +546,12 @@ const SETTINGS_BACKUP_APP_ID = 'flux-settings-backup';
 // and sw.js blocking every request, when nothing was actually fetched.
 const SETTINGS_BACKUP_EXCLUDED_TABS = ['offline'];
 
+// Codes a setting had in older backups, mapped to its code now, so a backup
+// made before a setting moved tabs still restores it.
+const SETTINGS_BACKUP_RENAMED_CODES = {
+  'study.reduceMotion': 'display.reduceMotion',
+};
+
 function _settingsBackupValidCodes() {
   const codes = {};
   for (const tab of Object.keys(SETTINGS_DEFAULTS)) {
@@ -598,10 +627,12 @@ function handleSettingsImportFileSelected(event) {
     const validCodes = _settingsBackupValidCodes();
     const toApply = [];
     let skipped = 0;
-    for (const code of Object.keys(data.settings)) {
+    for (let code of Object.keys(data.settings)) {
+      const value = data.settings[code];
+      code = SETTINGS_BACKUP_RENAMED_CODES[code] || code;
       if (!validCodes[code]) { skipped++; continue; }
       const dot = code.indexOf('.');
-      toApply.push([code.slice(0, dot), code.slice(dot + 1), data.settings[code]]);
+      toApply.push([code.slice(0, dot), code.slice(dot + 1), value]);
     }
 
     if (toApply.length === 0) {
@@ -700,7 +731,8 @@ function renderSettingsBody() {
   }
 }
 
-// One row per Display toggle: {key in SETTINGS_DEFAULTS.display, title, desc}.
+// One row per Display toggle: {key in SETTINGS_DEFAULTS.display, section,
+// title, desc}. `section` is the heading it's listed under (DISPLAY_SECTIONS).
 // Checked = shown (default); unchecked = hidden. The one exception is
 // followDeviceTheme (`sub`, grouped under showDaylightBtn — see
 // renderSettingsDisplayTab): checked means "on" rather than "shown". While
@@ -711,55 +743,78 @@ function renderSettingsBody() {
 const DISPLAY_TOGGLES = [
   {
     key: 'showAvatar',
+    section: 'main',
     title: 'Show floating avatar',
     desc: 'Shows the signed-in identity avatar on the main page.',
   },
   {
     key: 'showSplashes',
+    section: 'main',
     title: 'Show floating splashes',
     desc: 'Shows the Minecraft-style splash text badge on the main page.',
   },
   {
     key: 'showManualBtn',
+    section: 'main',
     title: 'Show manual button',
     desc: 'Shows the 📖 manual button in the top icon strip.',
   },
   {
     key: 'showThemeBtn',
+    section: 'main',
     title: 'Show theme selector button',
     desc: 'Shows the 🎨 color-theme button in the top icon strip.',
   },
   {
     key: 'showDaylightBtn',
+    section: 'main',
     title: 'Show daylight switch button',
     desc: 'Shows the light/dark mode toggle in the top icon strip.',
   },
   {
     key: 'followDeviceTheme',
+    section: 'main',
     title: 'Follow device theme',
     desc: 'Match light/dark mode to your device automatically.',
     sub: 'showDaylightBtn', // rendered indented, directly under the row for the key above
   },
   {
     key: 'showForumFab',
+    section: 'extra',
     title: 'Show floating forum button',
     desc: 'Shows the floating 💬 forum button that follows you mid-quiz, in Stats, and elsewhere off the main page.',
   },
   {
     key: 'showTopBarTip',
+    section: 'extra',
     title: 'Show running line',
     desc: 'Shows the rotating one-line tip that occasionally appears in the top bar once it\u2019s scrolled.',
   },
   {
+    key: 'hideFigAnimControls',
+    section: 'anim',
+    title: 'Hide animation control buttons',
+    desc: 'Hides the play button and speed chip under animated figures, so they stay as the still drawing.',
+  },
+  {
     key: 'hideFieldLinesByDefault',
+    section: 'anim',
     title: 'Hide field lines by default',
     desc: 'Hides field lines animation that appear upon changelog opening.',
   },
 ];
 
-// Toggles that have a `sub` entry pointing at them get rendered as one
-// visually-grouped unit with that sub-row (see renderSettingsDisplayTab) —
-// currently just showDaylightBtn/followDeviceTheme.
+const DISPLAY_SECTIONS = [
+  { id: 'main',  title: 'Main screen' },
+  { id: 'anim',  title: 'Animations and figures' },
+  { id: 'extra', title: 'Extra' },
+];
+
+// Three headed sections like the Study tab's. Toggles that have a `sub`
+// entry pointing at them get rendered as one visually-grouped unit with
+// that sub-row — showDaylightBtn/followDeviceTheme. "Animations and
+// figures" opens with Reduce motion and its battery sub-row, then the
+// figure sliders/switches, then its plain toggles.
 function renderSettingsDisplayTab() {
   const followDevice = getSetting('display', 'followDeviceTheme') === true;
 
@@ -797,20 +852,40 @@ function renderSettingsDisplayTab() {
     `;
   }
 
-  const html = [];
-  for (const t of DISPLAY_TOGGLES) {
-    if (t.sub) continue; // rendered inline below, as part of its parent's group
-    const subToggle = DISPLAY_TOGGLES.find(s => s.sub === t.key);
-    if (!subToggle) { html.push(renderRow(t)); continue; }
-    html.push(`
-      <div class="settings-group">
-        ${renderRow(t, { blocked: t.key === 'showDaylightBtn' && followDevice })}
-        ${renderRow(subToggle, { sub: true })}
-      </div>
-    `);
+  function renderToggles(section) {
+    const out = [];
+    for (const t of DISPLAY_TOGGLES) {
+      if (t.section !== section || t.sub) continue; // a sub is rendered inline below, as part of its parent's group
+      const subToggle = DISPLAY_TOGGLES.find(s => s.sub === t.key);
+      if (!subToggle) { out.push(renderRow(t)); continue; }
+      out.push(`
+        <div class="settings-group">
+          ${renderRow(t, { blocked: t.key === 'showDaylightBtn' && followDevice })}
+          ${renderRow(subToggle, { sub: true })}
+        </div>
+      `);
+    }
+    return out.join('');
   }
+
+  const html = [];
+  for (const sec of DISPLAY_SECTIONS) {
+    html.push(`<div class="settings-section-header">${sec.title}</div>`);
+    if (sec.id === 'anim') {
+      html.push(renderReduceMotionGroup());
+      html.push(renderFigureSettingsRows());
+    }
+    html.push(renderToggles(sec.id));
+  }
+  return html.join('');
+}
+
+// Animations and figures: Figure size, Default animation speed and the two
+// animated-figure switches.
+function renderFigureSettingsRows() {
+  const rows = [];
   const figPct = clampFigureScale(getSetting('display', 'figureScale'));
-  html.push(`
+  rows.push(`
     <div class="settings-row" data-row-key="figureScale">
       <div class="settings-row-label">
         <div class="settings-row-title">Figure size</div>
@@ -837,7 +912,7 @@ function renderSettingsDisplayTab() {
         <span class="settings-switch-track"></span>
       </label>
     </div>`;
-  html.push(`
+  rows.push(`
     <div class="settings-row" data-row-key="figAnimSpeed">
       <div class="settings-row-label">
         <div class="settings-row-title">Default animation speed</div>
@@ -855,7 +930,121 @@ function renderSettingsDisplayTab() {
     ${animSwitch('figAnimLoopOnce', 'Play looped animations only once',
       'Animations that repeat (like a spinning shell) play one cycle and stop by themselves, instead of repeating until you press ⏸.')}
   `);
-  return html.join('');
+  return rows.join('');
+}
+
+// ── Reduce motion ──
+// One switch plus a battery sub-row, each reducing motion on its own: the
+// switch all the time, the sub-row whenever the battery is below its percent
+// and not charging. The two don't block each other, so the percent stays
+// set while the switch is flipped by hand. Battery level comes from
+// navigator.getBattery(), which only Chromium browsers have; elsewhere the
+// sub-row says so and stays blocked.
+const REDUCE_MOTION_BATTERY_MIN = 10;
+const REDUCE_MOTION_BATTERY_MAX = 40;
+const REDUCE_MOTION_BATTERY_STEP = 10;
+let reduceMotionBattery = null;          // BatteryManager once getBattery() resolves
+let reduceMotionBatteryRequested = false;
+
+function reduceMotionBatterySupported() {
+  return typeof navigator !== 'undefined' && typeof navigator.getBattery === 'function';
+}
+function clampReduceMotionBatteryPct(v) {
+  const n = Math.round(Number(v) / REDUCE_MOTION_BATTERY_STEP) * REDUCE_MOTION_BATTERY_STEP;
+  return isFinite(n) ? Math.min(REDUCE_MOTION_BATTERY_MAX, Math.max(REDUCE_MOTION_BATTERY_MIN, n)) : 20;
+}
+function reduceMotionBatteryLow() {
+  const b = reduceMotionBattery;
+  if (getSetting('display', 'reduceMotionBatteryOn') !== true || !b || b.charging) return false;
+  return Math.round(b.level * 100) < clampReduceMotionBatteryPct(getSetting('display', 'reduceMotionBatteryPct'));
+}
+function applyReduceMotion() {
+  const on = getSetting('display', 'reduceMotion') === true || reduceMotionBatteryLow();
+  document.documentElement.classList.toggle('settings-reduce-motion', on);
+  // Asks for the battery the first time the sub-row is on, then follows its
+  // level/charging events for the rest of the page's life.
+  if (getSetting('display', 'reduceMotionBatteryOn') === true && !reduceMotionBatteryRequested && reduceMotionBatterySupported()) {
+    reduceMotionBatteryRequested = true;
+    navigator.getBattery().then(b => {
+      reduceMotionBattery = b;
+      b.addEventListener('levelchange', applyReduceMotion);
+      b.addEventListener('chargingchange', applyReduceMotion);
+      applyReduceMotion();
+    }).catch(() => {});
+  }
+}
+
+const SETTINGS_CHEVRON_UP = '<svg viewBox="0 0 10 6" width="9" height="6" aria-hidden="true" focusable="false"><path d="M1 5 5 1l4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const SETTINGS_CHEVRON_DOWN = '<svg viewBox="0 0 10 6" width="9" height="6" aria-hidden="true" focusable="false"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function renderReduceMotionGroup() {
+  const supported = reduceMotionBatterySupported();
+  const dis = supported ? '' : 'disabled';
+  const batteryOn = getSetting('display', 'reduceMotionBatteryOn') === true;
+  const pct = clampReduceMotionBatteryPct(getSetting('display', 'reduceMotionBatteryPct'));
+  return `
+    <div class="settings-group">
+      <div class="settings-row" data-row-key="reduceMotion">
+        <div class="settings-row-label">
+          <div class="settings-row-title">Reduce motion</div>
+          <div class="settings-row-desc">Cuts every animation/transition site-wide down to effectively instant. Might be helpful for power-saving.</div>
+        </div>
+        <label class="settings-switch">
+          <input type="checkbox" ${getSetting('display', 'reduceMotion') === true ? 'checked' : ''}
+                 onchange="setSetting('display', 'reduceMotion', this.checked); applyReduceMotion();">
+          <span class="settings-switch-track"></span>
+        </label>
+      </div>
+      <div class="settings-row settings-row-sub${supported ? '' : ' settings-row-blocked'}" data-row-key="reduceMotionBattery">
+        <div class="settings-row-label">
+          <div class="settings-row-title">Reduce motion automatically if the battery is less than</div>
+          <div class="settings-row-desc">${supported
+            ? 'Works on its own, whether Reduce motion above is on or off. Not while charging.'
+            : 'This browser doesn’t report the battery level, so this can’t work here.'}</div>
+        </div>
+        <div class="settings-choice-group">
+          <button type="button" class="settings-choice-btn${batteryOn ? '' : ' active'}" data-battery="off" ${dis}
+                  onclick="setReduceMotionBatteryOn(false)">Off</button>
+          <div class="settings-choice-btn settings-choice-stepper${batteryOn ? ' active' : ''}" data-battery="on">
+            <button type="button" class="settings-stepper-value" id="reduceMotionBatteryValue" ${dis}
+                    onclick="setReduceMotionBatteryOn(true)">${pct}%</button>
+            <span class="settings-stepper-arrows">
+              <button type="button" data-step="up" aria-label="Raise battery level" ${supported && pct < REDUCE_MOTION_BATTERY_MAX ? '' : 'disabled'}
+                      onclick="stepReduceMotionBatteryPct(1)">${SETTINGS_CHEVRON_UP}</button>
+              <button type="button" data-step="down" aria-label="Lower battery level" ${supported && pct > REDUCE_MOTION_BATTERY_MIN ? '' : 'disabled'}
+                      onclick="stepReduceMotionBatteryPct(-1)">${SETTINGS_CHEVRON_DOWN}</button>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// In-place updates of the battery sub-row — see syncShowDaylightBtnBlock's
+// comment for why not a full renderSettingsBody().
+function setReduceMotionBatteryOn(on) {
+  setSetting('display', 'reduceMotionBatteryOn', on);
+  applyReduceMotion();
+  syncReduceMotionBatteryRow();
+}
+// The arrows only change the percent; Off stays off until the percent is picked.
+function stepReduceMotionBatteryPct(dir) {
+  const pct = clampReduceMotionBatteryPct(getSetting('display', 'reduceMotionBatteryPct'));
+  setSetting('display', 'reduceMotionBatteryPct', clampReduceMotionBatteryPct(pct + dir * REDUCE_MOTION_BATTERY_STEP));
+  applyReduceMotion();
+  syncReduceMotionBatteryRow();
+}
+function syncReduceMotionBatteryRow() {
+  const row = document.querySelector('[data-row-key="reduceMotionBattery"]');
+  if (!row) return;
+  const on = getSetting('display', 'reduceMotionBatteryOn') === true;
+  const pct = clampReduceMotionBatteryPct(getSetting('display', 'reduceMotionBatteryPct'));
+  row.querySelector('[data-battery="off"]').classList.toggle('active', !on);
+  row.querySelector('[data-battery="on"]').classList.toggle('active', on);
+  row.querySelector('#reduceMotionBatteryValue').textContent = pct + '%';
+  row.querySelector('[data-step="up"]').disabled = pct >= REDUCE_MOTION_BATTERY_MAX;
+  row.querySelector('[data-step="down"]').disabled = pct <= REDUCE_MOTION_BATTERY_MIN;
 }
 
 // ── Animated figures: default speed ──
@@ -999,7 +1188,7 @@ function syncNotificationSubBlock(parentKey, parentOn) {
   if (input) input.disabled = !parentOn;
 }
 
-// Study tab: a general row (Reduce motion), then two visibly-labeled
+// Study tab: a general row (Redrawn figures), then two visibly-labeled
 // sections — Random Quiz and Solve Them All — since most of these settings
 // only make sense for one mode or the other. Parent+sub groups here follow
 // the Notifications tab's "sub blocked unless parent is on" shape
@@ -1012,18 +1201,6 @@ function renderSettingsStudyTab() {
   const navRailOn       = getSetting('study', 'showSolveAllNavRail') !== false;
 
   return `
-    <div class="settings-row">
-      <div class="settings-row-label">
-        <div class="settings-row-title">Reduce motion</div>
-        <div class="settings-row-desc">Cuts every animation/transition site-wide down to effectively instant. Might be helpful for power-saving.</div>
-      </div>
-      <label class="settings-switch">
-        <input type="checkbox" ${getSetting('study', 'reduceMotion') === true ? 'checked' : ''}
-               onchange="setSetting('study', 'reduceMotion', this.checked); applyStudySettings();">
-        <span class="settings-switch-track"></span>
-      </label>
-    </div>
-
     <div class="settings-row">
       <div class="settings-row-label">
         <div class="settings-row-title">Redrawn figures</div>
@@ -1235,13 +1412,12 @@ function syncSolveAllOrderActive(order) {
   });
 }
 
-// Applies the Study-tab settings that need an <html> class (reduce motion,
-// hide-topic-while-active, the Solve-All nav rail's show/hide, the sticky
+// Applies the Study-tab settings that need an <html> class
+// (hide-topic-while-active, the Solve-All nav rail's show/hide, the sticky
 // score badge's show/hide) — same mechanism as applyDisplaySettings/
 // applyNotificationSettings above. Called once at load and again from each
 // relevant row's onchange.
 function applyStudySettings() {
-  document.documentElement.classList.toggle('settings-reduce-motion', getSetting('study', 'reduceMotion') === true);
   document.documentElement.classList.toggle('settings-hide-topic-while-active', getSetting('study', 'hideTopicWhileActive') === true);
   document.documentElement.classList.toggle('settings-hide-sa-nav-rail', getSetting('study', 'showSolveAllNavRail') === false);
   document.documentElement.classList.toggle('settings-hide-sticky-score', getSetting('study', 'showStickyScore') === false);
@@ -1302,7 +1478,10 @@ function applyDisplaySettings() {
     }
     document.documentElement.classList.toggle(cls, !shown);
   }
+  // Framed as "Hide …" (on = hidden), unlike the "Show …" toggles above.
+  document.documentElement.classList.toggle('settings-hide-fig-anim-controls', getSetting('display', 'hideFigAnimControls') === true);
   applyFigureScale();
+  applyReduceMotion();
 }
 
 // ── Notifications ───────────────────────────────────────────────────────
@@ -1424,6 +1603,10 @@ function setModeFromSystem() {
   if (window.__applyCustomOnModeChange) window.__applyCustomOnModeChange();
   if (window.__updateOnColorVars) window.__updateOnColorVars();
   if (window.__onModeChanged) window.__onModeChanged();
+  // Records the device-set mode as already seen, not as a change, so turning
+  // Follow device theme off later doesn't send it to other devices
+  // (js/settings-sync.js ignores theme.mode while this is on).
+  if (typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges();
 }
 
 function onDeviceThemeChange() {
@@ -1477,7 +1660,7 @@ if (typeof setFieldLinesEnabled === 'function') setFieldLinesEnabled(getSetting(
 // pass, same reasoning as the two calls above.
 applyNotificationSettings();
 
-// Study: reduce-motion + hide-topic-while-active <html> classes, and the
+// Study: hide-topic-while-active and the other <html> classes, and the
 // one-time "clear every quiz's saved filter" pass — same "start of
 // session" timing as everything above. selectLatestQuizByDefault/
 // cumulativeDefaultOn/lockSolveAllOrder/autoStopAt50Min/fullscreenRandomN/

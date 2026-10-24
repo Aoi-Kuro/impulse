@@ -11,7 +11,7 @@ window.TOP_BAR_TIPS = [
   "New in Settings, Notifications: hide the update reminder, with an option to still update automatically once you're not mid-quiz.",
   "New in Settings, Notifications: hide the try-new-theme or bug report reminders individually.",
   "New in Settings, Study: problem figures are redrawn to match your theme. Prefer the original pictures? Turn off Redrawn figures.",
-  "New in Settings, Study: turn on Reduce motion to cut down on animations across the app.",
+  "New in Settings, Display: turn on Reduce motion to cut down on animations across the app, or only when your battery runs low.",
   "New in Settings, Study: reset your quiz filter automatically on every page load.",
   "New in Settings, Study: auto-stop a Random N quiz after 50 minutes.",
   "New in Settings, Study: go full screen automatically when a Random N quiz starts.",

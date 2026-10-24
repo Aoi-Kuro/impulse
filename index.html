@@ -65,6 +65,8 @@
       if (d.followDeviceTheme === true && toAdd.indexOf('settings-hide-daylight-btn') === -1) {
         toAdd.push('settings-hide-daylight-btn');
       }
+      // "Hide animation control buttons" — framed as hide, so true hides.
+      if (d.hideFigAnimControls === true) toAdd.push('settings-hide-fig-anim-controls');
       if (toAdd.length) document.documentElement.classList.add.apply(document.documentElement.classList, toAdd);
       // Figure size slider (display.figureScale, percent) — same clamp as
       // clampFigureScale() in js/settings.js, so figures never paint at the
@@ -1492,6 +1494,7 @@
       'js/site-visits.js',
       'js/forum.js',
       'js/push-notifications.js',
+      'js/settings-sync.js',
     ]);
   })();
 </script>

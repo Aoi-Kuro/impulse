@@ -25,9 +25,11 @@
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 const CHANGELOG = [
-  { version: "13.1.0", note: "Settings › Display: default animation speed, repeat one-shot animations, play looped animations only once.", scope: 0 },
+  { version: "13.1.1", note: "Settings sync across devices and 2 new themes: Dusk and Ocean.", scope: 0 },
+  { version: "13.1.0", note: "Animation settings in Display.", scope: 0 },
+  { version: "13.0.0", note: "Many redrawn figures can now play a short animation: tap ▶ under the figure, and the chip next to it sets the speed.", scope: 1 },
   { version: "13.0.0", note: "Animated Problem Figures!", scope: 1 },
-  { version: "12.5.1", note: "Important fixes now reach open tabs faster, with fewer repeated background requests. Entire Set's progress line and score box no longer show on top of the manual and other screens.", scope: 0 },
+  { version: "12.5.1", note: "Fewer background requests; Entire Set's progress no longer covers other screens.", scope: 0 },
   { version: "12.5.0", note: "Custom figures!", scope: 1 },
   { version: "12.4.6", note: "Optimized traffic consumption.", scope: 0 },
   { version: "12.4.5", note: "Offline page illustration is back in full resolution.", scope: 0 },

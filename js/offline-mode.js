@@ -102,6 +102,7 @@ const OFFLINE_CORE_FILES = [
   'js/site-visits.js',
   'js/forum.js',
   'js/push-notifications.js',
+  'js/settings-sync.js',
   'course/course.json',
   'course/manual.json',
   'course/splashes.json',
@@ -750,7 +751,14 @@ function renderCacheStorageSection() {
 }
 
 // ── Rendering (called from renderSettingsBody() in js/settings.js) ──
+// Settings sync (js/settings-sync.js) comes first on the tab, above Go
+// offline, Cache & storage and Backup.
 function renderSettingsOfflineTab() {
+  const syncSection = (typeof renderSettingsSyncSection === 'function') ? renderSettingsSyncSection() : '';
+  return syncSection + _renderSettingsOfflineSections();
+}
+
+function _renderSettingsOfflineSections() {
   checkOfflineModeExpiry(); // catch an already-lapsed window the instant this tab opens, not just on the next 5-min tick
   const state = offlineDownloadState;
   const cacheSection = renderCacheStorageSection();

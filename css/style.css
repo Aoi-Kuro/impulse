@@ -165,21 +165,58 @@
     --svg-blue:var(--accent); --svg-red:var(--accent2); --splash-color:#A9821E;
   }
 
-  /* ── Solar: warm desaturated, generous curves ── */
+  /* ── Solar: sunlight. Night is an eclipse (warm near-black, a gold
+     corona, a sky-blue second accent so figures keep two clearly different
+     colors); day is midday on cream paper with a burnt-orange accent dark
+     enough to read as text. Generous curves. ── */
   body[data-theme="solar"] {
-    --bg:#002B36; --surface:#073642; --border:#0F4A58; --text:#F0ECD7; --muted:#6F8A8C;
-    --accent:#2AA1D6; --accent-dim:#0f4152; --accent2:#D98032; --accent2-rgb:217,128,50;
-    --correct:#94C973; --partial:#D9A02A; --wrong:#D64545;
-    --accent-rgb:42,161,214; --correct-rgb:148,201,115; --partial-rgb:217,160,42; --wrong-rgb:214,69,69;
-    --svg-blue:var(--accent); --svg-red:var(--accent2); --splash-color:#D9A02A;
-    --chrome-light:#fdf6e3; --chrome-dark:#002B36; --shadow:#000000; --radius-mult:1.3;
+    --bg:#15110E; --surface:#211A15; --border:#35291F; --text:#F7EBDA; --muted:#A8917A;
+    --accent:#FFA63D; --accent-dim:#4a3216; --accent2:#6FB7FF; --accent2-rgb:111,183,255;
+    --correct:#8FD17A; --partial:#E9CF5B; --wrong:#FF6B5E;
+    --accent-rgb:255,166,61; --correct-rgb:143,209,122; --partial-rgb:233,207,91; --wrong-rgb:255,107,94;
+    --svg-blue:var(--accent); --svg-red:var(--accent2); --splash-color:#FFC86B;
+    --chrome-light:#FFF6E8; --chrome-dark:#15110E; --shadow:#000000; --radius-mult:1.3;
   }
   body[data-theme="solar"].light {
-    --bg:#FDF6E3; --surface:#EEE8D5; --border:#D9CFA8; --text:#43403A; --muted:#93866F;
-    --accent:#1B7BAB; --accent-dim:#dceaf1; --accent2:#B85C1E; --accent2-rgb:184,92,30;
-    --correct:#5E8F3D; --partial:#A87A1E; --wrong:#B8402E;
-    --accent-rgb:27,123,171; --correct-rgb:94,143,61; --partial-rgb:168,122,30; --wrong-rgb:184,64,46;
-    --svg-blue:var(--accent); --svg-red:var(--accent2); --splash-color:#A87A1E;
+    --bg:#FFF8EC; --surface:#FBEBD3; --border:#EFD5AC; --text:#3A2A17; --muted:#7D6548;
+    --accent:#A85A00; --accent-dim:#fbe2c0; --accent2:#1F6FB8; --accent2-rgb:31,111,184;
+    --correct:#3D8A3A; --partial:#9A7400; --wrong:#C23B2C;
+    --accent-rgb:168,90,0; --correct-rgb:61,138,58; --partial-rgb:154,116,0; --wrong-rgb:194,59,44;
+    --svg-blue:var(--accent); --svg-red:var(--accent2); --splash-color:#C8640A;
+  }
+
+  /* ── Dusk: violet twilight with a peach afterglow, softly rounded ── */
+  body[data-theme="dusk"] {
+    --bg:#17132A; --surface:#211B3A; --border:#332A57; --text:#EEE9FF; --muted:#9C93C4;
+    --accent:#B69CFF; --accent-dim:#3a2f66; --accent2:#FFB38A; --accent2-rgb:255,179,138;
+    --correct:#7EE0A8; --partial:#FFD37A; --wrong:#FF7A9A;
+    --accent-rgb:182,156,255; --correct-rgb:126,224,168; --partial-rgb:255,211,122; --wrong-rgb:255,122,154;
+    --svg-blue:var(--accent); --svg-red:var(--accent2); --splash-color:#D8C6FF;
+    --chrome-light:#F7F3FF; --chrome-dark:#17132A; --shadow:#000000; --radius-mult:1.2;
+  }
+  body[data-theme="dusk"].light {
+    --bg:#F7F4FF; --surface:#EEE8FF; --border:#DAD0F5; --text:#2A2245; --muted:#6E6494;
+    --accent:#6A4FC9; --accent-dim:#e4dcff; --accent2:#C25A2E; --accent2-rgb:194,90,46;
+    --correct:#2F8A57; --partial:#A07400; --wrong:#C8385E;
+    --accent-rgb:106,79,201; --correct-rgb:47,138,87; --partial-rgb:160,116,0; --wrong-rgb:200,56,94;
+    --svg-blue:var(--accent); --svg-red:var(--accent2); --splash-color:#7B5CE0;
+  }
+
+  /* ── Ocean: deep-sea navy, seafoam and coral ── */
+  body[data-theme="ocean"] {
+    --bg:#071A26; --surface:#0D2533; --border:#173649; --text:#E3F4F8; --muted:#7FA3B3;
+    --accent:#4FE0C0; --accent-dim:#10433f; --accent2:#FF8A6B; --accent2-rgb:255,138,107;
+    --correct:#7ED957; --partial:#FFD166; --wrong:#FF5C7A;
+    --accent-rgb:79,224,192; --correct-rgb:126,217,87; --partial-rgb:255,209,102; --wrong-rgb:255,92,122;
+    --svg-blue:var(--accent); --svg-red:var(--accent2); --splash-color:#7FF0D6;
+    --chrome-light:#E3F4F8; --chrome-dark:#071A26; --shadow:#000000; --radius-mult:1;
+  }
+  body[data-theme="ocean"].light {
+    --bg:#F2FAFB; --surface:#E2F1F4; --border:#C3DFE6; --text:#0E2A36; --muted:#557582;
+    --accent:#00806C; --accent-dim:#cdeee8; --accent2:#D4553A; --accent2-rgb:212,85,58;
+    --correct:#2E8B3E; --partial:#A07800; --wrong:#C42B4A;
+    --accent-rgb:0,128,108; --correct-rgb:46,139,62; --partial-rgb:160,120,0; --wrong-rgb:196,43,74;
+    --svg-blue:var(--accent); --svg-red:var(--accent2); --splash-color:#00806C;
   }
 
   /* Guide/hint panels are colored purely via color-mix() from --accent
@@ -3431,6 +3468,9 @@
     font-size: 0.76rem;
     color: var(--muted);
     line-height: 1.4;
+    /* The landing screen around the panel centers its text; a note that
+       wraps should still read left-aligned under its first line. */
+    text-align: left;
   }
   .changelog-row.level-0 .changelog-note { color: var(--text); }
   .changelog-row.level-1 .changelog-note { color: var(--muted); }

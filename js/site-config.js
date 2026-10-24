@@ -26,7 +26,7 @@
 //       realtime       no live connections; everything relies on its poll
 //       forum_posting  the forum is read-only: no new messages, replies or edits
 //   "sync_paused": true
-//       Attempts and Solve-All progress stay in each browser and are neither
+//       Attempts, Solve-All progress and settings stay in each browser and are neither
 //       sent nor fetched until this is removed; deleting an attempt and
 //       resetting Solve-All still go through. Removing it syncs at once.
 //   "purge_id": "2026-10-23"
@@ -40,6 +40,7 @@
 const SITE_POLL = {
   attempts:    [45, 15, 3600],       // attempts sync fallback (js/attempts-sync.js)
   solve_all:   [60, 15, 3600],       // Solve-All sync fallback (js/solve-all-sync.js)
+  settings:    [900, 60, 86400],     // settings sync fallback (js/settings-sync.js)
   stats:       [45, 15, 3600],       // Forum & Site panel refresh (js/stats.js)
   forum:       [90, 15, 3600],       // forum fallback check (js/forum.js)
   forum_quiet: [900, 60, 21600],     // forum fallback check once nobody has posted for 24 h

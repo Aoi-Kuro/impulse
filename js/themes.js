@@ -28,7 +28,9 @@ const THEMES = [
   { id:'sakura',  name:'Sakura',  night:{bg:'#241A20',accent:'#FF7AA8',accent2:'#8FD6A8'}, day:{bg:'#FFF5F7',accent:'#E8558A',accent2:'#4FAE7A'} },
   { id:'cyber',   name:'Cyber',   night:{bg:'#05060A',accent:'#00F0FF',accent2:'#FF2FD0'}, day:{bg:'#F2F4FB',accent:'#7A00E0',accent2:'#D6009C'} },
   { id:'forest',  name:'Forest',  night:{bg:'#141A13',accent:'#4F9D7A',accent2:'#D98A3D'}, day:{bg:'#F5F2E8',accent:'#3F7D55',accent2:'#B5651D'} },
-  { id:'solar',   name:'Solar',   night:{bg:'#002B36',accent:'#2AA1D6',accent2:'#D98032'}, day:{bg:'#FDF6E3',accent:'#1B7BAB',accent2:'#B85C1E'} },
+  { id:'solar',   name:'Solar',   night:{bg:'#15110E',accent:'#FFA63D',accent2:'#6FB7FF'}, day:{bg:'#FFF8EC',accent:'#A85A00',accent2:'#1F6FB8'} },
+  { id:'dusk',    name:'Dusk',    night:{bg:'#17132A',accent:'#B69CFF',accent2:'#FFB38A'}, day:{bg:'#F7F4FF',accent:'#6A4FC9',accent2:'#C25A2E'} },
+  { id:'ocean',   name:'Ocean',   night:{bg:'#071A26',accent:'#4FE0C0',accent2:'#FF8A6B'}, day:{bg:'#F2FAFB',accent:'#00806C',accent2:'#D4553A'} },
 ];
 
 /* ── color math ── */
@@ -133,6 +135,7 @@ function applyColorTheme(id, persist, skipFade){
   }
   if (persist) localStorage.setItem(THEME_KEY, id);
   updateOnColorVars();
+  if (persist && typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges(); // js/settings-sync.js
 }
 
 // Restore saved color theme immediately (avoid flash of default)

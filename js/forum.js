@@ -640,8 +640,12 @@ function getForumPin() {
   return localStorage.getItem(FORUM_PIN_KEY) || '';
 }
 function saveForumIdentity(nickname, pin) {
+  const before = getForumNickname();
   localStorage.setItem(FORUM_NICKNAME_KEY, nickname);
   if (pin) localStorage.setItem(FORUM_PIN_KEY, pin);
+  // A newly claimed or restored nickname: fetch its settings now rather
+  // than on the next fallback check (js/settings-sync.js).
+  if (nickname !== before && typeof syncSettingsNow === 'function') setTimeout(syncSettingsNow, 0);
 }
 function clearForumIdentity() {
   localStorage.removeItem(FORUM_NICKNAME_KEY);

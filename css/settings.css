@@ -160,6 +160,9 @@
 .settings-row-sub .settings-row-title { font-size: 0.85rem; }
 .settings-row-sub .settings-row-desc  { font-size: 0.76rem; }
 
+/* Settings sync's live status line under its description (js/settings-sync.js). */
+.settings-sync-status { margin-top: 0.3rem; font-style: italic; }
+
 /* Blocked: a parent row whose sub-toggle currently overrides it (see
    `blocked` in renderSettingsDisplayTab) — dimmed and inert rather than
    removed, so it's clear it's temporarily moot, not gone. */
@@ -274,6 +277,7 @@ html.settings-hide-daylight-btn #themeTrack { display: none; }
    settings.css staying what it is today. */
 html.settings-hide-forum-fab .forum-fab-wrap { display: none !important; }
 html.settings-hide-top-bar-tip .top-bar-tip { display: none !important; }
+html.settings-hide-fig-anim-controls .fig-anim-ctl { display: none !important; }
 
 /* ── Notifications tab effects ──
    Same <html>-class mechanism as the Display toggles above, applied by
@@ -300,7 +304,8 @@ html.settings-silent-badges #forumFabUnreadAtBadge {
   display: none !important;
 }
 
-/* ── Study tab: visible section headers (Random Quiz / Solve Them All) ──
+/* ── Visible section headers (Display: Main screen / Animations and
+   figures / Extra; Study: Random Quiz / Entire Set) ──
    Plain labels, not another .settings-group — these aren't a parent+sub
    pair, just a heading over a run of otherwise-independent rows. No
    border-top here: the row immediately above already ends in its own
@@ -319,9 +324,10 @@ html.settings-silent-badges #forumFabUnreadAtBadge {
 }
 .settings-body > .settings-section-header:first-child { margin-top: 0; padding-top: 0; }
 
-/* ── Study tab: two-option choice control (Solve Them All's "Order" sub) ──
+/* ── Choice control (Study's Entire Set "Order" sub, Display's battery
+   Off / XX% sub) ──
    Same segmented-button visual language as .filter-type-tab (css/style.css)
-   rather than a checkbox switch — this is a 2-way pick, not an on/off. */
+   rather than a checkbox switch — this is a pick, not an on/off. */
 .settings-choice-group { display: flex; gap: 0.4rem; flex-shrink: 0; }
 .settings-choice-btn {
   font-family: var(--mono);
@@ -342,10 +348,46 @@ html.settings-silent-badges #forumFabUnreadAtBadge {
   color: var(--accent);
 }
 .settings-choice-btn:disabled { cursor: not-allowed; }
+/* A choice that carries its own value with small up/down arrows beside it
+   (Display's battery percent). The outer element looks like the other
+   choice buttons; the value and the arrows are plain buttons inside it. */
+.settings-choice-stepper {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0.35rem;
+  padding-right: 0.3rem;
+  cursor: default;
+}
+.settings-choice-stepper button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.settings-choice-stepper button:disabled { cursor: not-allowed; opacity: 0.4; }
+.settings-stepper-value { min-width: 2.4em; text-align: right; }
+.settings-stepper-arrows {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  margin: -0.25rem 0;
+}
+.settings-stepper-arrows button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.7rem;
+  border-radius: 2px;
+}
+.settings-stepper-arrows button:hover:not(:disabled) { background: color-mix(in srgb, currentColor 15%, transparent); }
 
 /* ── Study tab effects (applyStudySettings() in js/settings.js) ── */
 
-/* Reduce motion: a blanket kill-switch for CSS animations/transitions
+/* Reduce motion (Display tab, applyReduceMotion()): a blanket kill-switch for CSS animations/transitions
    site-wide. Deliberately scoped to CSS only — canvas-driven effects (the
    ⚡ field-lines overlay, the Random N loading screen) aren't touched by
    this and have their own separate settings/toggles instead. */

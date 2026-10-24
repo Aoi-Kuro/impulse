@@ -80,7 +80,6 @@ function renderChangelog() {
   const levels   = computeLevels(CHANGELOG);
   const indentPx = [0, 22, 44];
   const frag     = document.createDocumentFragment();
-  let prevMajor  = -1;
   let renderedAny = false;
   let latestVisibleVersion = null;
 
@@ -112,8 +111,11 @@ function renderChangelog() {
     return row;
   }
 
-  function maybeSep(level, maj) {
-    if (level === 0 && prevMajor !== -1) {
+  // The line marks where one major version ends: under its X.0.0 row(s),
+  // above the newest entry of the major before it (13.0.0 | line | 12.5.1).
+  const majorOf = (i) => Number(CHANGELOG[i].version.split('.')[0]);
+  function maybeSep(i) {
+    if (i > 0 && majorOf(i) !== majorOf(i - 1)) {
       const sep = document.createElement('div');
       sep.className = 'changelog-sep';
       return sep;
@@ -157,16 +159,14 @@ function renderChangelog() {
   }
 
   CHANGELOG.forEach((entry, i) => {
-    const [maj] = entry.version.split('.').map(Number);
     const level = levels[i];
     const visible = isVisible(entry);
 
     if (visible) {
       flushHiddenRun();
 
-      const sep = maybeSep(level, maj);
+      const sep = maybeSep(i);
       if (sep) frag.appendChild(sep);
-      prevMajor = maj;
 
       frag.appendChild(buildRow(entry, level));
       renderedAny = true;
@@ -178,9 +178,8 @@ function renderChangelog() {
         wrap.style.display = 'none';
         hiddenRun = { wrap, count: 0 };
       }
-      const sep = maybeSep(level, maj);
+      const sep = maybeSep(i);
       if (sep) hiddenRun.wrap.appendChild(sep);
-      prevMajor = maj;
 
       hiddenRun.wrap.appendChild(buildRow(entry, level));
       hiddenRun.count++;
