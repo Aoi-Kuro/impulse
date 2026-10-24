@@ -847,7 +847,11 @@
       <div class="settings-header-left">
         <div class="settings-title">⚙️ Settings</div>
       </div>
-      <button class="stats-close-btn" onclick="closeSettingsScreen()" title="Close" aria-label="Close settings">✕</button>
+      <div class="settings-header-right">
+        <!-- Shortcut to the Search tab (js/settings-search.js) -->
+        <button class="stats-close-btn settings-header-icon-btn" onclick="openSettingsSearch()" title="Search settings" aria-label="Search settings">🔍</button>
+        <button class="stats-close-btn" onclick="closeSettingsScreen()" title="Close" aria-label="Close settings">✕</button>
+      </div>
     </div>
     <nav class="settings-tabs" id="settingsTabs">
       <!-- Rendered by renderSettingsTabs() in js/settings.js -->

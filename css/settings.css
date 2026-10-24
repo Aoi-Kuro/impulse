@@ -36,6 +36,19 @@
   margin-bottom: 1.6rem;
 }
 .settings-header-left { display: flex; align-items: center; gap: 0.9rem; }
+.settings-header-right { display: flex; align-items: center; gap: 0.5rem; }
+/* 🔍 beside ✕ (opens the Search tab): the same outlined button, sized to
+   match it whether it holds the emoji (Modern) or the drawn icon (Classic). */
+.settings-header-right .stats-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.1rem;
+  height: 2rem;
+  line-height: 1;
+}
+.settings-header-icon-btn { transition: color 0.15s, border-color 0.15s, transform 0.15s; }
+.settings-header-icon-btn:hover { color: var(--accent); border-color: var(--accent); transform: scale(1.06); }
 .settings-title {
   font-family: var(--mono);
   font-size: 1.1rem;
@@ -618,16 +631,49 @@ html.settings-screen-open #stickyScore.visible {
 .settings-search-input {
   width: 100%;
   box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
   font-family: var(--sans);
   font-size: 16px; /* 16px+ keeps iOS from zooming the page on focus */
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: calc(8px * var(--radius-mult));
-  padding: 0.6rem 0.8rem 0.6rem 2.2rem;
+  padding: 0.6rem 2.6rem 0.6rem 2.2rem;
   transition: border-color 0.15s;
 }
 .settings-search-input::placeholder { color: var(--muted); }
+/* The browser's own clear button is replaced by .settings-search-clear. */
+.settings-search-input::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
+.settings-search-clear {
+  position: absolute;
+  right: 0.45rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  font-size: 0.72rem;
+  line-height: 1;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, transform 0.15s;
+}
+.settings-search-clear[hidden] { display: none; }
+.settings-search-clear:hover,
+.settings-search-clear:focus-visible {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+  transform: translateY(-50%) scale(1.12);
+  outline: none;
+}
+html.icons-classic .settings-search-clear .ic { width: 1.25rem; height: 1.25rem; vertical-align: 0; }
 .settings-search-input:focus { outline: none; border-color: var(--accent); }
 .settings-search-results {
   display: flex;

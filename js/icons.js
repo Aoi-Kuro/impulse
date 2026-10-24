@@ -61,6 +61,7 @@
     fullscreen: '<path d="M3.5 8.5v-5h5M15.5 3.5h5v5M20.5 15.5v5h-5M8.5 20.5h-5v-5"/>',
     sliders: '<path d="M5 21v-6.5M5 10.5V3M12 21v-8.5M12 8.5V3M19 21v-4.5M19 12.5V3M2.5 14.5h5M9.5 8.5h5M16.5 16.5h5"/>',
     pause: '<path d="M8.5 5v14M15.5 5v14"/>',
+    close: '<path d="M6 6l12 12M18 6 6 18"/>',
     // Editor manual sections (editor/manual.json).
     ruler: '<path d="M3.5 20.5V3.5l17 17Z"/><path d="M7.5 16.5v-5l5 5ZM3.5 8h2M3.5 12h2"/>',
     image: '<rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m3.5 17.5 5-5 4 4 2.5-2.5 5.5 5.5"/>',
@@ -80,7 +81,7 @@
     '✅': 'check', '⬇': 'down', '⬆': 'up', '🚀': 'rocket', 'ℹ': 'info',
     '⚖': 'scale', '🔗': 'link', '🐛': 'bug', '⛶': 'fullscreen', '🎛': 'sliders',
     '⏸': 'pause', '📐': 'ruler', '🖼': 'image', '✍': 'pen', '💾': 'save',
-    '🧰': 'toolbox',
+    '🧰': 'toolbox', '❌': 'close',
   };
 
   const EMOJI_RE = new RegExp('(' + Object.keys(EMOJI_ICON).join('|') + ')[\\uFE0E\\uFE0F]?', 'gu');

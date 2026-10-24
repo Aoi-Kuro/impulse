@@ -318,21 +318,33 @@ function renderSettingsSearchTab(body) {
         <svg class="settings-search-icon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false"><path d="M7 2.75a4.25 4.25 0 1 0 0 8.5 4.25 4.25 0 1 0 0-8.5M10.2 10.2 13.5 13.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <input type="search" id="settingsSearchInput" class="settings-search-input" placeholder="Search settings" aria-label="Search settings"
                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+        <button type="button" class="settings-search-clear" id="settingsSearchClear" title="Clear" aria-label="Clear search" hidden>❌</button>
       </div>
       <div class="settings-search-results" id="settingsSearchResults" aria-live="polite"></div>
     `;
     input = body.querySelector('#settingsSearchInput');
-    input.value = settingsSearchQuery;
-    input.addEventListener('input', () => {
-      settingsSearchQuery = input.value;
+    // Our own ✕ instead of the browser's, so it follows the icon style
+    // (❌ in Modern, a drawn ✕ in Classic — js/icons.js).
+    const clear = body.querySelector('#settingsSearchClear');
+    const setQuery = (q) => {
+      settingsSearchQuery = q;
+      clear.hidden = !q;
       renderSettingsSearchResults();
+    };
+    input.value = settingsSearchQuery;
+    clear.hidden = !settingsSearchQuery;
+    input.addEventListener('input', () => setQuery(input.value));
+    clear.addEventListener('click', () => {
+      input.value = '';
+      setQuery('');
+      input.focus();
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && input.value) {
         e.preventDefault();
         e.stopPropagation();
-        input.value = settingsSearchQuery = '';
-        renderSettingsSearchResults();
+        input.value = '';
+        setQuery('');
       } else if (e.key === 'Enter') {
         input.blur(); // closes the phone keyboard so the results are visible
       }
@@ -377,6 +389,14 @@ function renderSettingsSearchResults() {
     box.append(item);
   }
   if (typeof renderMathIn === 'function') renderMathIn(box);
+}
+
+// The 🔍 next to Settings' ✕: opens the Search tab, or puts the cursor back
+// in the box if it's already open.
+function openSettingsSearch() {
+  if (settingsActiveTab !== 'search') { switchSettingsTab('search'); return; }
+  const input = document.getElementById('settingsSearchInput');
+  if (input) input.focus();
 }
 
 // "Display · Animations and figures ›" above a result: opens that tab and
