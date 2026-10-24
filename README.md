@@ -457,9 +457,9 @@ and `OFFLINE_CORE_FILES`) only once one of its figures has one.
 Students type the whole answer in **one field**, number then unit
 (`9.81 m/s^2`), as in Moodle. While the field has focus, a box under it shows
 the answer as read (TeX through MathJax, the unit as a fraction) or what is
-wrong with it. The student-facing summary is the "How to enter your answer"
-guide in `index.html` and the "Scoring & Answer Formatting" manual page in
-`course/manual.json`.
+wrong with it. The student-facing rules are the "Entering answers & scoring"
+manual page (`quizzes-scoring` in `course/manual.json`), which the ⓘ inside
+every answer field opens (`answerInputHtml` in `js/answer-check.js`).
 
 In use since October 17, 2026 (version 12.4.0); before that the site had
 two boxes, value and unit, checked by its own parser in `quiz-engine.js`.
@@ -1121,7 +1121,11 @@ saved values over `SETTINGS_DEFAULTS`. `getSetting(tab, key)` /
 | **Sync & Storage** | Sync settings on this device (on by default; never synced itself) · Go offline (24 h) · Cache & storage tools · Backup |
 
 Display toggles only add classes to `<html>`; the hiding itself is CSS in
-`css/settings.css`. "↺ Reset all" restores defaults (tap twice to confirm).
+`css/settings.css`. **Icon style** (Classic = drawn line icons, the default; Modern = emoji) is
+`js/icons.js`: in Classic it wraps each interface emoji in `<span class="ic">`
+(a MutationObserver catches later ones) and paints the icon through an SVG
+mask. The 41 icons, the emoji→icon map and that CSS are all in that file; the
+editor loads it too, so the setting covers both. Sync & Storage's *Reset all settings* restores defaults.
 **Backup** exports every setting except the offline-mode timestamp to a JSON
 file (`app: "flux-settings-backup"`) and imports such a file back.
 `openSettingsStudySection(rowKey)` opens the Study tab scrolled to a row (used
@@ -1167,7 +1171,8 @@ Two independent jobs share `sw.js`:
 list every same-origin file that `index.html` loads; the cache name and
 IndexedDB names must stay identical in `js/offline-mode.js` and `sw.js`.
 
-**Cache & storage** tools (tap twice to confirm): *Reset all cache* (local
+**Cache & storage** tools (tap twice to confirm): *Reset all settings*
+(every setting back to its default, reload), *Reset all cache* (local
 attempts and Solve-All progress; the server copy returns on next sync),
 *Reset prerendered LaTeX equations* (the whole math cache), *Reinstall service
 worker* (unregister, clear every cache except the offline-mode one,

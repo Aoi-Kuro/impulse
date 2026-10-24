@@ -66,6 +66,9 @@ const SETTINGS_DEFAULTS = {
     // the battery is below reduceMotionBatteryPct (10-40) and not charging.
     reduceMotionBatteryOn:  false,
     reduceMotionBatteryPct: 20,
+    // 'classic' (single-colour drawn icons) | 'modern' (the emoji) —
+    // js/icons.js, which also applies it before first paint.
+    iconStyle:       'classic',
   },
   notifications: {
     hideUpdateReminder: false,
@@ -88,7 +91,8 @@ const SETTINGS_DEFAULTS = {
     resetFilterOnLoad: false,
     autoStopAt50Min: false,
     fullscreenRandomN: true,
-    hideFullscreenReminder: false,
+    // The 10-second "you're in full screen" banner: hidden unless turned on.
+    hideFullscreenReminder: true,
     hideTopicWhileActive: false,
     selectLatestQuizByDefault: false,
     cumulativeDefaultOn: false,
@@ -427,79 +431,10 @@ function closeSettingsScreen(forceLanding) {
   }, 280);
 }
 
-// ── Reset all settings button ── same tap-to-arm confirmation pattern as
-// the Study filter's "↺ Reset" button (js/quiz-engine.js's
-// handleResetClick/_armResetConfirm/_disarmResetConfirm): first tap arms
-// it (label swaps to "Sure?", a red ring traces out of the border over
-// RESET_CONFIRM_MS as a visual countdown), a second tap while armed
-// commits, and letting the ring finish on its own just disarms back to
-// normal. Kept as its own independent copy of that logic (own armed flag/
-// timer) rather than sharing quiz-engine.js's — that one lives on a
-// completely different screen, and reusing the same module-level flag
-// would let arming one button silently steal/desync the other's in the
-// (admittedly rare) case both ever ended up mid-confirmation at once.
-const SETTINGS_RESET_CONFIRM_MS = 3000;
-let _settingsResetConfirmArmed = false;
-let _settingsResetConfirmTimer = null;
-
-function handleSettingsResetClick() {
-  const btn = document.getElementById('settingsResetAllBtn');
-  if (!btn) return;
-  if (_settingsResetConfirmArmed) {
-    _disarmSettingsResetConfirm(btn);
-    doResetAllSettings();
-    return;
-  }
-  _armSettingsResetConfirm(btn);
-}
-
-function _armSettingsResetConfirm(btn) {
-  _settingsResetConfirmArmed = true;
-  btn.classList.add('confirming');
-  btn.title = 'Tap again to confirm reset';
-  const label = btn.querySelector('.filter-reset-label');
-  if (label) label.textContent = 'Sure?';
-
-  // Same live-measured ring sizing as _armResetConfirm (js/quiz-engine.js)
-  // — traces the button's own current border box rather than a hardcoded
-  // size, so it still lines up correctly if this button's own CSS ever
-  // changes.
-  const ring = btn.querySelector('.reset-confirm-ring');
-  const rect = ring && ring.querySelector('rect');
-  if (ring && rect) {
-    const w = btn.offsetWidth, h = btn.offsetHeight;
-    const strokeW = 1.5;
-    const inset = strokeW / 2;
-    const radius = parseFloat(getComputedStyle(btn).borderTopLeftRadius) || 0;
-    ring.setAttribute('viewBox', `0 0 ${w} ${h}`);
-    rect.setAttribute('x', inset);
-    rect.setAttribute('y', inset);
-    rect.setAttribute('width', Math.max(0, w - inset * 2));
-    rect.setAttribute('height', Math.max(0, h - inset * 2));
-    rect.setAttribute('rx', Math.max(0, radius - inset));
-    const len = rect.getTotalLength();
-    rect.style.transition = 'none';
-    rect.style.strokeDasharray = len;
-    rect.style.strokeDashoffset = 0;
-    void rect.getBoundingClientRect(); // force reflow before transitioning
-    rect.style.transition = `stroke-dashoffset ${SETTINGS_RESET_CONFIRM_MS}ms linear`;
-    requestAnimationFrame(() => { rect.style.strokeDashoffset = len; });
-  }
-
-  clearTimeout(_settingsResetConfirmTimer);
-  _settingsResetConfirmTimer = setTimeout(() => _disarmSettingsResetConfirm(btn), SETTINGS_RESET_CONFIRM_MS);
-}
-
-function _disarmSettingsResetConfirm(btn) {
-  _settingsResetConfirmArmed = false;
-  clearTimeout(_settingsResetConfirmTimer);
-  _settingsResetConfirmTimer = null;
-  btn.classList.remove('confirming');
-  btn.title = 'Reset all settings to defaults';
-  const label = btn.querySelector('.filter-reset-label');
-  if (label) label.textContent = '↺ Reset all';
-}
-
+// ── Reset all settings ── run from Settings > Sync & Storage's "Reset all
+// settings" row (CACHE_STORAGE_ROWS in js/offline-mode.js), which owns the
+// tap-twice confirmation.
+//
 // Wipes the whole settings store (every tab, every toggle) back to
 // SETTINGS_DEFAULTS and reloads. A full reload — rather than re-rendering
 // in place the way doResetFilterPreferences() does — is deliberate here:
@@ -805,6 +740,7 @@ const DISPLAY_TOGGLES = [
 ];
 
 const DISPLAY_SECTIONS = [
+  { id: 'icons', title: 'Icons' },
   { id: 'main',  title: 'Main screen' },
   { id: 'anim',  title: 'Animations and figures' },
   { id: 'extra', title: 'Extra' },
@@ -871,6 +807,7 @@ function renderSettingsDisplayTab() {
   const html = [];
   for (const sec of DISPLAY_SECTIONS) {
     html.push(`<div class="settings-section-header">${sec.title}</div>`);
+    if (sec.id === 'icons') html.push(renderIconStyleRow());
     if (sec.id === 'anim') {
       html.push(renderReduceMotionGroup());
       html.push(renderFigureSettingsRows());
@@ -878,6 +815,35 @@ function renderSettingsDisplayTab() {
     html.push(renderToggles(sec.id));
   }
   return html.join('');
+}
+
+// Icons: Modern (emoji) or Classic (drawn), js/icons.js. Each button shows
+// its own sample whatever the current style: Modern's emoji are kept as
+// they are (.ic-keep), Classic's are pre-wrapped and always drawn
+// (.ic-always).
+function renderIconStyleRow() {
+  const style = getSetting('display', 'iconStyle') === 'modern' ? 'modern' : 'classic';
+  const btn = (value, label, sample) => `
+          <button type="button" class="settings-choice-btn settings-icon-style-btn${style === value ? ' active' : ''}" data-icon-style="${value}"
+                  onclick="setIconStyleSetting('${value}')">${label}<span class="settings-icon-style-sample">${sample}</span></button>`;
+  return `
+    <div class="settings-row" data-row-key="iconStyle">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Icon style</div>
+      </div>
+      <div class="settings-choice-group">${
+        btn('modern', 'Modern', '<span class="ic-keep">🎨 ⚠️</span>')}${
+        btn('classic', 'Classic', '<span class="ic ic-always" data-ic="palette">🎨</span> <span class="ic ic-always" data-ic="warning">⚠️</span>')}</div>
+    </div>
+  `;
+}
+
+function setIconStyleSetting(value) {
+  setSetting('display', 'iconStyle', value);
+  applyDisplaySettings();
+  document.querySelectorAll('[data-row-key="iconStyle"] .settings-choice-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.iconStyle === value);
+  });
 }
 
 // Animations and figures: Figure size, Default animation speed and the two
@@ -1482,6 +1448,7 @@ function applyDisplaySettings() {
   document.documentElement.classList.toggle('settings-hide-fig-anim-controls', getSetting('display', 'hideFigAnimControls') === true);
   applyFigureScale();
   applyReduceMotion();
+  if (typeof setIconStyle === 'function') setIconStyle(getSetting('display', 'iconStyle'));
 }
 
 // ── Notifications ───────────────────────────────────────────────────────

@@ -26,6 +26,34 @@
 .answer-input.partial-input { border-color: var(--partial); color: var(--partial); }
 .answer-input.wrong-input   { border-color: var(--wrong);   color: var(--wrong);   }
 
+/* Field + its ⓘ (answerInputHtml): the button sits inside the input's
+   right end, in a plain single-colour outline icon. */
+.answer-field {
+  position: relative;
+  display: inline-flex;
+  width: 260px;
+  max-width: 100%;
+  min-width: 0;
+}
+.answer-field .answer-input { width: 100%; padding-right: 2rem; }
+.answer-info-btn {
+  position: absolute;
+  top: 50%;
+  right: 0.3rem;
+  transform: translateY(-50%);
+  display: flex;
+  padding: 0.25rem;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.answer-info-btn svg { width: 1rem; height: 1rem; display: block; }
+.answer-info-btn:hover,
+.answer-info-btn:focus-visible { color: var(--accent); }
+
 /* Live preview under the focused answer field: the answer as read, or
    what's wrong with it. One box on <body> (cards clip their overflow),
    placed by js/answer-check.js. */

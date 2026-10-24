@@ -25,6 +25,7 @@
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 const CHANGELOG = [
+  { version: "13.1.2", note: "New icon style.", scope: 0 },
   { version: "13.1.1", note: "Settings sync across devices and 2 new themes: Dusk and Ocean.", scope: 0 },
   { version: "13.1.0", note: "Animation settings in Display.", scope: 0 },
   { version: "13.0.0", note: "Many redrawn figures can now play a short animation: tap ▶ under the figure, and the chip next to it sets the speed.", scope: 1 },

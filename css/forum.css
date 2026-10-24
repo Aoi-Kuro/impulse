@@ -72,7 +72,7 @@
   align-items: center;
   gap: 0.5rem;
 }
-/* All three buttons here have different text (emoji vs "✕ Close") with
+/* All three buttons here have different text (emoji vs "✕") with
    different natural line-heights, so without this they'd render at
    slightly different heights despite matching padding. Pin height+
    box-sizing explicitly instead of trying to fudge padding until they
@@ -104,7 +104,7 @@
   color: var(--muted);
   font-family: var(--mono);
   font-size: 0.82rem;
-  padding: 0.38rem 0.75rem;
+  padding: 0.38rem 0.6rem;
   border-radius: calc(6px * var(--radius-mult));
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
@@ -1435,7 +1435,7 @@
   }
   .forum-header { margin-bottom: 0.8rem; }
   .forum-title { font-size: 1rem; }
-  .forum-close-btn { padding: 0.32rem 0.6rem; font-size: 0.76rem; }
+  .forum-close-btn { padding: 0.32rem 0.5rem; font-size: 0.76rem; }
 
   .forum-composer { padding: 0.65rem 0.7rem; gap: 0.45rem; }
 

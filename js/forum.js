@@ -4362,7 +4362,7 @@ function openForumFromFab() {
 
 // `forceLanding` is true only when goToMainMenu() (quiz-engine.js) closes the
 // forum via the site logo/main-menu action — that's a distinct, more
-// explicit "take me all the way home" than the forum's own ✕ Close button,
+// explicit "take me all the way home" than the forum's own ✕ button,
 // which instead returns to wherever the forum was actually opened from.
 function closeForumScreen(forceLanding) {
   const landing = document.getElementById('landingScreen');

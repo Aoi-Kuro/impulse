@@ -215,16 +215,18 @@ _setMetaContent('meta[property="og:url"]', _display.siteUrl);
 // <head> script runs — deferred to DOMContentLoaded. Each is
 // `${COURSE_CODE} · <fixed mode name>`; the mode-name half is framework
 // copy, not course-specific, so it's written here rather than repeated
-// in every course's `display` block.
+// in every course's `display` block. The Random quiz and Entire Set
+// headers show the code alone: their tags ("Exam Try", "All Problems")
+// already name the mode.
 window.addEventListener('DOMContentLoaded', () => {
   const _setEyebrowText = (id, suffix) => {
     const el = document.getElementById(id);
-    if (el) el.textContent = `${COURSE_CODE_DISPLAY} · ${suffix}`;
+    if (el) el.textContent = suffix ? `${COURSE_CODE_DISPLAY} · ${suffix}` : COURSE_CODE_DISPLAY;
   };
   _setEyebrowText('eyebrowLandingPractice', 'Practice Platform');
   _setEyebrowText('eyebrowLandingSolveAll', 'Entire Set');
-  _setEyebrowText('eyebrowQuizHeader', 'Practice Mode');
-  _setEyebrowText('eyebrowSolveHeader', 'Entire Set');
+  _setEyebrowText('eyebrowQuizHeader');
+  _setEyebrowText('eyebrowSolveHeader');
 });
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {

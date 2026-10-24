@@ -65,6 +65,7 @@ const OFFLINE_CORE_FILES = [
   'css/solutions.css',
   'vendor/tikzjax/fonts.css',
   'vendor/dompurify/purify.min.js',
+  'js/icons.js',
   'js/course-config.js',
   'js/theme-colors.js',
   'js/banner-manager.js',
@@ -89,6 +90,7 @@ const OFFLINE_CORE_FILES = [
   'js/fig-attribution.js',
   'js/figure-anim.js',
   'js/figure-style.js',
+  'js/scrollbars.js',
   'js/top-bar-scroll.js',
   'js/top-bar-tips.js',
   'js/top-bar-quiz-status.js',
@@ -522,10 +524,10 @@ async function _runGoOffline() {
 }
 
 // ── Tap-again-to-confirm "Go offline" button ──
-// Same idiom as js/settings.js's _armSettingsResetConfirm/
-// _disarmSettingsResetConfirm for "Reset all settings": a first tap arms a
-// countdown ring traced on the button's own border, a second tap within
-// the window actually does the (consequential, one-way-for-24h) thing.
+// Same idiom as the Study filter's "↺ Reset" (js/quiz-engine.js's
+// _armResetConfirm/_disarmResetConfirm): a first tap arms a countdown ring
+// traced on the button's own border, a second tap within the window
+// actually does the (consequential, one-way-for-24h) thing.
 const GO_OFFLINE_CONFIRM_MS = 4000;
 let _goOfflineConfirmArmed = false;
 let _goOfflineConfirmTimer = null;
@@ -548,7 +550,7 @@ function _armGoOfflineConfirm(btn) {
   const label = btn.querySelector('.settings-offline-btn-label');
   if (label) label.textContent = 'Tap again to confirm';
 
-  // Same live-measured ring sizing as _armSettingsResetConfirm (js/settings.js)
+  // Same live-measured ring sizing as _armResetConfirm (js/quiz-engine.js)
   // — traces the button's own current border box rather than a hardcoded
   // size, so it still lines up correctly if this button's own CSS ever changes.
   const ring = btn.querySelector('.settings-offline-confirm-ring');
@@ -588,14 +590,14 @@ function _disarmGoOfflineConfirm(btn) {
 }
 
 // ── Cache & storage actions ──
-// Three device-local escape hatches, rendered as ordinary settings rows
+// Four device-local escape hatches, rendered as ordinary settings rows
 // (renderCacheStorageSection below) with a small circular danger button
-// on the right in place of the usual switch — nuke the quiz-progress
-// cache, nuke the LaTeX render cache, or force a fresh service worker.
-// Each is a one-way, mildly disruptive action, so each gets its own
-// tap-to-confirm — but unlike _armGoOfflineConfirm/
-// _armSettingsResetConfirm above (module-level armed flag/timer, fine
-// when there's only one such button on a screen), all three of these
+// on the right in place of the usual switch — reset every setting to its
+// default, nuke the quiz-progress cache, nuke the LaTeX render cache, or
+// force a fresh service worker. Each is a one-way, mildly disruptive
+// action, so each gets its own tap-to-confirm — but unlike
+// _armGoOfflineConfirm above (module-level armed flag/timer, fine when
+// there's only one such button on a screen), all four of these
 // live on the same tab at once, so the armed/timer state is kept on the
 // button element itself. That way arming one can never silently disarm
 // or desync another.
@@ -702,6 +704,14 @@ async function performReinstallServiceWorker() {
 // ariaLabel is the same copy in plain text, since a screen reader has no
 // use for the raw LaTeX source.
 const CACHE_STORAGE_ROWS = [
+  {
+    id: 'resetSettingsBtn',
+    icon: '↺',
+    title: 'Reset all settings',
+    desc: 'Puts every setting on every tab back to its default, then reloads.',
+    ariaLabel: 'Reset all settings',
+    handler: 'doResetAllSettings',
+  },
   {
     id: 'resetCacheBtn',
     icon: '\u21BB',

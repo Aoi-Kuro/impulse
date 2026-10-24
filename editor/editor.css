@@ -1050,27 +1050,3 @@ body.man-open #edManualBtn { opacity: 1; transform: scale(1.1); }
   .manual-content-body table { display: block; overflow-x: auto; }
 }
 
-/* Scrollbars keep their room (nothing shifts) but stay invisible until used:
-   editor.js fades --sb-a on an element from 0 to 1 while it scrolls or the
-   pointer is over its bar, and back after. The scrollbar pseudo-elements
-   inherit it from their element (`*` never matches those, so each element
-   still starts from its own 0). Chrome/Safari draw the ::-webkit-scrollbar
-   parts; Chrome ignores those once scrollbar-color is set, so that one
-   (Firefox's) only applies where they don't exist. */
-body.ed * { --sb-a: 0; }
-
-body.ed ::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
-body.ed ::-webkit-scrollbar-track,
-body.ed ::-webkit-scrollbar-corner { background: transparent; }
-body.ed ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--muted) calc(var(--sb-a) * 100%), transparent);
-  border-radius: 4px;
-}
-body.ed ::-webkit-scrollbar-button { display: none; }
-
-@supports not selector(::-webkit-scrollbar) {
-  body.ed * {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--muted) calc(var(--sb-a) * 100%), transparent) transparent;
-  }
-}

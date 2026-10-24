@@ -169,10 +169,10 @@ let manualHostId = null;
 // instead of on a host object.
 let manualLandingScrollY = 0;
 
-// There's no in-screen ✕ Close button anymore — the manual button doubles
-// as the close control, same as tapping the site logo (which routes through
-// goToMainMenu() -> closeManualScreen(true) instead). This is what the
-// manual button's onclick actually calls now.
+// The header's ✕ and a second tap on the manual button both close the
+// manual back to wherever it was opened from (the site logo instead routes
+// through goToMainMenu() -> closeManualScreen(true)). This is what the
+// manual button's onclick calls.
 function toggleManualScreen() {
   const manual = document.getElementById('manualScreen');
   if (manual && manual.classList.contains('visible')) {
@@ -182,7 +182,9 @@ function toggleManualScreen() {
   }
 }
 
-async function openManualScreen() {
+// pageId: open straight on that page (e.g. the ⓘ beside each answer field
+// opens 'quizzes-scoring'); left out, the manual opens with nothing picked.
+async function openManualScreen(pageId) {
   const landing = document.getElementById('landingScreen');
   const manual  = document.getElementById('manualScreen');
   if (!landing || !manual) return;
@@ -227,6 +229,11 @@ async function openManualScreen() {
     if (!MANUAL_SECTIONS) {
       renderManualLoading();
       await manualDataReady;
+    }
+    const pageSection = pageId && MANUAL_SECTIONS.find(sec => sec.subsections.some(sub => sub.id === pageId));
+    if (pageSection) {
+      manualExpandedSections.add(pageSection.id);
+      manualActiveSubsectionId = pageId;
     }
     renderManualSidebar();
     renderManualContent();
@@ -401,7 +408,7 @@ function renderManualContent() {
   manualGithubDemoInitAll(content);
 }
 
-// ── Live GitHub repo card (About the project / Feedback & Contact pages) ──
+// ── Live GitHub repo card (About the project / Feedback & contact pages) ──
 // Pulls basic stats for the flux repo straight from the public GitHub REST
 // API. Both manual pages that embed this widget share one fetch through
 // _manualGithubDataPromise, so opening the manual only ever costs a single

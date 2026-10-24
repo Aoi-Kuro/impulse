@@ -141,9 +141,19 @@ function markAnswerInput(input, pts) {
 // maxlength: the attempts sync (superbase/edge-functions/sync-quiz-attempts.ts)
 // refuses a whole batch if entered_value or entered_unit is over 200
 // characters; the split pieces can't be longer than what was typed.
+// The ⓘ inside the field's right end opens the manual's "Entering answers
+// & scoring" page (js/manual.js). tabindex -1 keeps Tab going from one
+// answer field straight to the next.
+const ANSWER_INFO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true">'
+  + '<circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.2"/>'
+  + '<circle cx="8" cy="4.85" r="0.95" fill="currentColor"/>'
+  + '<path d="M8 7.3v4.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+
 function answerInputHtml(id) {
-  return `<input class="answer-input" id="${id}" type="text" placeholder="Answer" maxlength="200"
-    autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Answer: number and unit">`;
+  return `<span class="answer-field"><input class="answer-input" id="${id}" type="text" placeholder="Answer" maxlength="200"
+    autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Answer: number and unit"><button type="button"
+    class="answer-info-btn" tabindex="-1" title="How to write answers" aria-label="How to write answers"
+    onclick="if (typeof openManualScreen === 'function') openManualScreen('quizzes-scoring')">${ANSWER_INFO_ICON}</button></span>`;
 }
 
 // ── Live preview ──

@@ -59,6 +59,10 @@
 </head>
 <body class="ed">
 
+<!-- Settings > Display > Icons (Classic), shared with the site: first in
+     <body> so it wraps every emoji before anything paints. -->
+<script src="/js/icons.js"></script>
+
 <!-- ── Top bar: sidebar toggle (left), themes + day/night (right). Nothing else. ── -->
 <div class="top-bar-backdrop" aria-hidden="true"></div>
 
@@ -77,9 +81,9 @@
 <div class="theme-toggle-wrap">
   <button class="palette-icon-btn" id="edManualBtn" title="Editor Manual" aria-label="Editor Manual" aria-expanded="false">📖</button>
   <button class="palette-icon-btn" id="paletteBtn" onclick="toggleThemePanel(event)" title="Color themes">🎨</button>
-  <span class="theme-icon">🌙</span>
+  <button type="button" class="theme-icon" onclick="setThemeMode(false)" title="Night mode">🌙</button>
   <div class="toggle-track" id="themeTrack" onclick="toggleTheme()"><div class="toggle-knob"></div></div>
-  <span class="theme-icon">☀️</span>
+  <button type="button" class="theme-icon" onclick="setThemeMode(true)" title="Day mode">☀️</button>
 </div>
 
 <div class="theme-panel" id="themePanel">
@@ -339,6 +343,7 @@
      database (localStorage only) — same methods, nothing shared. -->
 <script src="/editor/store.js"></script>
 <script src="/editor/highlight.js"></script>
+<script src="/js/scrollbars.js"></script>
 <script src="/editor/editor.js"></script>
 <script src="/editor/manual.js"></script>
 </body>

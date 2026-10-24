@@ -77,7 +77,7 @@
   color: var(--muted);
   font-family: var(--mono);
   font-size: 0.82rem;
-  padding: 0.38rem 0.75rem;
+  padding: 0.38rem 0.6rem;
   border-radius: calc(6px * var(--radius-mult));
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
@@ -1228,7 +1228,7 @@ body.light .tp-section, body.light .attempt-topics-panel { --tp-ci-color: #000; 
   gap: 1rem;
   margin-bottom: 1.8rem;
 }
-/* .stats-close-btn is reused as-is for the ✕ Close button (index.html) —
+/* .stats-close-btn is reused as-is for the ✕ button (index.html) —
    same secondary-outlined look every other screen's close button has. */
 
 /* Stands in for the topic-filter sidebar a live Random 6 attempt would show

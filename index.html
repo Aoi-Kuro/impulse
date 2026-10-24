@@ -246,6 +246,10 @@
 </head>
 <body>
 
+<!-- Settings > Display > Icons (Classic): first in <body> so it wraps every
+     emoji the parser adds before anything paints. See its header. -->
+<script src="js/icons.js"></script>
+
 <!-- ── Course identity — must load before ANY script that reads
      STORAGE_PREFIX/SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY, which in
      practice means before banner-manager.js below. See its own header
@@ -373,13 +377,13 @@
 <!-- Theme toggle -->
 <div class="theme-toggle-wrap">
   <button class="palette-icon-btn" id="settingsBtn" onclick="window.toggleSettingsScreen&&toggleSettingsScreen()" title="Settings">⚙️</button>
-  <button class="palette-icon-btn" id="manualBtn" onclick="window.toggleManualScreen&&toggleManualScreen()" title="User manual">📖</button>
+  <button class="palette-icon-btn" id="manualBtn" onclick="window.toggleManualScreen&&toggleManualScreen()" title="User Manual">📖</button>
   <button class="palette-icon-btn" id="paletteBtn" onclick="toggleThemePanel(event)" title="Color themes">🎨</button>
-  <span class="theme-icon">🌙</span>
+  <button type="button" class="theme-icon" onclick="setThemeMode(false)" title="Night mode">🌙</button>
   <div class="toggle-track" id="themeTrack" onclick="toggleTheme()">
     <div class="toggle-knob"></div>
   </div>
-  <span class="theme-icon">☀️</span>
+  <button type="button" class="theme-icon" onclick="setThemeMode(true)" title="Day mode">☀️</button>
 </div>
 
 <!-- Theme picker panel -->
@@ -485,89 +489,11 @@
 <!-- ── App page (quiz content) ── -->
 <div id="appPage">
 
-<div class="guide is-collapsed" id="guideMain">
-  <div class="guide-header">
-    <div class="guide-header-title"><span class="icon">✎</span><span>How to enter your answer</span></div>
-    <button class="guide-close" onclick="hideGuideManual()" title="Hide hint" aria-label="Hide hint">✕</button>
-  </div>
-
-  <div class="guide-section">
-    <div class="guide-section-title">One box: number, then unit</div>
-    <div class="guide-chip-row">
-      <div class="guide-chip"><code>9.81 m/s^2</code><span class="desc">number, space, unit</span></div>
-      <div class="guide-chip"><code>2.5e-3 kg m^2</code><span class="desc">any number format + unit</span></div>
-      <div class="guide-chip"><code>0.75</code><span class="desc">no unit when there is none</span></div>
-    </div>
-    <div class="guide-note-inline">while you type, a box under the field shows how your answer is read</div>
-  </div>
-
-  <div class="guide-section">
-    <div class="guide-section-title">Numbers</div>
-    <div class="guide-chip-row">
-      <div class="guide-chip"><code>1.56E4</code><span class="desc">= 15600</span></div>
-      <div class="guide-chip"><code>5E-2</code><span class="desc">= 0.05</span></div>
-      <div class="guide-chip"><code>1.56*10^4</code><span class="desc">× power-of-ten</span></div>
-      <div class="guide-chip"><code>10^-3</code><span class="desc">pure power of ten</span></div>
-      <div class="guide-chip"><code>-3.2E7</code><span class="desc">negative value</span></div>
-      <div class="guide-chip"><code>3/4</code><span class="desc">fractions work</span></div>
-      <div class="guide-chip"><code>2*pi</code><span class="desc">π and e work</span></div>
-    </div>
-    <div class="guide-invalid-row">
-      <div class="guide-invalid-item"><span class="x">✕</span><code>1.6x10^5</code><span class="why">use E or *10^, not x</span></div>
-      <div class="guide-invalid-item"><span class="x">✕</span><code>2,5</code><span class="why">decimal point, not comma</span></div>
-      <div class="guide-invalid-item"><span class="x">✕</span><code>sqrt(2)</code><span class="why">no functions</span></div>
-    </div>
-  </div>
-
-  <div class="guide-section">
-    <div class="guide-section-title">Units</div>
-    <div class="guide-chip-row">
-      <div class="guide-chip"><code>N/C</code><span class="desc">slash = division</span></div>
-      <div class="guide-chip"><code>N m</code><span class="desc">space = multiply</span></div>
-      <div class="guide-chip"><code>m^2</code><span class="desc">exponent with ^</span></div>
-      <div class="guide-chip"><code>m s^-1</code><span class="desc">same as m/s; s^(-1) too</span></div>
-      <div class="guide-chip"><code>kg m/s^2</code><span class="desc">= N</span></div>
-      <div class="guide-chip"><code>J/(kg K)</code><span class="desc">brackets after the /</span></div>
-      <div class="guide-chip"><code>rad</code><span class="desc">same as no unit</span></div>
-    </div>
-    <div class="guide-invalid-row">
-      <div class="guide-invalid-item"><span class="x">✕</span><code>N*m</code><span class="why">use a space, not * (0 points)</span></div>
-      <div class="guide-invalid-item"><span class="x">✕</span><code>m m</code><span class="why">each unit once: m^2</span></div>
-      <div class="guide-invalid-item"><span class="x">✕</span><code>m/s/s</code><span class="why">only one /</span></div>
-      <div class="guide-invalid-item"><span class="x">✕</span><code>m/s^(2)</code><span class="why">( ) only around a negative power</span></div>
-      <div class="guide-invalid-item"><span class="x">✕</span><code>kn or KN</code><span class="why">units are case-sensitive</span></div>
-    </div>
-  </div>
-
-  <div class="guide-section">
-    <div class="guide-section-title">SI prefixes</div>
-    <div class="guide-chip-row">
-      <div class="guide-chip"><code>p n µ/u m c</code><span class="desc">10⁻¹² → 10⁻²</span></div>
-      <div class="guide-chip"><code>k M G T</code><span class="desc">10³ → 10¹²</span></div>
-      <div class="guide-chip"><code>mm km ns</code><span class="desc">prefix + unit, no space</span></div>
-      <div class="guide-chip"><code>kOhm MHz mg</code><span class="desc">works on SI units</span></div>
-    </div>
-    <div class="guide-note-inline">write the prefix right before the unit — e.g. <code>mm</code>, <code>µF</code> or <code>uF</code>. Only SI units convert: <code>km/h</code> is not <code>m/s</code>, <code>L</code> is not <code>m^3</code></div>
-  </div>
-
-  <div class="guide-footer">
-    <span><b>Score:</b> value✓+unit✓ = 1.0 · value✓+unit wrong or missing = 0.9 · invalid unit = 0 · value✗ = 0 · ±1% tolerance</span>
-  </div>
-</div>
-
-<!-- Top row: recall button (left) shown while guide is collapsed, main menu (right, hidden while hint is open) -->
-<div class="quiz-top-row">
-  <div class="hint-recall-wrap visible" id="hintRecallWrap">
-    <button class="btn-recall-hint" onclick="showGuide()">
-      <span>📋</span> Show hint (units &amp; numbers)
-    </button>
-  </div>
-  <button class="btn-exit-solve quiz-top-row-menu" onclick="goToMainMenu()">☰ Main menu</button>
-</div>
-
-<header id="quizHeader">
-  <div class="eyebrow" id="eyebrowQuizHeader">PHYS162 · Practice Mode</div>
+<header id="quizHeader" class="quiz-title-header">
+  <div class="eyebrow" id="eyebrowQuizHeader">PHYS162</div>
   <h1>Electricity &amp; Fields <span>Set</span></h1>
+  <button class="stats-close-btn quiz-close-btn" onclick="goToMainMenu()" title="Main menu" aria-label="Close and go to the main menu">✕</button>
+  <div class="solve-all-tag">Exam Try</div>
   <div class="filter-active-note" id="filterActiveNote" style="display:none;">Filter is active: this draw is pulling from a narrowed problem pool</div>
 </header>
 
@@ -617,89 +543,10 @@
 
 <!-- ── Solve-all mode ── -->
 <div id="solveAllMode">
-  <div class="guide is-collapsed" id="guideSolve">
-    <div class="guide-header">
-      <div class="guide-header-title"><span class="icon">✎</span><span>How to enter your answer</span></div>
-      <button class="guide-close" onclick="hideGuideManualSolve()" title="Hide hint" aria-label="Hide hint">✕</button>
-    </div>
-
-    <div class="guide-section">
-      <div class="guide-section-title">One box: number, then unit</div>
-      <div class="guide-chip-row">
-        <div class="guide-chip"><code>9.81 m/s^2</code><span class="desc">number, space, unit</span></div>
-        <div class="guide-chip"><code>2.5e-3 kg m^2</code><span class="desc">any number format + unit</span></div>
-        <div class="guide-chip"><code>0.75</code><span class="desc">no unit when there is none</span></div>
-      </div>
-      <div class="guide-note-inline">while you type, a box under the field shows how your answer is read</div>
-    </div>
-
-    <div class="guide-section">
-      <div class="guide-section-title">Numbers</div>
-      <div class="guide-chip-row">
-        <div class="guide-chip"><code>1.56E4</code><span class="desc">= 15600</span></div>
-        <div class="guide-chip"><code>5E-2</code><span class="desc">= 0.05</span></div>
-        <div class="guide-chip"><code>1.56*10^4</code><span class="desc">× power-of-ten</span></div>
-        <div class="guide-chip"><code>10^-3</code><span class="desc">pure power of ten</span></div>
-        <div class="guide-chip"><code>-3.2E7</code><span class="desc">negative value</span></div>
-        <div class="guide-chip"><code>3/4</code><span class="desc">fractions work</span></div>
-        <div class="guide-chip"><code>2*pi</code><span class="desc">π and e work</span></div>
-      </div>
-      <div class="guide-invalid-row">
-        <div class="guide-invalid-item"><span class="x">✕</span><code>1.6x10^5</code><span class="why">use E or *10^, not x</span></div>
-        <div class="guide-invalid-item"><span class="x">✕</span><code>2,5</code><span class="why">decimal point, not comma</span></div>
-        <div class="guide-invalid-item"><span class="x">✕</span><code>sqrt(2)</code><span class="why">no functions</span></div>
-      </div>
-    </div>
-
-    <div class="guide-section">
-      <div class="guide-section-title">Units</div>
-      <div class="guide-chip-row">
-        <div class="guide-chip"><code>N/C</code><span class="desc">slash = division</span></div>
-        <div class="guide-chip"><code>N m</code><span class="desc">space = multiply</span></div>
-        <div class="guide-chip"><code>m^2</code><span class="desc">exponent with ^</span></div>
-        <div class="guide-chip"><code>m s^-1</code><span class="desc">same as m/s; s^(-1) too</span></div>
-        <div class="guide-chip"><code>kg m/s^2</code><span class="desc">= N</span></div>
-        <div class="guide-chip"><code>J/(kg K)</code><span class="desc">brackets after the /</span></div>
-        <div class="guide-chip"><code>rad</code><span class="desc">same as no unit</span></div>
-      </div>
-      <div class="guide-invalid-row">
-        <div class="guide-invalid-item"><span class="x">✕</span><code>N*m</code><span class="why">use a space, not * (0 points)</span></div>
-        <div class="guide-invalid-item"><span class="x">✕</span><code>m m</code><span class="why">each unit once: m^2</span></div>
-        <div class="guide-invalid-item"><span class="x">✕</span><code>m/s/s</code><span class="why">only one /</span></div>
-        <div class="guide-invalid-item"><span class="x">✕</span><code>m/s^(2)</code><span class="why">( ) only around a negative power</span></div>
-        <div class="guide-invalid-item"><span class="x">✕</span><code>kn or KN</code><span class="why">units are case-sensitive</span></div>
-      </div>
-    </div>
-
-    <div class="guide-section">
-      <div class="guide-section-title">SI prefixes</div>
-      <div class="guide-chip-row">
-        <div class="guide-chip"><code>p n µ/u m c</code><span class="desc">10⁻¹² → 10⁻²</span></div>
-        <div class="guide-chip"><code>k M G T</code><span class="desc">10³ → 10¹²</span></div>
-        <div class="guide-chip"><code>mm km ns</code><span class="desc">prefix + unit, no space</span></div>
-        <div class="guide-chip"><code>kOhm MHz mg</code><span class="desc">works on SI units</span></div>
-      </div>
-      <div class="guide-note-inline">write the prefix right before the unit — e.g. <code>mm</code>, <code>µF</code> or <code>uF</code>. Only SI units convert: <code>km/h</code> is not <code>m/s</code>, <code>L</code> is not <code>m^3</code></div>
-    </div>
-
-    <div class="guide-footer">
-      <span><b>Score:</b> value✓+unit✓ = 1.0 · value✓+unit wrong or missing = 0.9 · invalid unit = 0 · value✗ = 0 · ±1% tolerance</span>
-    </div>
-  </div>
-
-  <!-- Top row: recall button (left) shown while guide is collapsed, main menu (right, hidden while hint is open) -->
-  <div class="solve-top-row">
-    <div class="hint-recall-wrap visible" id="hintRecallWrapSolve">
-      <button class="btn-recall-hint" onclick="showGuideSolve()">
-        <span>📋</span> Hint
-      </button>
-    </div>
-    <button class="btn-exit-solve solve-top-row-menu" onclick="goToMainMenu()">☰ Main menu</button>
-  </div>
-
-  <header class="solve-all-quiz-header" id="solveAllHeader">
-    <div class="eyebrow" id="eyebrowSolveHeader">PHYS162 · Entire Set</div>
+  <header class="solve-all-quiz-header quiz-title-header" id="solveAllHeader">
+    <div class="eyebrow" id="eyebrowSolveHeader">PHYS162</div>
     <h1>Electricity &amp; Fields <span>Set</span></h1>
+    <button class="stats-close-btn quiz-close-btn" onclick="goToMainMenu()" title="Main menu" aria-label="Close and go to the main menu">✕</button>
     <div class="solve-all-tag">All Problems</div>
   </header>
 
@@ -787,7 +634,7 @@
           <div class="stats-title">📊 Stats</div>
         </div>
       </div>
-      <button class="stats-close-btn" onclick="closeStatsScreen()">✕ Close</button>
+      <button class="stats-close-btn" onclick="closeStatsScreen()" title="Close" aria-label="Close stats">✕</button>
     </div>
     <div class="stats-forum-panel" id="statsForumPanel">
       <div class="sfp-title">👥 Forum &amp; Site <span class="sfp-live-dot" id="sfpLiveDot" title="Live" style="display:none;"></span></div>
@@ -864,7 +711,7 @@
 <div id="reviewScreen">
   <div class="review-wrap">
     <div class="review-header">
-      <button class="stats-close-btn" onclick="closeAttemptReview()">✕ Close</button>
+      <button class="stats-close-btn" onclick="closeAttemptReview()" title="Close" aria-label="Close attempt review">✕</button>
       <div class="review-meta" id="reviewMeta"><!-- Rendered by renderAttemptReview() --></div>
       <!-- Same score-box pill row used for the live quiz's result breakdown
            and the "Last attempts" mini-panel — click a box to jump straight
@@ -887,7 +734,7 @@
       <div class="forum-header-right">
         <button type="button" class="forum-search-toggle-btn" id="forumSearchToggleBtn" onclick="toggleForumSearch()" title="Search all messages">🔍</button>
         <button type="button" class="forum-push-toggle-btn" id="forumPushToggleBtn" title="Get notified when someone tags you, even with the site closed">🔕</button>
-        <button class="forum-close-btn" onclick="closeForumScreen()">✕ Close</button>
+        <button class="forum-close-btn" onclick="closeForumScreen()" title="Close" aria-label="Close forum">✕</button>
       </div>
     </div>
     <!-- Hidden until the 🔍 button is tapped. Searches every message in every
@@ -1000,13 +847,7 @@
       <div class="settings-header-left">
         <div class="settings-title">⚙️ Settings</div>
       </div>
-      <div class="settings-header-right">
-        <button class="filter-reset-btn settings-reset-all-btn" id="settingsResetAllBtn" onclick="handleSettingsResetClick()" title="Reset all settings to defaults">
-          <svg class="reset-confirm-ring" viewBox="0 0 100 32" preserveAspectRatio="none"><rect x="1.5" y="1.5" rx="7"></rect></svg>
-          <span class="filter-reset-label">↺ Reset all</span>
-        </button>
-        <button class="stats-close-btn" onclick="closeSettingsScreen()">✕ Close</button>
-      </div>
+      <button class="stats-close-btn" onclick="closeSettingsScreen()" title="Close" aria-label="Close settings">✕</button>
     </div>
     <nav class="settings-tabs" id="settingsTabs">
       <!-- Rendered by renderSettingsTabs() in js/settings.js -->
@@ -1030,8 +871,9 @@
   <div class="manual-wrap">
     <div class="manual-header">
       <div class="manual-header-left">
-        <div class="manual-title">📖 User manual</div>
+        <div class="manual-title">📖 User Manual</div>
       </div>
+      <button class="stats-close-btn" onclick="closeManualScreen()" title="Close" aria-label="Close manual">✕</button>
     </div>
     <div class="manual-body">
       <nav class="manual-sidebar" id="manualSidebar">
@@ -1055,7 +897,7 @@
   <div class="license-wrap">
     <div class="license-header">
       <div class="license-title">⚖️ Copyright</div>
-      <button class="stats-close-btn" onclick="closeLicenseScreen()">✕ Close</button>
+      <button class="stats-close-btn" onclick="closeLicenseScreen()" title="Close" aria-label="Close license">✕</button>
     </div>
 
     <div class="license-statements">
@@ -1481,6 +1323,7 @@
       'course/animations/manual.js',
       'js/figure-anim.js',
       'js/figure-style.js',
+      'js/scrollbars.js',
       'js/top-bar-scroll.js',
       'js/top-bar-tips.js',
       'js/top-bar-quiz-status.js',
@@ -1527,7 +1370,7 @@
       </div>
       <div class="solution-header-right">
         <button class="solution-close-btn" id="solutionShareBtn" onclick="shareSolutionLink()" title="Copy a link to this solution">🔗 Share</button>
-        <button class="solution-close-btn" id="solutionCloseBtn" onclick="closeSolutionScreen()">✕ Close</button>
+        <button class="solution-close-btn" id="solutionCloseBtn" onclick="closeSolutionScreen()" title="Close" aria-label="Close solution">✕</button>
       </div>
     </div>
 

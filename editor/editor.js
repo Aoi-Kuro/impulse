@@ -12,6 +12,10 @@ function toggleTheme() {
   if (window.__applyCustomOnModeChange) window.__applyCustomOnModeChange();
   if (window.__updateOnColorVars) window.__updateOnColorVars();
 }
+// 🌙 / ☀️ beside the switch, as on the site (js/quiz-engine.js).
+function setThemeMode(light) {
+  if (document.body.classList.contains('light') !== light) toggleTheme();
+}
 (function restoreMode() {
   if (localStorage.getItem(STORAGE_PREFIX + '-theme') === 'light') {
     document.body.classList.add('light');
@@ -3849,62 +3853,4 @@ function toggleTheme() {
   renderViewer();
   if (validKey(localStorage.getItem(LS.key))) boot();
   else showGate('');
-})();
-
-// Scrollbars fade in while used (editor.css, --sb-a): while their element
-// scrolls, and while the pointer is over the bar itself. They fade out a
-// moment after. The fade is stepped here frame by frame: a CSS transition
-// doesn't repaint scrollbars in Chrome, a plain style change does.
-(function () {
-  const HIDE_MS = 900, FADE_MS = 300;
-  const timers = new WeakMap(), fades = new WeakMap();
-  let hovered = null;
-
-  const fadeTo = (el, target) => {
-    let f = fades.get(el);
-    if (!f) { f = { a: 0, target: 0, raf: 0, t: 0 }; fades.set(el, f); }
-    f.target = target;
-    if (f.raf || f.a === target) return;
-    f.t = performance.now();
-    const step = (now) => {
-      const d = (now - f.t) / FADE_MS; f.t = now;
-      f.a = f.target > f.a ? Math.min(f.target, f.a + d) : Math.max(f.target, f.a - d);
-      el.style.setProperty('--sb-a', f.a.toFixed(3));
-      f.raf = f.a === f.target ? 0 : requestAnimationFrame(step);
-      if (!f.raf && f.a === 0) el.style.removeProperty('--sb-a');
-    };
-    f.raf = requestAnimationFrame(step);
-  };
-
-  const hideLater = (el) => {
-    clearTimeout(timers.get(el));
-    timers.set(el, setTimeout(() => { if (el !== hovered) fadeTo(el, 0); }, HIDE_MS));
-  };
-
-  document.addEventListener('scroll', (e) => {
-    const el = e.target === document ? document.scrollingElement : e.target;
-    if (!(el instanceof Element)) return;
-    fadeTo(el, 1);
-    hideLater(el);
-  }, { capture: true, passive: true });
-
-  // A bar belongs to its element, so the pointer is over one when it is
-  // inside the element but past its client area (right or bottom edge).
-  const overBar = (el, x, y) => {
-    if (!(el instanceof Element)) return false;
-    const r = el.getBoundingClientRect();
-    return x >= r.left + el.clientLeft + el.clientWidth || y >= r.top + el.clientTop + el.clientHeight;
-  };
-
-  const setHovered = (el) => {
-    if (el === hovered) return;
-    if (hovered) hideLater(hovered);
-    hovered = el;
-    if (el) { clearTimeout(timers.get(el)); fadeTo(el, 1); }
-  };
-
-  document.addEventListener('pointermove', (e) => {
-    setHovered(overBar(e.target, e.clientX, e.clientY) ? e.target : null);
-  }, { passive: true });
-  document.documentElement.addEventListener('pointerleave', () => setHovered(null));
 })();

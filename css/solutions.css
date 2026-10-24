@@ -57,7 +57,7 @@ html.solution-screen-open #stickyScore.visible {
 .solution-close-btn {
   cursor: pointer; background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: calc(6px * var(--radius-mult));
-  padding: .4rem .8rem; font-family: var(--mono); font-size: .78rem;
+  padding: .4rem .6rem; font-family: var(--mono); font-size: .78rem;
 }
 .solution-close-btn:hover { border-color: var(--accent); color: var(--accent); }
 

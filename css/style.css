@@ -444,6 +444,16 @@
     background: var(--surface);
     box-shadow: 0 2px 8px color-mix(in srgb, var(--shadow) 25%, transparent);
   }
+  /* The backdrop can't reach under the page's scrollbar lane (fixed boxes
+     stop at the viewport's edge, and the lane is kept with
+     scrollbar-gutter: stable), which left a strip of page background at
+     the bar's right end. The lane's own track paints the bar's colour
+     there instead, under the thumb. Chrome/Safari only: Chrome styles the
+     page's scrollbar from <body> (see js/scrollbars.js); Firefox can only
+     colour a whole track, so the strip stays there. */
+  body.is-scrolled::-webkit-scrollbar-track {
+    background: linear-gradient(var(--surface) calc(var(--top-bar-h) + env(safe-area-inset-top, 0px)), transparent 0);
+  }
 
   /* ── Site logo ── */
   /* top/left both reserve the device safe area (notch, status bar, Dynamic
@@ -474,11 +484,9 @@
   .site-logo-link:hover { opacity: 1; }
   .site-logo-img { width: 26px; height: auto; display: block; }
 
-  /* (header-top-row removed — main menu moved to quiz-top-row beside the hint button) */
-
   /* ── Top bar tips ──────────────────────────────────────────────────────
      Centered in the bar, width matched to the app's standard content
-     column (same 760px used by main/.guide/cards/stats/problem body
+     column (same 760px used by main/cards/stats/problem body
      below) so its left/right edges line up with everything under it,
      capped so it never creeps under the logo or the icon row on narrow
      desktop windows. Only ever shown by js/top-bar-tips.js while
@@ -711,7 +719,15 @@
     user-select: none;
   }
 
-  .theme-icon { font-size: 0.85rem; line-height: 1; }
+  /* Buttons (setThemeMode in js/quiz-engine.js) dressed as the plain
+     icons they were, with the same hover as .palette-icon-btn. */
+  .theme-icon {
+    font-size: 0.85rem; line-height: 1;
+    background: none; border: none; padding: 0; cursor: pointer;
+    font-family: inherit; color: inherit;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .theme-icon:hover { transform: scale(1.1); }
 
   .toggle-track {
     position: relative;
@@ -1146,6 +1162,34 @@
     overflow-anchor: none;
   }
 
+  /* Scrollbars, site-wide and in the editor (which loads this file): thin,
+     keeping their room (nothing shifts), but invisible until used.
+     js/scrollbars.js fades --sb-a on an element from 0 to 1 while it
+     scrolls or the pointer is over its bar, and back after; for the page
+     itself that element is <html>. The scrollbar pseudo-elements inherit
+     it from their element (`*` never matches those, so each element still
+     starts from its own 0). Chrome/Safari draw the ::-webkit-scrollbar
+     parts; Chrome ignores those once scrollbar-color is set (the changelog
+     list keeps its own that way), so that one (Firefox's) only applies
+     where they don't exist. */
+  * { --sb-a: 0; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted) calc(var(--sb-a) * 100%), transparent);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-button { display: none; }
+
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: color-mix(in srgb, var(--muted) calc(var(--sb-a) * 100%), transparent) transparent;
+    }
+  }
+
   body {
     background: var(--bg);
     color: var(--text);
@@ -1169,204 +1213,6 @@
              calc(1rem + env(safe-area-inset-right, 0px))
              calc(4rem + env(safe-area-inset-bottom, 0px))
              calc(1rem + env(safe-area-inset-left, 0px));
-  }
-
-  /* ── Guide panel ── */
-  .guide {
-    max-width: 760px;
-    margin: 0 auto 1.2rem;
-    background: color-mix(in srgb, var(--accent) 6%, var(--bg));
-    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--bg));
-    border-radius: calc(10px * var(--radius-mult));
-    padding: 1.1rem 1.3rem 1rem;
-    opacity: 1;
-    max-height: 2000px;
-    overflow: hidden;
-    transition: opacity 0.25s ease, max-height 0.3s ease, margin 0.3s ease,
-      padding 0.3s ease, border-width 0.3s ease;
-  }
-
-  .guide.is-collapsed {
-    opacity: 0;
-    max-height: 0;
-    margin: 0 auto;
-    padding: 0 1.3rem;
-    border-width: 0;
-    pointer-events: none;
-  }
-
-  .guide-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.7rem;
-    margin-bottom: 0.9rem;
-    padding-bottom: 0.7rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, var(--bg));
-  }
-
-  .guide-header-title {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    font-family: var(--mono);
-    font-size: 0.74rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--accent);
-  }
-
-  .guide-header-title .icon { font-size: 0.95rem; }
-
-  .guide-close {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--muted);
-    font-size: 0.95rem;
-    line-height: 1;
-    padding: 0.25rem 0.4rem;
-    border-radius: calc(5px * var(--radius-mult));
-    transition: color 0.15s, background 0.15s;
-    flex-shrink: 0;
-  }
-  .guide-close:hover { color: var(--text); background: rgba(var(--accent-rgb), 0.1); }
-
-  .guide-section { margin-bottom: 1.05rem; }
-  .guide-section:last-child { margin-bottom: 0; }
-
-  .guide-section-title {
-    font-family: var(--mono);
-    font-size: 0.68rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin: 0 0 0.55rem;
-  }
-
-  /* Valid-example chips */
-  .guide-chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .guide-chip {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    background: rgba(var(--accent-rgb), 0.05);
-    border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--bg));
-    border-radius: calc(6px * var(--radius-mult));
-    padding: 0.32rem 0.6rem;
-  }
-
-  .guide-chip code {
-    font-family: var(--mono);
-    font-size: 0.78rem;
-    color: color-mix(in srgb, var(--accent) 78%, var(--text));
-    white-space: nowrap;
-  }
-
-  .guide-chip .desc {
-    font-size: 0.7rem;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-
-  /* Invalid examples — compact, left-accented rows */
-  .guide-invalid-row { display: flex; flex-direction: column; gap: 0.28rem; }
-
-  .guide-invalid-item {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    font-size: 0.72rem;
-    padding: 0.3rem 0.55rem;
-    background: rgba(var(--wrong-rgb), 0.05);
-    border-left: 2px solid var(--wrong);
-    border-radius: 0 calc(5px * var(--radius-mult)) calc(5px * var(--radius-mult)) 0;
-  }
-
-  .guide-invalid-item .x { color: var(--wrong); flex-shrink: 0; }
-
-  .guide-invalid-item code {
-    font-family: var(--mono);
-    color: var(--wrong);
-    background: rgba(var(--wrong-rgb), 0.1);
-    padding: 0 0.3rem;
-    border-radius: calc(3px * var(--radius-mult));
-    white-space: nowrap;
-  }
-
-  .guide-invalid-item .why { color: var(--muted); }
-
-  .guide-note-inline {
-    font-size: 0.7rem;
-    color: var(--muted);
-    font-family: var(--mono);
-  }
-  .guide-note-inline code {
-    color: color-mix(in srgb, var(--accent) 78%, var(--text));
-    background: rgba(var(--accent-rgb), 0.08);
-    padding: 0 0.3rem;
-    border-radius: calc(3px * var(--radius-mult));
-  }
-
-  .guide-footer {
-    margin-top: 0.9rem;
-    padding-top: 0.7rem;
-    border-top: 1px solid color-mix(in srgb, var(--accent) 28%, var(--bg));
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem 1.3rem;
-    font-size: 0.68rem;
-    font-family: var(--mono);
-    color: var(--muted);
-  }
-  .guide-footer b { color: var(--partial); }
-
-  /* ── Recall hint button ── */
-  .hint-recall-wrap {
-    max-width: 760px;
-    margin: 0 auto 1.2rem;
-    display: none;
-  }
-  .hint-recall-wrap.visible { display: flex; }
-
-  .btn-recall-hint {
-    font-family: var(--mono);
-    font-size: 0.72rem;
-    letter-spacing: 0.07em;
-    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--bg));
-    border-radius: calc(6px * var(--radius-mult));
-    padding: 0.5rem 1.05rem;
-    cursor: pointer;
-    background: color-mix(in srgb, var(--accent) 8%, var(--bg));
-    color: var(--accent);
-    transition: background 0.15s, border-color 0.15s;
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-  }
-  .btn-recall-hint:hover { background: rgba(var(--accent-rgb), 0.1); border-color: var(--accent); }
-
-  /* ── Quiz top row: hint recall (left) + main menu (right) ── */
-  .quiz-top-row {
-    max-width: 760px;
-    margin: 0 auto 1.2rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-  .quiz-top-row .hint-recall-wrap {
-    margin: 0;
-  }
-  /* Hide the main-menu button while the hint guide is open */
-  #guideMain:not(.is-collapsed) ~ .quiz-top-row .quiz-top-row-menu {
-    display: none;
   }
 
   /* ── Header ── */
@@ -1395,6 +1241,23 @@
 
   h1 { font-size: 1.4rem; font-weight: 600; letter-spacing: -0.01em; }
   h1 span { color: var(--accent); }
+
+  /* Random quiz and Entire Set headers: the text on the left, the ✕ back
+     to the main menu on the right, centred on the eyebrow + title. A grid
+     rather than a wrapper div, so #quizHeader h1 / #solveAllHeader h1
+     (renamed per course by js/quiz-engine.js) keep their markup. */
+  .quiz-title-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.75rem;
+  }
+  .quiz-title-header > * { grid-column: 1; }
+  .quiz-title-header > .quiz-close-btn {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  .quiz-title-header > .solve-all-tag { justify-self: start; }
 
   /* ── Cards ── */
   main {
@@ -2182,23 +2045,6 @@
   }
   #solveAllMode.active {
     display: block;
-  }
-
-  /* ── Solve-all top row: hint recall (left) + main menu (right) ── */
-  .solve-top-row {
-    max-width: 760px;
-    margin: 0 auto 1.2rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-  .solve-top-row .hint-recall-wrap {
-    margin: 0;
-  }
-  /* Hide the main-menu button while the hint guide is open */
-  #guideSolve:not(.is-collapsed) ~ .solve-top-row .solve-top-row-menu {
-    display: none;
   }
 
   /* ── Solve-all title block: same look as the quiz-page header, plus a small "All Problems" tag ── */

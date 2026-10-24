@@ -740,7 +740,7 @@ function setSolutionPreviewMode(on) {
   const share = document.getElementById('solutionShareBtn');
   if (share) share.hidden = on;
   const close = document.getElementById('solutionCloseBtn');
-  if (close) close.textContent = on ? '✕ Close preview' : '✕ Close';
+  if (close) close.title = close.ariaLabel = on ? 'Close preview' : 'Close';
 }
 
 // A shared link (?solution=q4_P16) opens that solution once the page has

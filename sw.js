@@ -299,8 +299,9 @@ self.addEventListener('activate', (event) => {
 // -- Update-triggered precache purge -------------------------------------
 // respondDefault()'s isPrecached branch below is cache-first with a
 // background revalidate -- great for speed, but it structurally means a
-// changed file (style.css, course-config.js, banner-manager.js, themes.js,
-// the MathJax bundle) never shows up on the SAME reload that fetches it:
+// changed file (the MathJax bundle, the offline art; our own style.css,
+// course-config.js, banner-manager.js and themes.js are network-first now,
+// see OWN_PRECACHED) never shows up on the SAME reload that fetches it:
 // reload #1 serves the stale cached copy instantly while quietly re-fetching
 // in the background, and only reload #2 actually serves what just landed in
 // the cache. quiz-engine.js's checkForUpdate() already knows the instant a
@@ -360,8 +361,9 @@ function respondDefault(event) {
   // back to the cached offline.html if the network request actually fails.
   //
   // For every other request that matches something we precached (dark/light
-  // theme images, style.css, themes.js, offline-laws.json, the MathJax
-  // vendor bundle + its fonts): cache-first, revalidating in the background.
+  // theme images, offline-laws.json, the MathJax vendor bundle + its fonts;
+  // our own code is network-first, below): cache-first, revalidating in the
+  // background.
   // Serve the cached copy immediately if there is one — no network round
   // trip in the way at all — then still kick off a real fetch to refresh the
   // cache for next time. Previously this was network-first-with-cache-
@@ -383,6 +385,18 @@ function respondDefault(event) {
         { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
       ))
     );
+  }
+
+  // Our own code among the precached files: network-first. Cache-first
+  // served the copy from before an edit or a deploy for one load (new HTML,
+  // old style.css: an unstyled page until a second reload), and the purge
+  // that clears it only runs on a version change. The deployed index.html
+  // loads hashed bundles instead, so this only costs a request where the
+  // plain files are loaded: offline.html (offline, so the cache answers)
+  // and a local copy of the site.
+  const path = url.pathname.slice(new URL(self.registration.scope).pathname.length);
+  if (url.origin === self.location.origin && OWN_PRECACHED.includes(path)) {
+    return networkFirst(event.request);
   }
 
   if (isPrecached) {
@@ -411,10 +425,45 @@ function respondDefault(event) {
     });
   }
 
-  // Not a navigation, not precached — same as never having called
-  // event.respondWith() at all (job 1's original behavior): just do the
-  // normal network fetch.
+  // Not a navigation, not precached: the normal network fetch, except that
+  // our own files are always re-checked with the server, as Netlify's
+  // default header ("max-age=0, must-revalidate", see _headers) already
+  // makes the browser do. A server without that header (a local preview)
+  // left the browser free to reuse a file for minutes after it changed, and
+  // a reload only re-checks the page itself. Hashed bundles and the folders
+  // _headers caches on purpose are left as they are, and so is a request
+  // that already chose its own cache mode (site-version.json's no-store).
+  if (url.origin === self.location.origin && event.request.method === 'GET'
+      && event.request.cache === 'default' && !LONG_CACHED.test(path)) {
+    return fetch(new Request(event.request, { cache: 'no-cache' }));
+  }
   return fetch(event.request);
+}
+
+// The precached files that are ours rather than vendor art/fonts (see
+// respondDefault), and the paths _headers lets browsers keep without asking.
+const OWN_PRECACHED = ['css/style.css', 'js/course-config.js', 'js/banner-manager.js', 'js/themes.js'];
+const LONG_CACHED = /^(vendor|images|favicon|js\/bundle|css\/bundle)\//;
+const NETWORK_FIRST_TIMEOUT = 3000;
+
+// Fresh from the server (re-checked, an unchanged file is an empty 304),
+// stored for offline use; the cached copy when the network fails or hasn't
+// answered within NETWORK_FIRST_TIMEOUT (a dead connection can take 5-10 s
+// to fail, see above).
+function networkFirst(request) {
+  const network = fetch(new Request(request, { cache: 'no-cache' })).then((response) => {
+    if (response && response.ok) {
+      const copy = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+    }
+    return response;
+  });
+  const cached = () => caches.match(request, { ignoreVary: true });
+  const timeout = new Promise((resolve) => setTimeout(resolve, NETWORK_FIRST_TIMEOUT));
+  return Promise.race([network.catch(() => null), timeout]).then((response) => {
+    if (response && response.ok) return response;
+    return cached().then((hit) => hit || network);
+  });
 }
 
 // offline.html is served at whatever URL failed to load, not at

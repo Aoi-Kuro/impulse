@@ -36,28 +36,6 @@
   margin-bottom: 1.6rem;
 }
 .settings-header-left { display: flex; align-items: center; gap: 0.9rem; }
-/* Groups the new "Reset all" button with the existing Close button so
-   Reset all lands immediately to Close's left, same row. */
-.settings-header-right { display: flex; align-items: center; gap: 0.7rem; }
-/* .filter-reset-btn (css/style.css) is normally positioned absolute/relative
-   with a top/right offset meant for its usual spot pinned inside
-   .topic-selector-wrap's corner — cancel that here so it just sits inline
-   in the header's normal flex flow like any other header button. Still
-   needs position: relative (not static) so its .reset-confirm-ring child
-   (position: absolute; inset: 0) anchors to this button and not some
-   further-out ancestor. */
-.settings-header-right .filter-reset-btn { position: relative; top: 0; right: 0; }
-/* .filter-reset-btn's own font-size/padding/border-radius (css/style.css)
-   are sized for its usual home inside .topic-selector-wrap, smaller (and
-   less rounded) than the Close button next to it here — same border-width
-   and font-family, so copying Close's font-size + padding + border-radius
-   gives this button the identical box height and corner rounding instead
-   of sitting shorter and squarer in the same row. */
-.settings-reset-all-btn {
-  font-size: 0.82rem;
-  padding: 0.38rem 0.75rem;
-  border-radius: calc(6px * var(--radius-mult));
-}
 .settings-title {
   font-family: var(--mono);
   font-size: 1.1rem;
@@ -348,6 +326,15 @@ html.settings-silent-badges #forumFabUnreadAtBadge {
   color: var(--accent);
 }
 .settings-choice-btn:disabled { cursor: not-allowed; }
+/* Display's Icon style: the label over a two-icon sample of that style. */
+.settings-icon-style-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 5.5rem;
+}
+.settings-icon-style-sample { font-size: 1rem; font-weight: 400; line-height: 1; }
 /* A choice that carries its own value with small up/down arrows beside it
    (Display's battery percent). The outer element looks like the other
    choice buttons; the value and the arrows are plain buttons inside it. */

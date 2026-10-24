@@ -1269,8 +1269,6 @@ function _startSolveAllCore(order) {
   document.getElementById('resultPanel').style.display = 'none';
   document.getElementById('recentAttemptsPanel').style.display = 'none';
   document.getElementById('attemptTopicsPanel').style.display = 'none';
-  document.getElementById('guideMain').style.display = 'none';
-  document.querySelector('.quiz-top-row').style.display = 'none';
   document.querySelector('header').style.display = 'none';
 
   // Show solve-all mode
@@ -1304,8 +1302,6 @@ function _exitSolveAllScreenDom() {
   document.getElementById('resultPanel').style.display = '';
   document.getElementById('recentAttemptsPanel').style.display = '';
   document.getElementById('attemptTopicsPanel').style.display = '';
-  document.getElementById('guideMain').style.display = '';
-  document.querySelector('.quiz-top-row').style.display = '';
   document.querySelector('header').style.display = '';
 
   document.getElementById('solveAllMode').classList.remove('active');
@@ -2060,6 +2056,12 @@ function toggleTheme() {
   if (typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges(); // js/settings-sync.js
 }
 
+// The 🌙 and ☀️ beside the switch: each picks its own mode (no-op if it's
+// already on) rather than flipping, so the icon you tap is what you get.
+function setThemeMode(light) {
+  if (document.body.classList.contains('light') !== light) toggleTheme();
+}
+
 // Restore saved preference
 (function () {
   if (localStorage.getItem(STORAGE_PREFIX + '-theme') === 'light') {
@@ -2069,37 +2071,6 @@ function toggleTheme() {
   if (window.__applyCustomOnModeChange) window.__applyCustomOnModeChange();
   if (window.__updateOnColorVars) window.__updateOnColorVars();
 })();
-
-// ─── Guide hint toggle (reusable for main quiz + solve-all mode) ──────────────
-// Hidden by default (see .is-collapsed in the markup) — no auto-hide timer;
-// the hint stays exactly as the user left it until they click to toggle it.
-function createHintGuide(guideEl, recallWrapEl) {
-  function hide() {
-    guideEl.classList.add('is-collapsed');
-    recallWrapEl.classList.add('visible');
-  }
-
-  function show() {
-    guideEl.classList.remove('is-collapsed');
-    recallWrapEl.classList.remove('visible');
-  }
-
-  return { hide, show };
-}
-
-const mainHintGuide = createHintGuide(
-  document.getElementById('guideMain'),
-  document.getElementById('hintRecallWrap')
-);
-const solveHintGuide = createHintGuide(
-  document.getElementById('guideSolve'),
-  document.getElementById('hintRecallWrapSolve')
-);
-
-window.hideGuideManual      = () => mainHintGuide.hide();
-window.showGuide            = () => mainHintGuide.show();
-window.hideGuideManualSolve = () => solveHintGuide.hide();
-window.showGuideSolve       = () => solveHintGuide.show();
 
 // ─── Landing screen ───────────────────────────────────────────────────────────
 function renderQuizButtons() {
@@ -2350,7 +2321,7 @@ function goToMainMenu() {
   // mid-quiz (Solve-all/Mistakes) or Stats too, hiding that screen instead of
   // landing. Tapping the main-menu logo while the Forum is open should still
   // always land you back on the landing screen either way — a distinct, more
-  // explicit "take me all the way home" than the Forum's own ✕ Close button,
+  // explicit "take me all the way home" than the Forum's own ✕ button,
   // which instead returns to wherever it was actually opened from — so this
   // passes `true` ("force landing") rather than just closing it plainly.
   const forum = document.getElementById('forumScreen');
@@ -2425,7 +2396,7 @@ function exitAppOrChoiceToLanding() {
   // removes Stats' own `visible` class when it opens, so by the time we get
   // here goToMainMenu()'s stats-check is already false and this function is
   // the only thing that runs — yet #reviewScreen itself was never touched.
-  // Its `visible` class is normally only ever removed by its own ✕ Close
+  // Its `visible` class is normally only ever removed by its own ✕
   // (closeAttemptReview()), so tapping the site logo while reviewing an
   // attempt left it stuck on, ready to flash back into view the next time
   // something else (e.g. the Forum FAB's host detection in forum.js, which
@@ -2533,7 +2504,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '13.1.1';
+const CURRENT_VERSION = '13.1.2';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.
@@ -2776,7 +2747,7 @@ function _fullscreenHintEligible() {
   if (!document.fullscreenElement) return false;
   if (typeof isQuizTimerActive !== 'function' || !isQuizTimerActive()) return false;
   if (_studySettingNow('fullscreenRandomN', true) !== true) return false;
-  if (_studySettingNow('hideFullscreenReminder', false) === true) return false;
+  if (_studySettingNow('hideFullscreenReminder', true) === true) return false;
   if (typeof getSetting === 'function' && getSetting('notifications', 'goSilent') === true) return false;
   return true;
 }

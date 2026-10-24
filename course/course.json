@@ -15,8 +15,8 @@
       "twitter:image": "course/preview.png",
       "landing_eyebrow_practice": "PHYS162 · Practice Platform",
       "landing_eyebrow_solve_all": "PHYS162 · Entire Set",
-      "eyebrow_practice": "PHYS162 · Practice Mode",
-      "eyebrow_solve": "PHYS162 · Entire Set"
+      "eyebrow_practice": "PHYS162",
+      "eyebrow_solve": "PHYS162"
     },
     "offline_html": {
       "title": "You're offline — PHYS162 Practice Quiz"
@@ -37,8 +37,8 @@
       "twitter:image": "course/preview.png",
       "landing_eyebrow_practice": "PHYS 161 · Practice Platform",
       "landing_eyebrow_solve_all": "PHYS 161 · Entire Set",
-      "eyebrow_practice": "PHYS 161 · Practice Mode",
-      "eyebrow_solve": "PHYS 161 · Entire Set"
+      "eyebrow_practice": "PHYS 161",
+      "eyebrow_solve": "PHYS 161"
     },
     "offline_html": {
       "title": "You're offline — PHYS 161 Practice Quiz"
