@@ -187,6 +187,7 @@ impulse/
 │   ├── quiz-engine.js       Quiz engine: Random N, cumulative, filters,
 │   │                        Solve-All, mistakes retry, live timer,
 │   │                        full-screen hint, update checker
+│   ├── logo-tumble.js       Logo cube tumble when the main menu appears
 │   ├── fig-attribution.js   Tap-to-toggle (i) attribution badges on figures
 │   ├── figure-anim.js       Play button + speed chip for animated figures
 │   ├── figure-style.js      Swaps problem images for their redrawn SVGs
@@ -569,7 +570,7 @@ attempts.
    `stats.js`, `stats-export.js`,
    `attempts-sync.js`, `solve-all-sync.js` → `math-cache.js`,
    `math-render.js` → DOMPurify, `figure.js`, `solution-render.js`,
-   `solutions.js`, `editor-access.js` → `quiz-engine.js`. The engine boots
+   `solutions.js`, `editor-access.js` → `quiz-engine.js` → `logo-tumble.js`. The engine boots
    inline (not on `DOMContentLoaded`), since everything it needs is already
    parsed by then.
 4. **Tier 2** is loaded by a small sequential loader that only starts after
@@ -580,7 +581,9 @@ attempts.
    `top-bar-scroll.js`, `top-bar-tips.js`, `top-bar-quiz-status.js`,
    `solve-all-nav.js`, `changelog.js`, `manual.js`, `license.js`,
    `settings.js`, `offline-mode.js`, the Supabase JS client (jsDelivr CDN),
-   `site-visits.js`, `forum.js`, `push-notifications.js`. Problems are first
+   `site-visits.js`, `forum.js`, `push-notifications.js`. When the last one
+   has loaded, the loader sets `window.tier2Loaded` and fires `tier2-loaded`
+   (`logo-tumble.js` waits for it). Problems are first
    shown with their original images; `figure-style.js` swaps in the redrawn
    SVGs once it arrives.
 5. `sw.js` is registered on `load`.

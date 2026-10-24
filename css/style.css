@@ -484,6 +484,77 @@
   .site-logo-link:hover { opacity: 1; }
   .site-logo-img { width: 26px; height: auto; display: block; }
 
+  /* ── Site logo tumble (js/logo-tumble.js) ──
+     A 3D cube laid exactly over .site-logo-img, shown only while
+     .logo-tumbling is on the link. True isometric view with no perspective,
+     so at rest it matches favicon.svg: edge a = 26px / √2, which makes the
+     hexagon a·√2 = 26px wide and a·√(8/3) ≈ 30px tall, the <img>'s size.
+     Nesting: .logo-cube (jump + squash) > -tilt (isometric tilt) > -spin
+     (the turn) > 6 faces. The jump peaks at 27% of the logo's height
+     (~8px), which keeps it inside the 3rem bar. */
+  .logo-cube {
+    --a: calc(26px / 1.4142136);
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 26px;
+    height: calc(var(--a) * 1.6329932);
+    margin-top: calc(var(--a) * -.8164966);
+    display: grid;
+    place-items: center;
+    transform-origin: 50% 100%;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .logo-cube-tilt, .logo-cube-spin {
+    display: block;
+    width: var(--a);
+    height: var(--a);
+    position: relative;
+    transform-style: preserve-3d;
+  }
+  .logo-cube-tilt { transform: rotateX(-35.264deg); }
+  .logo-cube-spin { transform: rotateY(45deg); }
+  .logo-cube-face {
+    position: absolute;
+    inset: 0;
+    /* Faces turned away stay hidden, so they can't fringe the edges of
+       the ones in front. */
+    backface-visibility: hidden;
+    /* No outline: favicon.svg's own is a hairline that doesn't show at
+       26px, and a border here showed as dark seams between the faces. */
+  }
+  .logo-cube-front  { transform: translateZ(calc(var(--a) / 2)); background: #58a6ff; }
+  .logo-cube-back   { transform: rotateY(180deg) translateZ(calc(var(--a) / 2)); background: #58a6ff; }
+  .logo-cube-right  { transform: rotateY(90deg) translateZ(calc(var(--a) / 2)); background: #fff; }
+  .logo-cube-left   { transform: rotateY(-90deg) translateZ(calc(var(--a) / 2)); background: #fff; }
+  .logo-cube-top    { transform: rotateX(90deg) translateZ(calc(var(--a) / 2)); background: #d7263d; }
+  .logo-cube-bottom { transform: rotateX(-90deg) translateZ(calc(var(--a) / 2)); background: #d7263d; }
+
+  .site-logo-link.logo-tumbling .site-logo-img { visibility: hidden; }
+  .site-logo-link.logo-tumbling .logo-cube {
+    visibility: visible;
+    animation: logo-cube-hop 1.2s cubic-bezier(.3, .7, .3, 1) both;
+  }
+  .site-logo-link.logo-tumbling .logo-cube-spin {
+    animation: logo-cube-tumble 1.2s cubic-bezier(.45, .05, .25, 1) both;
+  }
+  /* Crouch, jump, squash on landing, small rebound */
+  @keyframes logo-cube-hop {
+    0%   { transform: translateY(0) scale(1, 1); }
+    12%  { transform: translateY(4%) scale(1.08, .88); }
+    45%  { transform: translateY(-27%) scale(.97, 1.04); }
+    72%  { transform: translateY(0) scale(1.08, .9); }
+    84%  { transform: translateY(-7%) scale(.99, 1.02); }
+    100% { transform: translateY(0) scale(1, 1); }
+  }
+  /* A full turn around the vertical axis and a full forward roll at once,
+     ending back in the logo's own pose */
+  @keyframes logo-cube-tumble {
+    from { transform: rotateY(45deg) rotateX(0); }
+    to   { transform: rotateY(405deg) rotateX(-360deg); }
+  }
+
   /* ── Top bar tips ──────────────────────────────────────────────────────
      Centered in the bar, width matched to the app's standard content
      column (same 760px used by main/cards/stats/problem body

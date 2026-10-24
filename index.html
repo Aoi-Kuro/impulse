@@ -1272,6 +1272,9 @@
      the file's own header). Nothing is rendered until the hold completes. -->
 <script src="js/editor-access.js"></script>
 <script src="js/quiz-engine.js"></script>
+<!-- Logo cube tumble whenever the main menu appears, and once everything
+     (tier 2 below included) has loaded. -->
+<script src="js/logo-tumble.js"></script>
 
 <!-- ── Tier 2: everything below is cosmetic/non-critical once the landing
      screen is up (fig-attr tooltips, top-bar scroll/tips, the changelog
@@ -1301,7 +1304,12 @@
     // until this function actually runs (i.e. after tier 1 is done).
     function loadSequentially(srcs, i) {
       i = i || 0;
-      if (i >= srcs.length) return;
+      if (i >= srcs.length) {
+        // js/logo-tumble.js waits for this before its "site is ready" tumble.
+        window.tier2Loaded = true;
+        window.dispatchEvent(new Event('tier2-loaded'));
+        return;
+      }
       const s = document.createElement('script');
       s.src = srcs[i];
       s.async = false;

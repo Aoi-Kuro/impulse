@@ -87,6 +87,7 @@ const OFFLINE_CORE_FILES = [
   'js/solutions.js',
   'js/editor-access.js',
   'js/quiz-engine.js',
+  'js/logo-tumble.js',
   'js/fig-attribution.js',
   'js/figure-anim.js',
   'js/figure-style.js',
