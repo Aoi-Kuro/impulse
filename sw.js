@@ -345,8 +345,42 @@ async function routeFetch(event) {
     // null: same-origin request Go offline's manifest didn't cover — fall
     // through to the normal job-1 handling below, same as if full offline
     // mode weren't running at all.
+  } else {
+    // Not during full offline mode: its cache can hold an old build, and the
+    // reload would only bring that same build back, every 5 minutes.
+    const stale = await respondStaleTab(event);
+    if (stale) return stale;
   }
   return respondDefault(event);
+}
+
+// ── Tabs stuck on 12.4.4 or older ──
+// Those builds poll /version.json, renamed to site-version.json since (see
+// VERSION_MANIFEST_URL in js/quiz-engine.js). They get a 404, take it as
+// "server unavailable" and never hear of an update, so a tab left open stays
+// on old code until someone reloads it by hand. No current page asks for
+// that name, so the request itself marks such a tab: reload it (navigations
+// are network-first, so it comes back on the current build, which never asks
+// again) and answer with site-version.json, so a tab the reload misses still
+// sees the update (12.4.4 forces it within 24 h, older builds show the
+// Reload banner, and their cache purges are capped by PURGE_MIN_INTERVAL).
+//
+// The editor's old code polls the same name; it is answered but never
+// reloaded, as a reload there could lose unsaved work. The fragment is
+// dropped from the URL because navigating to the same URL with a fragment
+// only scrolls, it doesn't reload. Never put a real version.json back on
+// the server: tabs on 12.4.3 or older would re-download the whole precache
+// list through their old worker every 5 minutes.
+async function respondStaleTab(event) {
+  const scope = new URL(self.registration.scope);
+  const url = new URL(event.request.url);
+  if (url.origin !== scope.origin || url.pathname !== scope.pathname + 'version.json') return null;
+  const client = event.clientId ? await self.clients.get(event.clientId).catch(() => null) : null;
+  if (client && client.type === 'window' && !new URL(client.url).pathname.startsWith(scope.pathname + 'editor/')) {
+    const reload = client.navigate(client.url.split('#')[0]).catch(() => {});
+    try { event.waitUntil(reload); } catch (_) {}
+  }
+  return fetch(new URL('site-version.json', scope), { cache: 'no-store' }).catch(() => null);
 }
 
 // Everything below is job 1, completely unchanged from before Phase 4 —
