@@ -62,6 +62,8 @@ const COURSES = {
     // course-specific, so they aren't repeated per course here.
     display: {
       courseCode: 'PHYS162',
+      // The name next to the logo in the top bar (Kanit Black Italic).
+      brandName: 'FLUX',
       ogDescription: "Interactive physics practice quiz: electric fields, Gauss's law, circuits & more. Instant feedback with scoring.",
       twitterDescription: 'Interactive physics practice quiz for PHYS 162 course at Nazarbayev University.',
       siteUrl: 'https://your-domain.com/PHYS162_Practice_Quiz.html',
@@ -97,6 +99,7 @@ const COURSES = {
     // course/course.json's phys161 block, not re-verified here.
     display: {
       courseCode: 'PHYS161',
+      brandName: 'IMPULSE',
       ogDescription: 'Interactive physics practice quiz: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring.',
       twitterDescription: 'Interactive physics practice quiz for PHYS 161 course at Nazarbayev University.',
       siteUrl: 'https://your-domain.com/PHYS161_Practice_Quiz.html',
@@ -181,6 +184,7 @@ if (COURSE_CHANGELOG_SCOPE == null) {
 // items" section of README.md.
 const _display = _active.display || COURSES.phys162.display;
 const COURSE_CODE = _display.courseCode;
+const BRAND_NAME = _display.brandName;
 // Display-only: insert a space between the letter prefix and the digits
 // so "PHYS162" reads as "PHYS 162" wherever it's shown to a person —
 // works for any <letters><digits> course code, nothing course-specific
@@ -194,7 +198,13 @@ const COURSE_TITLE = `${COURSE_CODE_DISPLAY} Practice Quiz`;
 // rather than by any DOM heuristic, since offline.html has none of the
 // OG/Twitter meta tags below to key off of.
 const _isOfflinePage = /offline\.html$/i.test(location.pathname);
-document.title = _isOfflinePage ? `You're offline — ${COURSE_TITLE}` : COURSE_TITLE;
+// index.html loads this file in <head> BEFORE its <title> (and sets the
+// title with an inline script right after it); setting document.title
+// here with no <title> yet would create a second one. offline.html and
+// the editor load it after theirs, so they're set here.
+if (document.querySelector('title')) {
+  document.title = _isOfflinePage ? `You're offline — ${COURSE_TITLE}` : COURSE_TITLE;
+}
 
 // index.html-only from here down — offline.html has none of these meta
 // tags, so each querySelector below just no-ops there (el is null). Kept
@@ -211,23 +221,9 @@ _setMetaContent('meta[property="og:description"]', _display.ogDescription);
 _setMetaContent('meta[name="twitter:description"]', _display.twitterDescription);
 _setMetaContent('meta[property="og:url"]', _display.siteUrl);
 
-// The 4 "eyebrow" labels are all in <body>, not yet parsed when this
-// <head> script runs — deferred to DOMContentLoaded. Each is
-// `${COURSE_CODE} · <fixed mode name>`; the mode-name half is framework
-// copy, not course-specific, so it's written here rather than repeated
-// in every course's `display` block. The Random quiz and Entire Set
-// headers show the code alone: their tags ("Exam Try", "All Problems")
-// already name the mode.
-window.addEventListener('DOMContentLoaded', () => {
-  const _setEyebrowText = (id, suffix) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = suffix ? `${COURSE_CODE_DISPLAY} · ${suffix}` : COURSE_CODE_DISPLAY;
-  };
-  _setEyebrowText('eyebrowLandingPractice', 'Practice Platform');
-  _setEyebrowText('eyebrowLandingSolveAll', 'Entire Set');
-  _setEyebrowText('eyebrowQuizHeader');
-  _setEyebrowText('eyebrowSolveHeader');
-});
+// The landing screen's course-code label (#eyebrowLandingPractice) and the
+// site name by the logo are filled by one-line inline scripts right after
+// them in index.html, so neither paints with stale text first.
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   // Not fatal — forum.js/attempts-sync.js/push-notifications.js all already

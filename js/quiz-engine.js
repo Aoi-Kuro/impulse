@@ -499,6 +499,25 @@ function pickRandom(arr, n) {
   return a.slice(0, n);
 }
 
+// Keys (mathCacheKeyFor-style, q<quiz>_<id>) of the problems the previous
+// newQuiz() draw showed. Captured at draw time rather than re-derived from
+// `quiz` later, since a single-mode problem's key depends on
+// selectedQuizNum, which may have changed since.
+let _lastDrawnKeys = new Set();
+
+// pickRandom(), but skipping problems the previous attempt just showed
+// whenever the pool has enough others to fill all n slots. When it doesn't,
+// every unseen problem goes in and only the shortfall is topped up from the
+// just-shown ones. Plain pickRandom() with Settings > Study > "Avoid repeat
+// problems" off.
+function pickRandomAvoidingLast(arr, n) {
+  if (typeof getSetting === 'function' && getSetting('study', 'avoidRepeatProblems') === false) return pickRandom(arr, n);
+  const fresh = [], recent = [];
+  arr.forEach(p => (_lastDrawnKeys.has(mathCacheKeyFor(p)) ? recent : fresh).push(p));
+  const pick = pickRandom(fresh, n);
+  return pick.length >= n ? pick : pick.concat(pickRandom(recent, n - pick.length));
+}
+
 // Whether the active Topic/Number filter is actually excluding at least
 // one problem from the pool this newQuiz() draw pulls from. Covers both
 // single mode (just the selected quiz) and cumulative mode (every quiz
@@ -648,14 +667,17 @@ function newQuiz() {
     currPool = currPool.map(p => ({ ...p, _quizNum: selectedQuizNum }));
 
     if (prevPool.length === 0) prevPool = [];
-    const prevPick = pickRandom(prevPool, QUIZ_CUMULATIVE_PREV_COUNT);
-    const currPick = pickRandom(currPool, QUIZ_SIZE - QUIZ_CUMULATIVE_PREV_COUNT);
+    const prevPick = pickRandomAvoidingLast(prevPool, QUIZ_CUMULATIVE_PREV_COUNT);
+    const currPick = pickRandomAvoidingLast(currPool, QUIZ_SIZE - QUIZ_CUMULATIVE_PREV_COUNT);
     quiz = pickRandom([...prevPick, ...currPick], QUIZ_SIZE);
   } else {
     let pool = ACTIVE_PROBLEMS.filter(p => problemPassesFilter(p, selectedQuizNum - 1));
     if (pool.length === 0) pool = ACTIVE_PROBLEMS;
-    quiz = pickRandom(pool, Math.min(QUIZ_SIZE, pool.length));
+    // Final shuffle so topped-up repeats aren't always at the end.
+    quiz = pickRandom(pickRandomAvoidingLast(pool, Math.min(QUIZ_SIZE, pool.length)), QUIZ_SIZE);
   }
+  _lastDrawnKeys = new Set(quiz.map(mathCacheKeyFor));
+  _attemptStartedAt = Date.now();
 
   checked = false;
   document.getElementById("resultPanel").classList.remove("show");
@@ -1182,22 +1204,32 @@ function clearSolveAllProgress() {
   localStorage.removeItem(saStorageKey());
 }
 
-function openSolveAllModal() {
+// "Random order" button's sample line: three distinct problem numbers,
+// reshuffled ~2.5 times a second while the Choose-the-order page is up.
+let _randomOrderSampleTimer = null;
+function _startRandomOrderSample() {
+  const el = document.getElementById('randomOrderSample');
+  if (!el) return;
   const n = ACTIVE_PROBLEMS.length;
-  const saved = loadSolveAllProgress();
-  // Support both new (checkedById) and old (checked array) storage formats
-  const hasSaved = saved && (
-    (saved.checkedById && Object.keys(saved.checkedById).length > 0) ||
-    (saved.checked && saved.checked.length > 0)
-  );
-  document.getElementById('solveAllModalDesc').textContent =
-    `All ${n} problems will be shown at once. Choose how you'd like them ordered.`;
-  document.getElementById('solveAllOrderedLabel').textContent = `1 → ${n}`;
-  const progressHint = hasSaved ? 'progress kept' : 'ordered';
-  const shuffleHint  = hasSaved ? 'progress kept' : 'random order';
-  document.getElementById('solveAllOrderedSub').textContent = progressHint;
-  document.getElementById('solveAllShuffledSub').textContent = shuffleHint;
+  const slot = `width:${String(n).length}ch`;
+  function tick() {
+    if (document.getElementById('choicePage').classList.contains('hidden')) {
+      clearInterval(_randomOrderSampleTimer);
+      _randomOrderSampleTimer = null;
+      return;
+    }
+    const nums = pickRandom(Array.from({ length: n }, (_, i) => i + 1), 3);
+    el.innerHTML = '(' + nums.map(v => `<span class="order-choice-num" style="${slot}">${v}</span>`).join(', ') + '...)';
+  }
+  clearInterval(_randomOrderSampleTimer);
+  tick();
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  _randomOrderSampleTimer = setInterval(tick, 400);
+}
+
+function openSolveAllModal() {
   fadeInScreen(document.getElementById('choicePage'), 380);
+  _startRandomOrderSample(); // after fadeInScreen un-hides the page, or tick() stops at once
 }
 
 function closeSolveAllModal() {
@@ -2304,7 +2336,51 @@ function startSelected() {
   });
 }
 
+// ─── "Leave this attempt?" guard ─────────────────────────────────────────────
+// The site logo, the quiz ✕ (both goToMainMenu) and "New quiz ↺" all throw
+// away an unchecked Random N/cumulative attempt. Settings > Study > "Warn
+// before leaving a quiz" asks first — but only once there's something worth
+// keeping: at least one answer typed and 30+ seconds spent.
+let _attemptStartedAt = 0;
+let _pendingLeaveAction = null;
+
+function _randomAttemptAtRisk() {
+  if (typeof getSetting === 'function' && getSetting('study', 'warnBeforeLeavingQuiz') === false) return false;
+  if (checked) return false;
+  const appPage = document.getElementById('appPage');
+  if (!appPage || !appPage.classList.contains('visible') || appPage.classList.contains('fading-out')) return false;
+  if (document.getElementById('solveAllMode').classList.contains('active')) return false;
+  if (document.getElementById('mistakesMode').classList.contains('active')) return false;
+  if (Date.now() - _attemptStartedAt < 30 * 1000) return false;
+  return [...document.querySelectorAll('#quizContainer .answer-input')].some(el => el.value.trim() !== '');
+}
+
+function confirmLeaveRandomQuiz(proceed) {
+  if (!_randomAttemptAtRisk()) { proceed(); return; }
+  _pendingLeaveAction = proceed;
+  document.getElementById('leaveQuizModal').classList.add('open');
+}
+
+function resolveLeaveQuiz(leave) {
+  const action = _pendingLeaveAction;
+  _pendingLeaveAction = null;
+  document.getElementById('leaveQuizModal').classList.remove('open');
+  if (leave && action) action();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _pendingLeaveAction) resolveLeaveQuiz(false);
+});
+
+function requestNewQuiz() {
+  confirmLeaveRandomQuiz(newQuiz);
+}
+
 function goToMainMenu() {
+  confirmLeaveRandomQuiz(_goToMainMenuNow);
+}
+
+function _goToMainMenuNow() {
   // The Solution screen sits on top of whatever it was opened from (which
   // it hides), so it has to be checked first: none of the checks below can
   // see it, and the landing screen used to appear with the solution still

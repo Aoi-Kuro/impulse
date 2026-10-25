@@ -6,20 +6,17 @@
    than just hiding visually, so it never reserves layout space or receives
    clicks on narrower/mobile screens.
 
-   That breakpoint (1480px below) is NOT arbitrary — it's derived from the
-   rail's own fixed screen-edge position and must be recomputed if either
-   changes:
-     containerLeftEdge(vw) = (vw - 760) / 2          // 760 = container max-width
-     railRightEdge         = inset-inline-end + width // both from #saNavRail below
-     breakpoint             = 760 + 2 * (railRightEdge + desiredGap)
-   With the current 200px inset-inline-end + 130px width (railRightEdge =
-   330px) and a 30px gap, that's 760 + 2*(330+30) = 1480px. Below that width
-   #solveAllContainer's actual left edge sits to the *left* of the rail's
-   right edge, so the rail overlaps the problem cards instead of sitting in
-   the gutter beside them — it only clears the content once the viewport is
-   this wide, not merely once #saNavRail is display:block. If you change
-   inset-inline-end, width, or the container's max-width, recompute this
-   number rather than picking one that merely "looks fine" on one screen. 
+   That breakpoint (1024px below) is NOT arbitrary. #saNavRail's
+   inset-inline-end is min(240px, 50% - 380px - gap - width), so on
+   narrower screens the rail rides along 30px (gap) left of the 760px
+   container instead of sitting at a fixed screen-edge offset; on wide
+   screens the 240px cap keeps it where it always was (content-facing edge
+   at 330px). The breakpoint is where that computed left offset would drop
+   below a 12px screen margin:
+     breakpoint = 760 + 2 * (12 + gap + width) = 760 + 2 * (12 + 30 + 90) = 1024px
+   The 90px width fits the line (24px in) plus "P150"-style labels (38px
+   in, ~30px long). If you change the gap, width, or the container's
+   max-width, recompute both this number and the calc() below.
 
    Side: always the left edge of the viewport now (there used to be a
    Settings > Study > Solve Them All > "Line progress" > Position toggle for
@@ -39,9 +36,9 @@
    of two offsets below. To bring the line closer to the problems, start
    with .sa-nav-track::after's `inset-inline-start` (currently 24px) —
    that's the line's own offset from the rail's content-facing edge, the
-   most direct lever. If you want it closer still once that hits 0, reduce
-   #saNavRail's `inset-inline-end` (currently 28px) and/or its `width`
-   (currently 130px), which move the rail's content-facing edge itself
+   most direct lever. If you want it closer still once that hits 0, shrink
+   the 30px gap in #saNavRail's `inset-inline-end` calc() (and the
+   breakpoint with it), which moves the rail's content-facing edge itself
    closer to center. Ticks/marks/labels/pointer are all offset relative to
    the same edge, so they'll follow the line automatically — no need to
    touch them individually. */
@@ -50,14 +47,17 @@
   display: none;
 }
 
-@media (min-width: 1480px) {
+@media (min-width: 1024px) {
   #saNavRail {
     display: block;
     position: fixed;
     top: 14vh;
     bottom: 12vh;
-    inset-inline-end: 200px; /* <-- see "distance" comment above for the 2nd lever */
-    width: 130px;
+    /* 240px from the screen edge on wide screens; on narrower ones it
+       follows the problems instead, staying 30px clear of their left edge
+       (50% - 380px). See the breakpoint comment above. */
+    inset-inline-end: min(240px, calc(50% - 380px - 30px - 90px));
+    width: 90px;
     z-index: 750; /* below #stickyScore/modals (800+), above ordinary page content */
     opacity: 0;
     pointer-events: none;
@@ -206,7 +206,7 @@
   }
 }
 
-@media (min-width: 1480px) and (prefers-reduced-motion: reduce) {
+@media (min-width: 1024px) and (prefers-reduced-motion: reduce) {
   #saNavRail,
   .sa-nav-highlight,
   .sa-nav-tick-mark,

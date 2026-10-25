@@ -68,6 +68,8 @@ const SETTINGS_SEARCH_KEYWORDS = {
   // ── Study
   redrawnFigures: 'redrawn figures, original images, original pictures, scanned, scans, textbook images, book images, figure colors, figure colours, theme colored figures, dark mode figures, vector, svg, crisp, sharp, blurry images, old figures, figure style, drawings',
   showLiveTimer: 'timer, clock, stopwatch, time, elapsed time, live timer, how long, time spent, floating clock, timing, hide timer, remove timer, stress, pressure',
+  avoidRepeatProblems: 'repeat, repeats, repeated problems, same problems, duplicate, duplicates, again, previous attempt, last attempt, new problems, fresh problems, variety, no repeats, random n, random 6',
+  warnBeforeLeavingQuiz: 'warn, warning, confirm, confirmation, leave, leaving, exit, quit, close, lose progress, lost progress, lost answers, accidental, popup, pop up, are you sure, stay, new quiz, logo, random n, random 6',
   resetFilterOnLoad: 'filter, filters, topic filter, number filter, type filter, reset filter, clear filter, forget filter, default filter, remember filter, saved filter, all problems, everything, page load, refresh, reload, topics',
   autoStopAt50Min: '50 minutes, fifty minutes, 50 min, time limit, exam time, auto submit, automatic submit, auto stop, timeout, deadline, end quiz, finish automatically, exam simulation, real exam, timed',
   fullscreenRandomN: 'full screen, fullscreen, immersive, focus, exam mode, hide browser, distraction free, maximize, maximise, kiosk, random n, random 6, big screen',

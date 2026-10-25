@@ -87,6 +87,10 @@ const SETTINGS_DEFAULTS = {
   },
   study: {
     showLiveTimer: true,
+    // Random N draws skip the problems the previous attempt just showed.
+    avoidRepeatProblems: true,
+    // Logo / ✕ / New quiz ask before discarding a started Random N attempt.
+    warnBeforeLeavingQuiz: true,
     // Problem figures as the redrawn, theme-coloured SVGs (on) or the
     // original images (off). See js/figure-style.js.
     redrawnFigures: true,
@@ -1204,6 +1208,30 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
+    <div class="settings-row" data-row-key="avoidRepeatProblems">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Avoid repeat problems</div>
+        <div class="settings-row-desc">Skips the problems from your last attempt when possible.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'avoidRepeatProblems') !== false ? 'checked' : ''}
+               onchange="setSetting('study', 'avoidRepeatProblems', this.checked);">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-row" data-row-key="warnBeforeLeavingQuiz">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Warn before leaving a quiz</div>
+        <div class="settings-row-desc">Asks before an unfinished attempt is discarded.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'warnBeforeLeavingQuiz') !== false ? 'checked' : ''}
+               onchange="setSetting('study', 'warnBeforeLeavingQuiz', this.checked);">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
     <div class="settings-row" data-row-key="resetFilterOnLoad">
       <div class="settings-row-label">
         <div class="settings-row-title">Reset filter on page load</div>
@@ -1642,7 +1670,7 @@ applyNotificationSettings();
 // one-time "clear every quiz's saved filter" pass — same "start of
 // session" timing as everything above. selectLatestQuizByDefault/
 // cumulativeDefaultOn/lockSolveAllOrder/autoStopAt50Min/fullscreenRandomN/
-// revealWrongInstantly all read getSetting() directly at the point they're
+// revealWrongInstantly/avoidRepeatProblems/warnBeforeLeavingQuiz all read getSetting() directly at the point they're
 // needed instead (quiz-engine.js), so nothing else needs applying here.
 applyStudySettings();
 maybeResetProblemPoolFilters();

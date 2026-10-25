@@ -16,7 +16,7 @@
 //
 // What a page's `html` can use besides plain HTML:
 //   {{quizSize}}, {{cumulativePrev}}, {{cumulativeCurrent}}, {{quiz1}}…
-//     this course's numbers and quiz names (see manualFillTokens below);
+//     {{brandName}}: this course's numbers, quiz names and site name (see manualFillTokens below);
 //   <a href="#" data-goto="page-id">  a link to another manual page;
 //   .manual-mock  an inert copy of a real screen, built from the site's own
 //     classes (css/manual.css), with .manual-n numbered dots;
@@ -565,6 +565,7 @@ function manualSplashDemoRender(el) {
 function manualFillTokens(html) {
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const vals = {};
+  if (typeof BRAND_NAME !== 'undefined') vals.brandName = esc(BRAND_NAME);
   if (typeof QUIZ_SIZE !== 'undefined') {
     vals.quizSize = QUIZ_SIZE;
     vals.cumulativePrev = QUIZ_CUMULATIVE_PREV_COUNT;

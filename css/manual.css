@@ -814,6 +814,7 @@ body.light .manual-github-demo {
 .manual-mock-topbar > span { display: inline-flex; align-items: center; gap: 0.45rem; }
 .manual-mock-topbar > span:last-child { margin-left: auto; letter-spacing: 0.2em; }
 .manual-mock-logo { width: 1.35rem; height: 1.35rem; display: block; }
+.manual-mock-wordmark { font-family: 'Kanit', var(--sans); font-weight: 900; font-style: italic; letter-spacing: 0.03em; color: var(--text); }
 .manual-mock-landing { max-width: 30rem; width: 100%; margin: 0 auto; box-sizing: border-box; }
 .manual-mock .quiz-select-grid,
 .manual-mock .mode-switch-section { margin-bottom: 0; }

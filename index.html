@@ -84,7 +84,6 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>PHYS162 Practice Quiz</title>
 
 <!-- ── Open Graph / Telegram / Social preview ─────────────────────────────── -->
 <meta property="og:type"        content="website" />
@@ -99,6 +98,17 @@
 <!-- ── Keep these two lines' course-config.js values (display.ogDescription
      etc.) in sync with whatever you paste here — they're intentionally
      duplicated, not read from each other. ─────────────────────────────── -->
+
+<!-- ── Course identity — must load before ANY script that reads
+     STORAGE_PREFIX/SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY (banner-manager.js
+     and the rest). Here in <head>, after the meta tags it updates and
+     before <title>, so the title below is replaced the moment it's parsed
+     and the tab never shows the placeholder. See its own header. ── -->
+<script src="js/course-config.js"></script>
+<!-- Placeholder for crawlers that don't run JS; hand-edit with the meta
+     tags above. -->
+<title>PHYS 161 Practice Quiz</title>
+<script>document.title = COURSE_TITLE;</script>
 
 
 <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=1.0.5" sizes="96x96" />
@@ -119,7 +129,7 @@
      parses, adding a full extra round-trip before quiz text renders in the
      right font. As a real <link> here, the scanner finds it on the initial
      HTML pass, same as the Google Sans Flex link above. -->
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600&family=Bangers&family=STIX+Two+Text:ital,wght@0,400;1,400&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&family=Quicksand:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600&family=Bangers&family=STIX+Two+Text:ital,wght@0,400;1,400&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&family=Quicksand:wght@400;500;700&family=Kanit:ital,wght@1,900&display=swap" rel="stylesheet">
 
 <!-- ── Styles ──
      All five load as normal blocking stylesheets. stats.css/forum.css/
@@ -250,11 +260,6 @@
      emoji the parser adds before anything paints. See its header. -->
 <script src="js/icons.js"></script>
 
-<!-- ── Course identity — must load before ANY script that reads
-     STORAGE_PREFIX/SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY, which in
-     practice means before banner-manager.js below. See its own header
-     comment for what it does. ── -->
-<script src="js/course-config.js"></script>
 <!-- Settings from site-version.json (poll intervals, kill switches); read by
      the sync/forum/stats/solutions scripts below, so it loads first. -->
 <script src="js/site-config.js"></script>
@@ -347,6 +352,11 @@
 <!-- Site logo -->
 <a id="siteLogoLink" class="site-logo-link" href="#" onclick="goToMainMenu();return false;" title="Main menu">
   <img src="favicon/favicon.svg" alt="Logo" class="site-logo-img">
+  <!-- Course name (IMPULSE / FLUX) from js/course-config.js. Filled right
+       here rather than on DOMContentLoaded so it never pops in after the
+       top bar has painted. -->
+  <span class="site-logo-wordmark"></span>
+  <script>document.currentScript.previousElementSibling.textContent = BRAND_NAME;</script>
 </a>
 
 <!-- Top bar tips: rotating one-liners in the empty space between the logo
@@ -396,7 +406,10 @@
 <!-- ── Landing screen ── -->
 <div id="landingScreen">
   <div class="landing-box">
-    <div class="landing-eyebrow" id="eyebrowLandingPractice">PHYS162 · Practice Platform</div>
+    <div class="landing-eyebrow" id="eyebrowLandingPractice"></div>
+    <!-- Filled here, not on DOMContentLoaded, so the course code never
+         paints late. -->
+    <script>document.currentScript.previousElementSibling.textContent = COURSE_CODE_DISPLAY;</script>
     <h1 class="landing-title" id="landingTitle">Electricity &amp; Fields <span>Set</span></h1>
     <div class="mc-splash-wrap"><span class="mc-splash" id="splashText" role="button" tabindex="0" title="Tap for another" onclick="showNewSplash()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showNewSplash();}"></span></div>
 
@@ -475,12 +488,10 @@
 <!-- ── Solve-all choice page ── -->
 <div id="choicePage" class="hidden">
   <div class="landing-box">
-    <div class="landing-eyebrow" id="eyebrowLandingSolveAll">PHYS162 · Entire Set</div>
-    <h2 class="landing-title" style="margin-bottom:0.5rem;">Choose order</h2>
-    <p class="landing-sub" id="solveAllModalDesc" style="margin-bottom:1.2rem;"></p>
+    <h2 class="landing-title" style="margin-bottom:1.4rem;">Choose the order</h2>
     <div class="modal-choices" style="margin-bottom:1.5rem;">
-      <button class="modal-choice-btn" onclick="startSolveAll('ordered')"><span id="solveAllOrderedLabel">1 → N</span><br><span id="solveAllOrderedSub" style="font-size:0.68rem;color:var(--muted);">ordered</span></button>
-      <button class="modal-choice-btn" onclick="startSolveAll('unordered')">⇄ Shuffled<br><span id="solveAllShuffledSub" style="font-size:0.68rem;color:var(--muted);">random order</span></button>
+      <button class="modal-choice-btn" onclick="startSolveAll('ordered')">In order<br><span class="order-choice-sub">(1, 2, 3...)</span></button>
+      <button class="modal-choice-btn" onclick="startSolveAll('unordered')">Random order<br><span class="order-choice-sub" id="randomOrderSample">(32, 6, 102...)</span></button>
     </div>
     <button onclick="closeSolveAllModal()" style="background:none;border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:0.78rem;padding:0.5rem 1.2rem;border-radius:4px;cursor:pointer;transition:color 0.15s,border-color 0.15s;" onmouseover="this.style.color='var(--text)';this.style.borderColor='var(--text)'" onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">← Back</button>
   </div>
@@ -490,7 +501,6 @@
 <div id="appPage">
 
 <header id="quizHeader" class="quiz-title-header">
-  <div class="eyebrow" id="eyebrowQuizHeader">PHYS162</div>
   <h1>Electricity &amp; Fields <span>Set</span></h1>
   <button class="stats-close-btn quiz-close-btn" onclick="goToMainMenu()" title="Main menu" aria-label="Close and go to the main menu">✕</button>
   <div class="solve-all-tag">Exam Try</div>
@@ -501,7 +511,7 @@
 
 <div class="actions">
   <button class="btn btn-primary" id="checkBtn" onclick="checkAll()">Check answers</button>
-  <button class="btn btn-secondary" onclick="newQuiz()">New quiz ↺</button>
+  <button class="btn btn-secondary" onclick="requestNewQuiz()">New quiz ↺</button>
 </div>
 
 <div class="result-panel" id="resultPanel">
@@ -544,7 +554,6 @@
 <!-- ── Solve-all mode ── -->
 <div id="solveAllMode">
   <header class="solve-all-quiz-header quiz-title-header" id="solveAllHeader">
-    <div class="eyebrow" id="eyebrowSolveHeader">PHYS162</div>
     <h1>Electricity &amp; Fields <span>Set</span></h1>
     <button class="stats-close-btn quiz-close-btn" onclick="goToMainMenu()" title="Main menu" aria-label="Close and go to the main menu">✕</button>
     <div class="solve-all-tag">All Problems</div>
@@ -584,6 +593,19 @@
     <div class="modal-choices">
       <button class="modal-choice-btn" onclick="startMistakes('ordered')">1 → N<br><span style="font-size:0.68rem;color:var(--muted);">ordered</span></button>
       <button class="modal-choice-btn" onclick="startMistakes('unordered')">⇄ Shuffled<br><span style="font-size:0.68rem;color:var(--muted);">random order</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- ── "Leave this attempt?" (confirmLeaveRandomQuiz in js/quiz-engine.js).
+     Outside #appPage for the same containing-block reason as #mistakesModal. ── -->
+<div class="modal-backdrop" id="leaveQuizModal" onclick="if (event.target === this) resolveLeaveQuiz(false)">
+  <div class="modal-box" role="alertdialog" aria-labelledby="leaveQuizTitle">
+    <div class="modal-title" id="leaveQuizTitle">Leave this attempt?</div>
+    <div class="modal-desc">Your answers and time on this quiz will be lost.</div>
+    <div class="modal-choices">
+      <button class="modal-choice-btn" onclick="resolveLeaveQuiz(false)">Stay</button>
+      <button class="modal-choice-btn modal-choice-btn-danger" onclick="resolveLeaveQuiz(true)">Leave</button>
     </div>
   </div>
 </div>
@@ -933,6 +955,7 @@
       <section class="license-card">
         <h2>Third-Party Components</h2>
         <p>Bundled libraries and fonts keep their own licenses: MathJax, DOMPurify and SheetJS (Apache 2.0), jsPDF (MIT), IBM Plex fonts (SIL Open Font License 1.1) and TikZJax. Their license files are kept with them in <code>vendor/</code>.</p>
+        <p>The site name next to the logo is set in Kanit, © 2020 The Kanit Project Authors (<a href="https://github.com/cadsondemak/kanit" target="_blank" rel="noopener">github.com/cadsondemak/kanit</a>), loaded from Google Fonts under the <a href="https://openfontlicense.org" target="_blank" rel="noopener license">SIL Open Font License 1.1</a>.</p>
       </section>
 
       <section class="license-card">

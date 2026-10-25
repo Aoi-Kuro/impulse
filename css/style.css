@@ -137,9 +137,13 @@
     --svg-blue:var(--accent); --svg-red:var(--accent2); --splash-color:#00F0FF;
     --chrome-light:#05060A; --chrome-dark:#05060A; --shadow:#00F0FF; --radius-mult:0.15;
     --splash-stroke:#000000;
+    /* Popup dimming (modal backdrops fall back to --shadow): the cyan glow
+       is fine on shadows but blinding when it tints the whole screen. */
+    --backdrop:#000000;
     --sans:'Space Grotesk', sans-serif; --mono:'Space Mono', monospace;
   }
   body[data-theme="cyber"].light {
+    --backdrop:#00F0FF;
     --bg:#F2F4FB; --surface:#E6E9F7; --border:#C7CDF0; --text:#0A0C14; --muted:#5B6480;
     --accent:#7A00E0; --accent-dim:#e6d6ff; --accent2:#D6009C; --accent2-rgb:214,0,156;
     --correct:#1E9E56; --partial:#B57E00; --wrong:#D6003C;
@@ -478,11 +482,28 @@
     display: flex;
     align-items: center;
     cursor: pointer;
+    text-decoration: none;
     opacity: 0.92;
     transition: opacity 0.15s;
   }
   .site-logo-link:hover { opacity: 1; }
   .site-logo-img { width: 26px; height: auto; display: block; }
+  /* Course name beside the logo. Kanit stays on under every theme (it's
+     the site's name, not UI text); only its colour follows the theme. */
+  .site-logo-wordmark {
+    margin-left: 10px;
+    font-family: 'Kanit', var(--sans);
+    font-weight: 900;
+    font-style: italic;
+    font-size: 19px;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  @media (max-width: 480px) {
+    .site-logo-wordmark { margin-left: 8px; font-size: 17px; }
+  }
 
   /* ── Site logo tumble (js/logo-tumble.js) ──
      A 3D cube laid exactly over .site-logo-img, shown only while
@@ -490,8 +511,11 @@
      so at rest it matches favicon.svg: edge a = 26px / √2, which makes the
      hexagon a·√2 = 26px wide and a·√(8/3) ≈ 30px tall, the <img>'s size.
      Nesting: .logo-cube (jump + squash) > -tilt (isometric tilt) > -spin
-     (the turn) > 6 faces. The jump peaks at 27% of the logo's height
-     (~8px), which keeps it inside the 3rem bar. */
+     (the turn) > 6 faces. The jump peaks at 19% of the logo's height
+     (~5.7px): the tumbling cube's corner reaches up to ~2px past the
+     resting hexagon, and with the 1.04 stretch on top of that, 27% (the
+     old value) poked the tip ~1px out of the bar's top edge. 19% leaves
+     ~1px clear, measured in Chrome. */
   .logo-cube {
     --a: calc(26px / 1.4142136);
     position: absolute;
@@ -521,8 +545,13 @@
     /* Faces turned away stay hidden, so they can't fringe the edges of
        the ones in front. */
     backface-visibility: hidden;
-    /* No outline: favicon.svg's own is a hairline that doesn't show at
-       26px, and a border here showed as dark seams between the faces. */
+    /* favicon.svg's black hairline (0.6 of 118 units, ~0.13px at 26px).
+       It shows faintly, most on the day theme where the white face meets
+       a white bar, so without it the cube visibly changed when the
+       animation handed back to the <img>. A real border can't go this
+       thin (it showed as dark seams); a faint sub-pixel inset shadow
+       matches the <img> at 1x and 2x. */
+    box-shadow: inset 0 0 0 0.25px rgba(0, 0, 0, 0.45);
   }
   .logo-cube-front  { transform: translateZ(calc(var(--a) / 2)); background: #58a6ff; }
   .logo-cube-back   { transform: rotateY(180deg) translateZ(calc(var(--a) / 2)); background: #58a6ff; }
@@ -543,7 +572,7 @@
   @keyframes logo-cube-hop {
     0%   { transform: translateY(0) scale(1, 1); }
     12%  { transform: translateY(4%) scale(1.08, .88); }
-    45%  { transform: translateY(-27%) scale(.97, 1.04); }
+    45%  { transform: translateY(-19%) scale(.97, 1.04); }
     72%  { transform: translateY(0) scale(1.08, .9); }
     84%  { transform: translateY(-7%) scale(.99, 1.02); }
     100% { transform: translateY(0) scale(1, 1); }
@@ -1124,7 +1153,7 @@
   /* ── Custom theme modal ── */
   .theme-modal-overlay {
     display: none; position: fixed; inset: 0; z-index: 1003;
-    background: color-mix(in srgb, var(--shadow) 55%, transparent);
+    background: color-mix(in srgb, var(--backdrop, var(--shadow)) 55%, transparent);
     align-items: center; justify-content: center;
   }
   .theme-modal-overlay.open { display: flex; }
@@ -1314,7 +1343,7 @@
   h1 span { color: var(--accent); }
 
   /* Random quiz and Entire Set headers: the text on the left, the ✕ back
-     to the main menu on the right, centred on the eyebrow + title. A grid
+     to the main menu on the right, centred on the title. A grid
      rather than a wrapper div, so #quizHeader h1 / #solveAllHeader h1
      (renamed per course by js/quiz-engine.js) keep their markup. */
   .quiz-title-header {
@@ -1325,7 +1354,7 @@
   .quiz-title-header > * { grid-column: 1; }
   .quiz-title-header > .quiz-close-btn {
     grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-row: 1;
     align-self: center;
   }
   .quiz-title-header > .solve-all-tag { justify-self: start; }
@@ -2048,7 +2077,7 @@
   .modal-backdrop {
     display: none;
     position: fixed; inset: 0;
-    background: color-mix(in srgb, var(--shadow) calc(0.72 * 100%), transparent);
+    background: color-mix(in srgb, var(--backdrop, var(--shadow)) calc(0.72 * 100%), transparent);
     z-index: 900;
     align-items: center;
     justify-content: center;
@@ -2100,7 +2129,13 @@
     transition: all 0.18s;
     text-align: center;
   }
+  /* "(1, 2, 3...)" / "(32, 6, 102...)" under the Choose-the-order buttons.
+     Each shuffling number gets a fixed, right-aligned slot as wide as the
+     largest problem number, so the line never shifts as they change. */
+  .order-choice-sub { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+  .order-choice-num { display: inline-block; text-align: right; }
   .modal-choice-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),0.07); }
+  .modal-choice-btn-danger:hover { border-color: var(--wrong); color: var(--wrong); background: rgba(var(--wrong-rgb),0.07); }
 
   .modal-close {
     position: absolute; top: 0.9rem; right: 1rem;
@@ -2958,7 +2993,6 @@
     gap: 0.7rem;
     margin-bottom: 1.6rem;
   }
-
   .quiz-select-btn {
     background: var(--surface);
     border: 1px solid var(--border);
