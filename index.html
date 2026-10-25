@@ -53,6 +53,7 @@
         showThemeBtn:    'settings-hide-theme-btn',
         showDaylightBtn: 'settings-hide-daylight-btn',
         showForumFab:    'settings-hide-forum-fab',
+        showCabinetBtn:  'settings-hide-cabinet-btn',
       };
       var toAdd = [];
       for (var key in hideClassByKey) {
@@ -68,6 +69,12 @@
       // "Hide animation control buttons" — framed as hide, so true hides.
       if (d.hideFigAnimControls === true) toAdd.push('settings-hide-fig-anim-controls');
       if (toAdd.length) document.documentElement.classList.add.apply(document.documentElement.classList, toAdd);
+      // Colour correction (display.colorCorrection): the filters live in
+      // the hidden <svg> at the top of <body>; setting this now means the
+      // page never paints uncorrected first.
+      if (d.colorCorrection === 'protan' || d.colorCorrection === 'deutan' || d.colorCorrection === 'tritan') {
+        document.documentElement.setAttribute('data-color-correction', d.colorCorrection);
+      }
       // Figure size slider (display.figureScale, percent) — same clamp as
       // clampFigureScale() in js/settings.js, so figures never paint at the
       // default size first and then jump.
@@ -80,6 +87,71 @@
       // Corrupted/foreign localStorage value — fail open (everything
       // shown, today's default) rather than block page load.
     }
+  })();
+</script>
+<script>
+  // Settings > Display > Font (display.uiFont, js/settings.js): one font
+  // for all UI text, headers, tabs and buttons included (it replaces the
+  // mono too), over whatever font the colour theme picks. Runs here, before
+  // <body>, so the page never paints in the theme's font first; settings.js
+  // calls applyUiFont() again whenever the setting changes or syncs in.
+  // Only the chosen font is fetched (plus all of them once the Settings
+  // dropdown opens, to draw each name in its own font: loadUiFontPreviews).
+  // Code, keyboard keys and the forum's
+  // LaTeX field stay monospace. The rule is injected from here rather than
+  // living in a stylesheet so a cached style.css can't lag behind it.
+  (function () {
+    // Outfit is the default. 'theme' is the old default: no override, the
+    // colour theme's own font (js/settings.js shows that font's real name).
+    // A save from before Outfit became the default holds 'default' (or
+    // nothing) — both mean Outfit now, same as migrateSettings().
+    var FONTS = [
+      { id: 'theme',    name: 'Theme font (previous)' },
+      { id: 'atkinson', name: 'Atkinson Hyperlegible', family: 'Atkinson Hyperlegible Next', weights: '300;400;600;700' },
+      { id: 'golos',    name: 'Golos Text',            family: 'Golos Text',                 weights: '400;600;700' },
+      { id: 'hanken',   name: 'Hanken Grotesk',        family: 'Hanken Grotesk',             weights: '300;400;600;700' },
+      { id: 'mona',     name: 'Mona Sans',             family: 'Mona Sans',                  weights: '300;400;600;700' },
+      { id: 'outfit',   name: 'Outfit (default)',      family: 'Outfit',                     weights: '300;400;600;700' },
+      { id: 'source',   name: 'Source Sans 3',         family: 'Source Sans 3',              weights: '300;400;600;700' }
+    ];
+    window.UI_FONT_OPTIONS = FONTS;
+    window.UI_FONT_DEFAULT = 'outfit';
+    var style = null, sheets = {};
+    // Stylesheets are only ever added, never swapped: a font picked earlier
+    // stays loaded, so its name in the dropdown keeps its own face.
+    function loadFont(f) {
+      var href = 'https://fonts.googleapis.com/css2?family=' + f.family.replace(/ /g, '+') + ':wght@' + f.weights + '&display=swap';
+      if (sheets[href]) return;
+      sheets[href] = true;
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      document.head.appendChild(link);
+    }
+    window.loadUiFontPreviews = function () {
+      for (var i = 0; i < FONTS.length; i++) if (FONTS[i].family) loadFont(FONTS[i]);
+    };
+    window.applyUiFont = function (id) {
+      if (!id || id === 'default') id = window.UI_FONT_DEFAULT;
+      var f = null;
+      for (var i = 0; i < FONTS.length; i++) if (FONTS[i].id === id && FONTS[i].family) f = FONTS[i];
+      var root = document.documentElement;
+      if (!f) { root.removeAttribute('data-ui-font'); return; }
+      if (!style) {
+        style = document.createElement('style');
+        style.textContent =
+          'html[data-ui-font] body{--sans:var(--ui-font)!important;--mono:var(--ui-font)!important}' +
+          "html[data-ui-font] :is(code,pre,kbd,.forum-eq-input){font-family:'IBM Plex Mono',monospace}";
+        document.head.appendChild(style);
+      }
+      loadFont(f);
+      root.style.setProperty('--ui-font', "'" + f.family + "', sans-serif");
+      root.setAttribute('data-ui-font', f.id);
+    };
+    try {
+      var raw = JSON.parse(localStorage.getItem('flux_settings') || 'null');
+      window.applyUiFont(raw && raw.display && raw.display.uiFont);
+    } catch (e) {}
   })();
 </script>
 <meta charset="UTF-8">
@@ -256,6 +328,26 @@
 </head>
 <body>
 
+<!-- Settings > Display > Colour correction. One colour matrix per type,
+     applied to <html> (css/settings.css), so every colour on the page goes
+     through it: text, the logo, figures, canvases, emoji. Each matrix is
+     daltonization in linear RGB: the Machado et al. (2009) full-severity
+     simulation S of that colour-vision deficiency, then the colour
+     information it loses, (I − S)·c, shifted into channels that type can
+     still see (Fidaner et al.), folded into one matrix D = I + Shift·(I − S).
+     Rows sum to 1, so white and greys stay as they are. -->
+<svg class="color-correction-filters" width="0" height="0" aria-hidden="true" focusable="false">
+  <filter id="cc-protan" color-interpolation-filters="linearRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0  0.4789 0.4769 0.0442 0 0  0.5973 -0.6887 1.0914 0 0  0 0 0 1 0"/>
+  </filter>
+  <filter id="cc-deutan" color-interpolation-filters="linearRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0  0.1628 0.725 0.1122 0 0  0.4547 -0.6454 1.1907 0 0  0 0 0 1 0"/>
+  </filter>
+  <filter id="cc-tritan" color-interpolation-filters="linearRGB">
+    <feColorMatrix type="matrix" values="0.7412 -0.4072 0.666 0 0  0.0751 0.5852 0.3397 0 0  0 0 1 0 0  0 0 0 1 0"/>
+  </filter>
+</svg>
+
 <!-- Settings > Display > Icons (Classic): first in <body> so it wraps every
      emoji the parser adds before anything paints. See its header. -->
 <script src="js/icons.js"></script>
@@ -380,7 +472,9 @@
   <span class="tbqs-battery" id="tbqsBattery">
     <span class="tbqs-batt-icon" id="tbqsBattIcon"><span class="tbqs-batt-fill" id="tbqsBattFill"></span></span>
     <span class="tbqs-batt-pct" id="tbqsBattPct"></span>
-    <span class="tbqs-batt-charging" id="tbqsBattCharging"> (charging)</span>
+    <!-- Shown only while charging. js/icons.js draws it as the Classic
+         bolt or leaves the ⚡ emoji (Modern), per Settings > Icon style. -->
+    <span class="tbqs-batt-charging" id="tbqsBattCharging" role="img" aria-label="Charging" title="Charging">⚡</span>
   </span>
 </div>
 
@@ -955,7 +1049,7 @@
       <section class="license-card">
         <h2>Third-Party Components</h2>
         <p>Bundled libraries and fonts keep their own licenses: MathJax, DOMPurify and SheetJS (Apache 2.0), jsPDF (MIT), IBM Plex fonts (SIL Open Font License 1.1) and TikZJax. Their license files are kept with them in <code>vendor/</code>.</p>
-        <p>The site name next to the logo is set in Kanit, © 2020 The Kanit Project Authors (<a href="https://github.com/cadsondemak/kanit" target="_blank" rel="noopener">github.com/cadsondemak/kanit</a>), loaded from Google Fonts under the <a href="https://openfontlicense.org" target="_blank" rel="noopener license">SIL Open Font License 1.1</a>.</p>
+        <p>The site name next to the logo is set in Kanit, © 2020 The Kanit Project Authors (<a href="https://github.com/cadsondemak/kanit" target="_blank" rel="noopener">github.com/cadsondemak/kanit</a>), loaded from Google Fonts under the <a href="https://openfontlicense.org" target="_blank" rel="noopener license">SIL Open Font License 1.1</a>. So are the fonts offered in Settings → Display → Font (Atkinson Hyperlegible Next, Golos Text, Hanken Grotesk, Mona Sans, Outfit and Source Sans 3), each © its authors.</p>
       </section>
 
       <section class="license-card">
@@ -1297,11 +1391,16 @@
 <script src="js/solutions.js"></script>
 <!-- Long-press affordance on the site logo for the solutions authors (see
      the file's own header). Nothing is rendered until the hold completes. -->
+<!-- Personal cabinet (👤 → Stats) beside the logo; placed before
+     editor-access.js so the Editorial link lines up after it. -->
+<script src="js/cabinet-link.js"></script>
 <script src="js/editor-access.js"></script>
 <script src="js/quiz-engine.js"></script>
 <!-- Logo cube tumble whenever the main menu appears, and once everything
      (tier 2 below included) has loaded. -->
 <script src="js/logo-tumble.js"></script>
+<!-- Course name soaked into the cube during a Random N attempt. -->
+<script src="js/logo-wordmark.js"></script>
 
 <!-- ── Tier 2: everything below is cosmetic/non-critical once the landing
      screen is up (fig-attr tooltips, top-bar scroll/tips, the changelog

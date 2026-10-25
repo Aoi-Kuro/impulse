@@ -801,11 +801,12 @@ function checkAll() {
     fb.innerHTML = answerFeedbackHtml(res, p, true);
 
     breakdown.push({ id: p.id, pts, quizNum: p._quizNum || selectedQuizNum });
+    const stored = answerPartsToStore(ansEl.value);
     answers.push({
       problem_id: p.id,
       quiz_num: p._quizNum || selectedQuizNum,
-      entered_value: res.value,
-      entered_unit: res.unit,
+      entered_value: stored.value,
+      entered_unit: stored.unit,
       points: pts
     });
   });
@@ -1051,7 +1052,7 @@ function buildSolveAllSnapshot() {
     // {ans, unit} shape progress always had (split from the one field)
     const ansEl = document.getElementById('sa-ans-' + idx);
     if (ansEl) {
-      const { value, unit } = splitAnswer(ansEl.value);
+      const { value, unit } = answerPartsToStore(ansEl.value);
       answersById[p.id] = { ans: value, unit };
     } else if (solveAllAnswers[p.id]) {
       // Card not rendered yet (cards stream in in batches): send the saved
@@ -1148,7 +1149,7 @@ function regradeSolveAllState() {
     const ansEl = document.getElementById('sa-ans-' + idx);
     let answer = solveAllAnswers[p.id];
     if (ansEl) {
-      const { value, unit } = splitAnswer(ansEl.value);
+      const { value, unit } = answerPartsToStore(ansEl.value);
       answer = { ans: value, unit };
     }
     if (!_saFailsRegrade(p, answer)) return;
@@ -2074,24 +2075,39 @@ function revealMistakeAnswer(i) {
 }
 
 // ─── Theme toggle ─────────────────────────────────────────────────────────────
+// The mode the page is switching to while a crossfade (runThemeChange in
+// js/themes.js) hasn't applied it yet — the change runs a frame later, so
+// a quick second tap must flip from where the first one is heading, not
+// from the still-unchanged <body>.
+let _pendingLightMode = null;
+function _currentLightMode() {
+  return _pendingLightMode !== null ? _pendingLightMode : document.body.classList.contains('light');
+}
+
 function toggleTheme() {
-  if (window.themeFadeTick) themeFadeTick();
-  const isLight = document.body.classList.toggle('light');
-  document.getElementById('themeTrack').classList.toggle('on', isLight);
-  localStorage.setItem(STORAGE_PREFIX + '-theme', isLight ? 'light' : 'dark');
-  if (window.__applyCustomOnModeChange) window.__applyCustomOnModeChange();
-  // Day/night also flips --accent/--correct/--partial/--wrong for preset
-  // themes (not just custom, which __applyCustomOnModeChange already
-  // covers above) — recompute text-on-color contrast either way.
-  if (window.__updateOnColorVars) window.__updateOnColorVars();
-  if (window.__onModeChanged) window.__onModeChanged();
-  if (typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges(); // js/settings-sync.js
+  const isLight = !_currentLightMode();
+  _pendingLightMode = isLight;
+  const apply = () => {
+    if (_pendingLightMode === isLight) _pendingLightMode = null;
+    if (window.themeFadeTick) themeFadeTick();
+    document.body.classList.toggle('light', isLight);
+    document.getElementById('themeTrack').classList.toggle('on', isLight);
+    localStorage.setItem(STORAGE_PREFIX + '-theme', isLight ? 'light' : 'dark');
+    if (window.__applyCustomOnModeChange) window.__applyCustomOnModeChange();
+    // Day/night also flips --accent/--correct/--partial/--wrong for preset
+    // themes (not just custom, which __applyCustomOnModeChange already
+    // covers above) — recompute text-on-color contrast either way.
+    if (window.__updateOnColorVars) window.__updateOnColorVars();
+    if (window.__onModeChanged) window.__onModeChanged();
+    if (typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges(); // js/settings-sync.js
+  };
+  if (window.runThemeChange) runThemeChange(apply); else apply();
 }
 
 // The 🌙 and ☀️ beside the switch: each picks its own mode (no-op if it's
 // already on) rather than flipping, so the icon you tap is what you get.
 function setThemeMode(light) {
-  if (document.body.classList.contains('light') !== light) toggleTheme();
+  if (_currentLightMode() !== light) toggleTheme();
 }
 
 // Restore saved preference
@@ -2580,7 +2596,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '13.1.2';
+const CURRENT_VERSION = '13.2.0';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.

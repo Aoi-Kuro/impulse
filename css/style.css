@@ -504,6 +504,15 @@
   @media (max-width: 480px) {
     .site-logo-wordmark { margin-left: 8px; font-size: 17px; }
   }
+  /* Split per letter by js/logo-wordmark.js so each can fly into the cube. */
+  .site-logo-letter { display: inline-block; position: relative; will-change: transform, opacity; }
+  /* Face-coloured copy faded in over the letter as it flies (opacity runs
+     on the compositor; animating `color` did not). */
+  .site-logo-letter-tint { position: absolute; left: 0; top: 0; opacity: 0; will-change: opacity; }
+  /* The cube draws over the wordmark, so letters flying into it pass
+     behind it rather than across its face. */
+  .site-logo-img { will-change: transform; position: relative; z-index: 2; }
+  .site-logo-wordmark { position: relative; z-index: 1; }
 
   /* ── Site logo tumble (js/logo-tumble.js) ──
      A 3D cube laid exactly over .site-logo-img, shown only while
@@ -770,11 +779,14 @@
   .tbqs-batt-fill.batt-charging{ background: var(--correct); }
 
 
+  /* ⚡ after the percentage while charging: the emoji (Modern icons) or
+     the drawn bolt (Classic, js/icons.js), the latter in the same green
+     as the charging fill. */
   .tbqs-batt-charging {
     display: none;
-    font-family: var(--mono);
-    font-size: 0.72rem;
-    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1;
+    color: var(--correct);
   }
 
   .tbqs-batt-charging.visible { display: inline; }
@@ -1222,11 +1234,26 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   /* Smooth theme switches: low-specificity so any element's own
-     transition (buttons, toggles) still wins via specificity. */
-  body, body * {
+     transition (buttons, toggles) still wins via specificity.
+     Not inside equations or SVG drawings: those are thousands of tiny
+     nodes (Solve-All alone has ~6,500) that take their colour from the
+     element around them anyway, so they still fade along with it.
+     Starting five transitions on every one of them made a single day/night
+     flip take 5-7 seconds there; :where() keeps this rule at the same
+     specificity as the old `body *`. */
+  body, body :where(*:not(mjx-container *, svg *)) {
     transition: background-color .35s ease, border-color .35s ease,
       color .35s ease, box-shadow .35s ease, border-radius .35s ease;
   }
+  /* While js/themes.js's runThemeChange() crossfades the whole page in
+     one go, no element runs its own fade (that is what made a switch
+     take seconds on Solve-All), and the crossfade lasts as long as the
+     per-element fade it replaces. */
+  html.theme-vt body,
+  html.theme-vt body * { transition: none !important; }
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation-duration: .35s; animation-timing-function: ease; }
+
   /* Brief crossfade while swapping, to mask the instant font-family
      jump (font-family itself can't be transitioned). */
   body.theme-swap { opacity: 0.55; transition: opacity .15s ease; }
@@ -2074,15 +2101,30 @@
   .btn-solve-all:hover { background: rgba(var(--accent-rgb),0.14); border-color: var(--accent); }
 
   /* ── Modal ── */
+  /* Fades in and out rather than popping: kept in the layout and hidden
+     with opacity + visibility (visibility flips only after the fade-out,
+     so the box stays visible while it fades and can't be clicked once it's
+     gone). Reduce motion makes the fade instant (css/settings.css). */
   .modal-backdrop {
-    display: none;
+    display: flex;
     position: fixed; inset: 0;
     background: color-mix(in srgb, var(--backdrop, var(--shadow)) calc(0.72 * 100%), transparent);
     z-index: 900;
     align-items: center;
     justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .2s ease, visibility 0s linear .2s;
   }
-  .modal-backdrop.open { display: flex; }
+  .modal-backdrop.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity .2s ease;
+  }
+  .modal-backdrop .modal-box { transform: scale(.97); transition: transform .2s ease; }
+  .modal-backdrop.open .modal-box { transform: none; }
 
   .modal-box {
     background: var(--surface);

@@ -32,11 +32,13 @@
 // so they aren't repeated here.
 const SETTINGS_SEARCH_KEYWORDS = {
   // ── Display · Icons
+  uiFont: 'font, fonts, typeface, typography, text, letters, writing, header font, heading font, mono, monospace, readability, dyslexia, legible, hard to read, atkinson, hyperlegible, golos, hanken, grotesk, mona sans, outfit, source sans, look, appearance',
   iconStyle: 'icons, icon style, emoji, emojis, symbols, pictograms, drawn icons, line icons, outline icons, flat icons, monochrome icons, colorful icons, colourful icons, glyphs, classic, modern, look, appearance',
 
   // ── Display · Main screen
   showAvatar: 'avatar, profile picture, profile pic, pfp, photo, identity, nickname, username, user icon, account, my name, signed in, circle, face, hide avatar, remove avatar, turn off avatar',
   showSplashes: 'splash, splashes, splash text, yellow text, minecraft, funny text, jokes, tagline, slogan, quote, rotating text, bouncing text, floating text, badge, title text, distracting text, hide splash, remove splash',
+  showCabinetBtn: 'personal cabinet, cabinet, profile, account, my account, my stats, stats button, statistics, progress, person icon, user icon, avatar button, top bar button, toolbar, header icons, hide cabinet, remove cabinet button',
   showManualBtn: 'manual, user manual, help, guide, instructions, tutorial, how to use, documentation, docs, faq, book, book icon, top bar button, toolbar, header icons, hide manual, remove manual button',
   showThemeBtn: 'theme, themes, theme picker, theme selector, color theme, colour theme, colors, colours, palette, paint, skin, appearance, customize colors, accent color, top bar button, toolbar, header icons, hide theme button',
   showDaylightBtn: 'dark mode, light mode, night mode, day mode, daylight, sun, moon, brightness, black background, white background, dark theme, light theme, toggle, switch, eye strain, top bar button, toolbar, header icons',
@@ -56,6 +58,9 @@ const SETTINGS_SEARCH_KEYWORDS = {
   // ── Display · Extra
   showForumFab: 'forum, forum button, chat, chat button, comments, discussion, discuss, questions, ask, ask a question, community, messages, floating button, bubble, corner button, fab, hide forum, remove forum button',
   showTopBarTip: 'running line, tips, tip, hints, ticker, marquee, scrolling text, top bar text, header text, rotating text, one liner, news line, did you know, top line, hide tips, remove tips',
+
+  // ── Display · Colour vision
+  colorCorrection: 'colour correction, color correction, colour blind, color blind, colourblind, colorblind, daltonism, daltonize, colour vision, color vision, deuteranopia, deuteranomaly, protanopia, protanomaly, tritanopia, tritanomaly, red green, green, red, blue, accessibility, a11y, filter, cvd',
 
   // ── Notifications
   hideUpdateReminder: 'update, updates, new version, update banner, reload banner, refresh banner, version available, upgrade, update reminder, update notification, popup, pop up, nag, annoying banner, outdated, old version',

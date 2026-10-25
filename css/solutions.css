@@ -228,6 +228,8 @@ html.solution-preview #solutionScreen.visible { animation: none; }
 .editor-quick-link {
   position: fixed;
   top: env(safe-area-inset-top, 0px);
+  /* Fallback only: js/editor-access.js sets `left` from the logo's actual
+     right edge, past the course-name wordmark. */
   left: calc(1.2rem + env(safe-area-inset-left, 0px) + 26px + .55rem);
   height: var(--top-bar-h);
   z-index: 1001;

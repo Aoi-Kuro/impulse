@@ -62,6 +62,7 @@
     sliders: '<path d="M5 21v-6.5M5 10.5V3M12 21v-8.5M12 8.5V3M19 21v-4.5M19 12.5V3M2.5 14.5h5M9.5 8.5h5M16.5 16.5h5"/>',
     pause: '<path d="M8.5 5v14M15.5 5v14"/>',
     close: '<path d="M6 6l12 12M18 6 6 18"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 20.5a8 8 0 0 1 16 0"/>',
     // Editor manual sections (editor/manual.json).
     ruler: '<path d="M3.5 20.5V3.5l17 17Z"/><path d="M7.5 16.5v-5l5 5ZM3.5 8h2M3.5 12h2"/>',
     image: '<rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m3.5 17.5 5-5 4 4 2.5-2.5 5.5 5.5"/>',
@@ -81,7 +82,7 @@
     '✅': 'check', '⬇': 'down', '⬆': 'up', '🚀': 'rocket', 'ℹ': 'info',
     '⚖': 'scale', '🔗': 'link', '🐛': 'bug', '⛶': 'fullscreen', '🎛': 'sliders',
     '⏸': 'pause', '📐': 'ruler', '🖼': 'image', '✍': 'pen', '💾': 'save',
-    '🧰': 'toolbox', '❌': 'close',
+    '🧰': 'toolbox', '❌': 'close', '👤': 'user',
   };
 
   const EMOJI_RE = new RegExp('(' + Object.keys(EMOJI_ICON).join('|') + ')[\\uFE0E\\uFE0F]?', 'gu');
@@ -93,7 +94,7 @@
   // view, so it still reads aloud. Top-bar icons: a button's (or the
   // Editorial link's) default colour is the browser's, and emoji there draw
   // larger than their font, so match both; the clickable ones also turn the
-  // accent colour on hover, next to their grow (css/style.css).
+  // second accent colour on hover, next to their grow (css/style.css).
   const ICON_CSS = `
 html.icons-classic .ic,
 .ic.ic-always {
@@ -113,7 +114,7 @@ html.icons-classic .editor-quick-link,
 html.icons-classic .theme-icon { color: var(--text); transition: opacity 0.15s, transform 0.15s, color 0.15s; }
 html.icons-classic .palette-icon-btn:hover,
 html.icons-classic .editor-quick-link:hover,
-html.icons-classic .theme-icon:hover { color: var(--accent); }
+html.icons-classic .theme-icon:hover { color: var(--accent2); }
 html.icons-classic .palette-icon-btn .ic,
 html.icons-classic .theme-icon .ic { width: 1.35em; height: 1.35em; vertical-align: -0.3em; }
 html.icons-classic .editor-quick-link .ic { width: 1.15em; height: 1.15em; vertical-align: 0; }

@@ -58,6 +58,17 @@
 
   function playLogoTumble() {
     if (reducedMotion() || tumbleOff()) return;
+    // Only passing through the menu (the personal cabinet button heading
+    // to Stats, js/cabinet-link.js): no welcome tumble for that.
+    if (window.__logoTumbleSuppressedUntil > Date.now()) return;
+    // A tumble put off below (waiting for the course name to come back) may
+    // come due after the menu was already left again — e.g. straight into a
+    // new quiz, where the cube is about to turn for the attempt instead.
+    if (!landingShown()) return;
+    // Leaving a Random N attempt: the cube first turns back and lets the
+    // course name out (js/logo-wordmark.js), then tumbles.
+    const wait = typeof logoWordmarkBusyMs === 'function' ? logoWordmarkBusyMs() : 0;
+    if (wait > 0) { setTimeout(playLogoTumble, wait + 60); return; }
     // Restart from the first frame if it's already mid-tumble.
     link.classList.remove('logo-tumbling');
     void link.offsetWidth;

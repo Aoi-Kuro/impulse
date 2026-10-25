@@ -47,9 +47,22 @@
     a.title = 'Editorial';
     a.setAttribute('aria-label', 'Open Editorial');
     a.textContent = '📘';
-    logo.insertAdjacentElement('afterend', a);
+    // After the personal cabinet button (js/cabinet-link.js) when it exists.
+    (document.getElementById('cabinetLink') || logo).insertAdjacentElement('afterend', a);
+    placeQuickLink();
+  }
+  // Just right of the logo link's real edge (cube + course-name wordmark),
+  // which a fixed CSS offset can't know: the name differs per course and
+  // its Kanit font may load after first paint. With the cabinet button
+  // there, its layoutLogoLinks() places both.
+  function placeQuickLink() {
+    if (typeof layoutLogoLinks === 'function') { layoutLogoLinks(); return; }
+    const a = document.getElementById('editorQuickLink');
+    if (a) a.style.left = (logo.getBoundingClientRect().right + 10) + 'px';
   }
   syncQuickLink();
+  window.addEventListener('resize', placeQuickLink);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(placeQuickLink);
   // Signing in or out in the editor tab updates this page too.
   window.addEventListener('storage', (e) => { if (e.key === KEY_STORAGE || e.key === null) syncQuickLink(); });
 

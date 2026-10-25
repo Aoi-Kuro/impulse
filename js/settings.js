@@ -43,10 +43,16 @@ const SETTINGS_DEFAULTS = {
     showDaylightBtn: true,
     followDeviceTheme: false,
     showForumFab:    true,
+    // The 👤 personal cabinet button beside the logo (js/cabinet-link.js).
+    showCabinetBtn:  true,
     hideFieldLinesByDefault: false,
     showTopBarTip:   true,
     // The logo cube's tumble when the main menu appears (js/logo-tumble.js).
     showLogoTumble:  true,
+    // 'off' | 'protan' | 'deutan' | 'tritan' — whole-page colour correction
+    // filter (index.html's hidden <svg>, css/settings.css). See
+    // applyColorCorrection() below.
+    colorCorrection: 'off',
     // Percent applied to every figure (problem images/SVGs and solution
     // figures) through the --user-fig-scale CSS variable. See
     // applyFigureScale() below.
@@ -71,6 +77,11 @@ const SETTINGS_DEFAULTS = {
     // 'classic' (single-colour drawn icons) | 'modern' (the emoji) —
     // js/icons.js, which also applies it before first paint.
     iconStyle:       'classic',
+    // One font for all UI text over the colour theme's own (Outfit unless
+    // changed), or 'theme' to keep the theme's — the old default, listed as
+    // "<its name> (previous)". The list and applyUiFont() live in
+    // index.html's <head>, which applies it before first paint.
+    uiFont:          'outfit',
   },
   notifications: {
     hideUpdateReminder: false,
@@ -169,6 +180,12 @@ function migrateSettings(raw) {
     merged.display.reduceMotion = oldStudy.reduceMotion;
   }
   delete merged.study.reduceMotion;
+  // Outfit became the default font; the old default ('default', the colour
+  // theme's own font) is now the 'theme' option. Defaults are saved along
+  // with real choices, so an old 'default' can't be told apart from a
+  // deliberate pick: it moves to the new default, and "(previous)" in the
+  // list brings the theme font back.
+  if (merged.display.uiFont === 'default' || !merged.display.uiFont) merged.display.uiFont = 'outfit';
   return merged;
 }
 
@@ -449,8 +466,24 @@ function closeSettingsScreen(forceLanding) {
 // changelog.js's field-lines default, etc.), so there's no single
 // in-place code path that could reliably re-apply every one of them
 // consistently. A reload re-runs that whole boot sequence for free.
+//
+// The Sync & Storage "offline" tab survives the reset: its "Sync settings
+// on this device" switch is the person's choice about syncing itself (a
+// reset used to turn sync back on, then push the defaults to every other
+// device), and offline.until is this device's offline-download state, not
+// a preference. With sync on, the reset still reaches the other devices:
+// on the reload every reset value reads as a change made now
+// (settingsSyncNoteLocalChanges in js/settings-sync.js), which beats the
+// older copies on the server.
 function doResetAllSettings() {
-  localStorage.removeItem(SETTINGS_STORAGE_KEY);
+  const keep = loadSettings().offline;
+  settingsCache = null;
+  try {
+    if (keep) localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ schemaVersion: SETTINGS_SCHEMA_VERSION, offline: keep }));
+    else localStorage.removeItem(SETTINGS_STORAGE_KEY);
+  } catch (e) {
+    localStorage.removeItem(SETTINGS_STORAGE_KEY);
+  }
   location.reload(true);
 }
 
@@ -698,6 +731,12 @@ const DISPLAY_TOGGLES = [
     desc: 'Shows the Minecraft-style splash text badge on the main page.',
   },
   {
+    key: 'showCabinetBtn',
+    section: 'main',
+    title: 'Show personal cabinet button',
+    desc: 'Shows the 👤 button beside the logo that opens your stats.',
+  },
+  {
     key: 'showManualBtn',
     section: 'main',
     title: 'Show manual button',
@@ -755,10 +794,12 @@ const DISPLAY_TOGGLES = [
 ];
 
 const DISPLAY_SECTIONS = [
+  { id: 'font',  title: 'Font' },
   { id: 'icons', title: 'Icons' },
   { id: 'main',  title: 'Main screen' },
   { id: 'anim',  title: 'Animations and figures' },
   { id: 'extra', title: 'Extra' },
+  { id: 'vision', title: 'Colour vision' },
 ];
 
 // Three headed sections like the Study tab's. Toggles that have a `sub`
@@ -822,14 +863,49 @@ function renderSettingsDisplayTab() {
   const html = [];
   for (const sec of DISPLAY_SECTIONS) {
     html.push(`<div class="settings-section-header">${sec.title}</div>`);
+    if (sec.id === 'font') html.push(renderUiFontRow());
     if (sec.id === 'icons') html.push(renderIconStyleRow());
     if (sec.id === 'anim') {
       html.push(renderReduceMotionGroup());
       html.push(renderFigureSettingsRows());
     }
+    if (sec.id === 'vision') html.push(renderColorCorrectionRow());
     html.push(renderToggles(sec.id));
   }
   return html.join('');
+}
+
+// Colour correction: shifts every colour on the site so colours a given
+// colour-vision deficiency merges become distinguishable again.
+const COLOR_CORRECTION_OPTIONS = [
+  { id: 'off',    name: 'Off' },
+  { id: 'deutan', name: 'Deuteranopia (green)' },
+  { id: 'protan', name: 'Protanopia (red)' },
+  { id: 'tritan', name: 'Tritanopia (blue)' },
+];
+function colorCorrectionValue() {
+  const v = getSetting('display', 'colorCorrection');
+  return COLOR_CORRECTION_OPTIONS.some(o => o.id === v) ? v : 'off';
+}
+function applyColorCorrection() {
+  const v = colorCorrectionValue();
+  if (v === 'off') document.documentElement.removeAttribute('data-color-correction');
+  else document.documentElement.setAttribute('data-color-correction', v);
+}
+function renderColorCorrectionRow() {
+  const current = colorCorrectionValue();
+  const options = COLOR_CORRECTION_OPTIONS.map(o =>
+    `<option value="${o.id}"${o.id === current ? ' selected' : ''}>${o.name}</option>`).join('');
+  return `
+    <div class="settings-row" data-row-key="colorCorrection">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Colour correction</div>
+        <div class="settings-row-desc">Adjusts all colours on the site, logo included, to make them easier to tell apart.</div>
+      </div>
+      <select class="settings-select" id="settingsColorCorrection" aria-label="Colour correction"
+              onchange="setSetting('display', 'colorCorrection', this.value); applyColorCorrection();">${options}</select>
+    </div>
+  `;
 }
 
 // Icons: Modern (emoji) or Classic (drawn), js/icons.js. Each button shows
@@ -851,6 +927,149 @@ function renderIconStyleRow() {
         btn('classic', 'Classic', '<span class="ic ic-always" data-ic="palette">🎨</span> <span class="ic ic-always" data-ic="warning">⚠️</span>')}</div>
     </div>
   `;
+}
+
+// Font: one font for all text, headers included, over the theme's own.
+// Options come from window.UI_FONT_OPTIONS (index.html's <head>). A custom
+// dropdown rather than a <select>, so each name is drawn in its own font
+// (phones' native pickers ignore fonts on <option>).
+function uiFontFamily(f) {
+  return f.family ? `'${f.family}', ${uiThemeSansFont()}` : uiThemeSansFont();
+}
+// The colour theme's own --sans, read with the override briefly lifted, so
+// the "(previous)" option shows the font it would actually bring back.
+// Lifting the override restyles the whole page (seconds on Solve-All), so
+// one reading is reused for the rest of the current task: rendering the
+// list asks once per option.
+let _uiThemeSansCache = null;
+function uiThemeSansFont() {
+  if (_uiThemeSansCache !== null) return _uiThemeSansCache;
+  _uiThemeSansCache = readUiThemeSansFont();
+  setTimeout(() => { _uiThemeSansCache = null; }, 0);
+  return _uiThemeSansCache;
+}
+function readUiThemeSansFont() {
+  const root = document.documentElement;
+  const id = root.getAttribute('data-ui-font');
+  if (id) root.removeAttribute('data-ui-font');
+  const sans = getComputedStyle(document.body).getPropertyValue('--sans').trim() || 'sans-serif';
+  if (id) root.setAttribute('data-ui-font', id);
+  return sans;
+}
+
+// The list as shown: the theme font named after the font it really is in
+// the current colour theme ("IBM Plex Sans (previous)"), everything sorted
+// alphabetically by that shown name.
+function uiFontOptions() {
+  const fonts = window.UI_FONT_OPTIONS || [];
+  const themeName = (uiThemeSansFont().split(',')[0] || '').replace(/['"]/g, '').trim();
+  return fonts
+    .map(f => f.id === 'theme' && themeName ? { ...f, name: `${themeName} (previous)` } : f)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+function uiFontById(id) {
+  const fonts = uiFontOptions();
+  return fonts.find(f => f.id === id) || fonts.find(f => f.id === 'outfit') || fonts[0];
+}
+
+function renderUiFontRow() {
+  const fonts = uiFontOptions();
+  if (!fonts.length) return '';
+  const current = uiFontById(getSetting('display', 'uiFont'));
+  const esc = s => s.replace(/"/g, '&quot;');
+  const options = fonts.map(f => `
+          <li role="option" class="settings-font-option" tabindex="-1" data-font="${f.id}"
+              aria-selected="${f.id === current.id}" style="font-family: ${esc(uiFontFamily(f))}"
+              onclick="pickUiFont('${f.id}')">${f.name}</li>`).join('');
+  return `
+    <div class="settings-row" data-row-key="uiFont">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Font</div>
+        <div class="settings-row-desc">Used for all text, headers and buttons included, whatever the colour theme. Problems and equations keep their own font.</div>
+      </div>
+      <div class="settings-font-picker" onkeydown="uiFontMenuKey(event, this)">
+        <button type="button" class="settings-select settings-font-btn" aria-haspopup="listbox" aria-expanded="false"
+                aria-label="Font: ${current.name}" style="font-family: ${esc(uiFontFamily(current))}"
+                onclick="toggleUiFontMenu(this.parentNode)">${current.name}</button>
+        <ul class="settings-font-menu" role="listbox" aria-label="Font" hidden>${options}
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
+function toggleUiFontMenu(picker, open) {
+  const menu = picker.querySelector('.settings-font-menu');
+  const btn = picker.querySelector('.settings-font-btn');
+  if (open === undefined) open = menu.hidden;
+  if (open && typeof loadUiFontPreviews === 'function') loadUiFontPreviews();
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) {
+    const sel = menu.querySelector('[aria-selected="true"]') || menu.firstElementChild;
+    if (sel) sel.focus();
+  }
+}
+
+// ↑ ↓ Home End move, Enter/Space picks, Esc and Tab close.
+function uiFontMenuKey(e, picker) {
+  const menu = picker.querySelector('.settings-font-menu');
+  const btn = picker.querySelector('.settings-font-btn');
+  if (menu.hidden) {
+    if (e.target === btn && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      toggleUiFontMenu(picker, true);
+    }
+    return;
+  }
+  const items = Array.from(menu.children);
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const next = i < 0 ? 0 : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items[next].focus();
+  } else if (e.key === 'Home' || e.key === 'End') {
+    e.preventDefault();
+    items[e.key === 'Home' ? 0 : items.length - 1].focus();
+  } else if ((e.key === 'Enter' || e.key === ' ') && i >= 0) {
+    e.preventDefault();
+    pickUiFont(items[i].dataset.font);
+    btn.focus();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleUiFontMenu(picker, false);
+    btn.focus();
+  } else if (e.key === 'Tab') {
+    toggleUiFontMenu(picker, false);
+  }
+}
+
+// Clicking anywhere outside an open font menu closes it.
+document.addEventListener('click', (e) => {
+  document.querySelectorAll('.settings-font-picker').forEach(picker => {
+    if (!picker.contains(e.target)) {
+      const menu = picker.querySelector('.settings-font-menu');
+      if (!menu.hidden) toggleUiFontMenu(picker, false);
+    }
+  });
+});
+
+function pickUiFont(value) {
+  setSetting('display', 'uiFont', value);
+  applyDisplaySettings();
+  // The Search tab can show this row too; keep every copy in step.
+  const f = uiFontById(value);
+  document.querySelectorAll('.settings-font-picker').forEach(picker => {
+    const btn = picker.querySelector('.settings-font-btn');
+    btn.textContent = f.name;
+    btn.style.fontFamily = uiFontFamily(f);
+    btn.setAttribute('aria-label', 'Font: ' + f.name);
+    picker.querySelectorAll('.settings-font-option').forEach(o => {
+      o.setAttribute('aria-selected', o.dataset.font === value ? 'true' : 'false');
+    });
+    toggleUiFontMenu(picker, false);
+  });
 }
 
 function setIconStyleSetting(value) {
@@ -1464,6 +1683,7 @@ const DISPLAY_TOGGLE_HIDE_CLASSES = {
   showDaylightBtn: 'settings-hide-daylight-btn',
   showForumFab:    'settings-hide-forum-fab',
   showTopBarTip:   'settings-hide-top-bar-tip',
+  showCabinetBtn:  'settings-hide-cabinet-btn',
 };
 
 // Applies every current Display setting to <html>'s classList (not
@@ -1487,7 +1707,11 @@ function applyDisplaySettings() {
   document.documentElement.classList.toggle('settings-hide-fig-anim-controls', getSetting('display', 'hideFigAnimControls') === true);
   applyFigureScale();
   applyReduceMotion();
+  applyColorCorrection();
+  // The cabinet button showing or not moves the Editorial link beside it.
+  if (typeof layoutLogoLinks === 'function') layoutLogoLinks();
   if (typeof setIconStyle === 'function') setIconStyle(getSetting('display', 'iconStyle'));
+  if (typeof applyUiFont === 'function') applyUiFont(getSetting('display', 'uiFont'));
 }
 
 // ── Notifications ───────────────────────────────────────────────────────

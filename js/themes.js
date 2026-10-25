@@ -86,8 +86,36 @@ function applyCustomForCurrentMode(){
 }
 window.__applyCustomOnModeChange = function(){ if (getColorTheme()==='custom') applyCustomForCurrentMode(); };
 
+// Day/night and colour-theme switches as one crossfade of the whole page
+// (View Transitions: the browser snapshots the page before and after and
+// fades between the two pictures) instead of every element running its
+// own colour transition. On Solve-All's 150 problems the per-element way
+// meant starting thousands of transitions at once and took seconds.
+// html.theme-vt switches those per-element transitions off for the swap
+// (css/style.css). Browsers without View Transitions, and reduced motion,
+// just run the change: the old per-element fade, or instant.
+let _themeVtSeq = 0;
+function runThemeChange(change){
+  const root = document.documentElement;
+  const reduce = root.classList.contains('settings-reduce-motion') ||
+    (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if (!document.startViewTransition || reduce || document.visibilityState !== 'visible') { change(); return; }
+  const seq = ++_themeVtSeq;
+  root.classList.add('theme-vt');
+  let vt;
+  try { vt = document.startViewTransition(change); }
+  catch (e) { root.classList.remove('theme-vt'); change(); return; }
+  // A second switch mid-fade skips this one (its change still runs; only
+  // `ready` rejects, which is expected); only the latest clears the class.
+  vt.ready.catch(() => {});
+  vt.finished.finally(() => { if (seq === _themeVtSeq) root.classList.remove('theme-vt'); });
+}
+window.runThemeChange = runThemeChange;
+
 let _fadeTimer = null;
 function themeFadeTick(){
+  // The page-wide crossfade already masks the font-family jump.
+  if (document.documentElement.classList.contains('theme-vt')) return;
   document.body.classList.add('theme-swap');
   clearTimeout(_fadeTimer);
   _fadeTimer = setTimeout(()=>document.body.classList.remove('theme-swap'), 180);
@@ -115,11 +143,20 @@ function updateOnColorVars(){
   // Throwing here instead used to stop applyColorTheme() half-way there:
   // its swatches and day/night button never updated.
   if (typeof cssVarRgb !== 'function') return;
+  // All reads first, then only the writes that change something. Each
+  // write on <body> invalidates every element's style (the variables
+  // inherit), so interleaving read/write/read forced a full restyle per
+  // colour: ~3s on Solve-All's 150 problems for one day/night flip.
+  const next = {
+    '--on-accent':  _onColorFor('--accent'),
+    '--on-correct': _onColorFor('--correct'),
+    '--on-partial': _onColorFor('--partial'),
+    '--on-wrong':   _onColorFor('--wrong'),
+  };
   const s = document.body.style;
-  s.setProperty('--on-accent',  _onColorFor('--accent'));
-  s.setProperty('--on-correct', _onColorFor('--correct'));
-  s.setProperty('--on-partial', _onColorFor('--partial'));
-  s.setProperty('--on-wrong',   _onColorFor('--wrong'));
+  for (const k in next) {
+    if (s.getPropertyValue(k) !== next[k]) s.setProperty(k, next[k]);
+  }
 }
 window.__updateOnColorVars = updateOnColorVars;
 
@@ -164,7 +201,10 @@ function renderThemeGrid(){
       <span class="ts-name">${t.name}</span>
     </button>`).join('') + customSwatch;
 }
-function selectTheme(id){ applyColorTheme(id, true); renderThemeGrid(); closeThemePanel(); }
+function selectTheme(id){
+  closeThemePanel();
+  runThemeChange(() => { applyColorTheme(id, true); renderThemeGrid(); });
+}
 
 function toggleThemePanel(e){
   if (e) e.stopPropagation();
@@ -197,8 +237,15 @@ function populateCustomInputs(){
   document.getElementById('ctm-accent').value = d.accent;
   document.getElementById('ctm-accent2').value = d.accent2;
   document.getElementById('ctm-radius').value = _ctmDraft.radius;
-  document.getElementById('ctm-font').value = _ctmDraft.font;
+  syncCtmFontSelect();
   updateCtmPreview();
+}
+// Each option (and the closed select itself) drawn in the font it picks.
+function syncCtmFontSelect(){
+  const sel = document.getElementById('ctm-font');
+  [...sel.options].forEach(o => { o.style.fontFamily = fontOptionById(o.value).sans; });
+  sel.value = _ctmDraft.font;
+  sel.style.fontFamily = fontOptionById(_ctmDraft.font).sans;
 }
 function openCustomThemeModal(){
   closeThemePanel();
@@ -228,6 +275,7 @@ function updateCustomRadius(value){
 }
 function updateCustomFont(value){
   _ctmDraft.font = value;
+  syncCtmFontSelect();
   updateCtmPreview();
 }
 function updateCtmPreview(){

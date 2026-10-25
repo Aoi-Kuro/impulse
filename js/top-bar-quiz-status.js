@@ -115,10 +115,13 @@
     const logo  = document.getElementById('siteLogoLink');
     const icons = document.querySelector('.theme-toggle-wrap');
     if (!logo || !icons) return null;
-    // The editor quick link (js/editor-access.js) sits right of the logo when shown.
-    const quick = document.getElementById('editorQuickLink');
+    // The 👤 personal cabinet button (js/cabinet-link.js) and the editor
+    // quick link (js/editor-access.js) sit right of the logo when shown.
     const logoRight = Math.max(logo.getBoundingClientRect().right,
-                               quick ? quick.getBoundingClientRect().right : 0);
+      ...['cabinetLink', 'editorQuickLink'].map(id => {
+        const el = document.getElementById(id);
+        return el && getComputedStyle(el).display !== 'none' ? el.getBoundingClientRect().right : 0;
+      }));
     const iconsLeft = icons.getBoundingClientRect().left;
     if (iconsLeft - logoRight < MIN_GAP_PX) return null;
     return (logoRight + iconsLeft) / 2;

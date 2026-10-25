@@ -37,6 +37,7 @@ const ANSWER_MESSAGES = {
   'unit-syntax': 'Not a valid unit. Multiply with a space (N m), divide with one / (m/s^2).',
   'unit-unknown': 'Unknown unit.',
   'unit-missing': 'Add a unit.',
+  'unit-no-space': 'Put a space between the number and the unit: 9.81 m/s^2, not 9.81m/s^2.',
 };
 
 const NO_UNIT = new Set(['', 'rad', 'none', '(none)']);
@@ -71,6 +72,25 @@ function splitAnswer(text) {
   return split;
 }
 
+// The unit typed right against the number ("125m/s^2"): a format mistake,
+// warned about in the preview and scored like an invalid unit (0 pt).
+// Degrees and percent are written that way on purpose (30°, 50%).
+function unitLacksSpace(text, unit) {
+  const s = (text || '').trim();
+  if (!unit || !s.endsWith(unit) || s.length === unit.length) return false;
+  if (/^[°%]/.test(unit)) return false;
+  return !/\s/.test(s[s.length - unit.length - 1]);
+}
+
+// splitAnswer() for saving (attempts, Entire Set progress). A unit typed
+// without a space is kept whole in value, so joinAnswer() gives back what
+// was typed rather than a corrected "125 m/s^2" that would read as right
+// in the review and the regrade.
+function answerPartsToStore(text) {
+  const parts = splitAnswer(text);
+  return unitLacksSpace(text, parts.unit) ? { value: (text || '').trim(), unit: '' } : parts;
+}
+
 function joinAnswer(value, unit) {
   return [value, unit].map(x => (x || '').trim()).filter(Boolean).join(' ');
 }
@@ -84,12 +104,18 @@ function answerUnitFactor(student, accepted) {
 /** Grades the text of an answer field against problem p.
     → { pts: 1 | 0.9 | 0, valueOk, unitStatus, value, unit }, where
     unitStatus is 'ok', 'wrong', 'missing' (none typed, one expected) or
-    'invalid' (not a valid unit: no points). */
+    'invalid' (not a valid unit, or no space before it — then noSpace is
+    true: no points). */
 function gradeAnswer(text, p) {
   const { value, unit } = splitAnswer(text);
   const out = { pts: 0, valueOk: false, unitStatus: 'ok', value, unit };
   if (unit && PTAnswer.tryParseStudentUnit(unit) === null) {
     out.unitStatus = 'invalid';
+    return out;
+  }
+  if (unitLacksSpace(text, unit)) {
+    out.unitStatus = 'invalid';
+    out.noSpace = true;
     return out;
   }
   const student = unitOrNone(unit);
@@ -123,6 +149,9 @@ function answerFeedbackHtml(res, p, withExpected) {
   if (res.pts === 0.9) {
     const hint = res.unitStatus === 'missing' ? `the unit is missing: ${unit}` : `unit should be ${unit}`;
     return `✓ Value correct, but ${hint} <span class="pts-badge pts-partial">+0.9 pt</span>`;
+  }
+  if (res.noSpace) {
+    return `✗ Put a space between the number and the unit (9.81 m/s^2).${expected} <span class="pts-badge pts-zero">+0 pt</span>`;
   }
   if (res.unitStatus === 'invalid') {
     return `✗ Unit format invalid: a space multiplies (N m), one / divides (m/s^2).${expected} <span class="pts-badge pts-zero">+0 pt</span>`;
@@ -198,6 +227,7 @@ function answerPreview(text) {
   const s = (text || '').trim();
   if (!s) return null;
   const { value, unit } = splitAnswer(s);
+  if (unitLacksSpace(s, unit) && PTAnswer.tryParseStudentUnit(unit) !== null) return { ok: false, error: 'unit-no-space' };
   if (!unit && value === s && PTAnswer.validateAnswer(s, ANSWER_TYPE).ok) {
     return /^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(s) ? null : PTAnswer.validateField(s, ANSWER_TYPE, false);
   }
