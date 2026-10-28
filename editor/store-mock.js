@@ -39,7 +39,10 @@ const SolutionStore = (function () {
   async function index() {
     const all = read();
     const out = {};
-    Object.keys(all).forEach((k) => { out[k] = { status: all[k].status, updated_at: all[k].updated_at }; });
+    Object.keys(all).forEach((k) => {
+      const s = all[k].share;
+      out[k] = { status: all[k].status, updated_at: all[k].updated_at, share: s ? { for: s.for, design: s.design } : null };
+    });
     return wait(out);
   }
 
@@ -70,7 +73,14 @@ const SolutionStore = (function () {
       author_link: null,
       saved_by: null,
       updated_at: new Date().toISOString(),
+      share: cur ? cur.share || null : null,   // a draft save never touches the card
     };
+    // A publish stores its card with it, as on the server (minus the
+    // picture, which would fill localStorage).
+    if (payload.status === 'published' && payload.share) {
+      const s = payload.share;
+      row.share = { image: null, title: s.title, description: s.description, for: row.updated_at, design: s.design };
+    }
     all[problemKey] = row;
     write(all);
     return wait(row);
@@ -86,9 +96,26 @@ const SolutionStore = (function () {
       err.conflict = true; err.current = cur;
       return wait(Promise.reject(err));
     }
+    const was = cur.updated_at;
     Object.assign(cur, { author: author || null, author_link: null, saved_by: null, updated_at: new Date().toISOString() });
+    if (cur.share && cur.share.for === was) cur.share.for = cur.updated_at;   // the card doesn't show the credit
     write(all);
     return wait(cur);
+  }
+
+  /** As the server's share-card, minus the picture (it would fill
+      localStorage): only the link text and what it was drawn from. */
+  async function shareCard(problemKey, card) {
+    const all = read();
+    const cur = all[problemKey];
+    if (!cur || cur.status !== 'published' || cur.updated_at !== card.for) {
+      const err = new Error('the solution was saved again or unpublished meanwhile');
+      err.stale = true;
+      return wait(Promise.reject(err));
+    }
+    cur.share = { image: null, title: card.title, description: card.description, for: card.for, design: card.design };
+    write(all);
+    return wait(cur.share);
   }
 
   /** Remove the row entirely (the problem goes back to "nothing stored"). */
@@ -106,5 +133,5 @@ const SolutionStore = (function () {
 
   async function createEditor() { throw new Error('Not available without the database.'); }
 
-  return { whoami, editors, index, get, save, setCredit, remove, exportAll, createEditor, isMock: true };
+  return { whoami, editors, index, get, save, setCredit, shareCard, remove, exportAll, createEditor, isMock: true };
 })();

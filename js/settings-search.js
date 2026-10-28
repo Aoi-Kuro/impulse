@@ -79,13 +79,14 @@ const SETTINGS_SEARCH_KEYWORDS = {
   autoStopAt50Min: '50 minutes, fifty minutes, 50 min, time limit, exam time, auto submit, automatic submit, auto stop, timeout, deadline, end quiz, finish automatically, exam simulation, real exam, timed',
   fullscreenRandomN: 'full screen, fullscreen, immersive, focus, exam mode, hide browser, distraction free, maximize, maximise, kiosk, random n, random 6, big screen',
   hideFullscreenReminder: 'fullscreen hint, full screen reminder, full screen message, hint, tip, popup, toast, 10 seconds, esc, escape, how to exit full screen, banner, hide reminder',
-  selectLatestQuizByDefault: 'latest quiz, newest quiz, last quiz, recent quiz, current quiz, default quiz, quiz 1, first quiz, start page, selected quiz, preselect, automatically select, newest set, latest set',
+  selectLastUsedQuiz: 'last used quiz, last quiz, previous quiz, recent quiz, remember quiz, remember set, continue, resume, where i left off, latest quiz, current quiz, default quiz, quiz 1, first quiz, start page, selected quiz, preselect, automatically select, last set, newest set, latest set',
   cumulativeDefaultOn: 'cumulative, cumulative quiz, all quizzes, previous quizzes, review all, mixed, combined, single set, default mode, everything so far, final exam, midterm, comprehensive',
   hideTopicWhileActive: 'topic, topics, topic label, hide topic, chapter, category, subject, hint, spoiler, spoilers, give away, blind, exam conditions, label, tag, hide hint',
   lockSolveAllOrder: 'order, lock order, order picker, skip picker, skip question, problems order, question order, solve all, entire set, sequence, fixed order, remember order, dont ask, always same order, picker',
   solveAllOrder: 'ordered, shuffled, shuffle, random order, randomize, randomise, randomize problems, shuffle problems, shuffle questions, problems, questions, in order, sequential, numbered order, mix, mixed, scramble, entire set, solve all, order',
   showSolveAllNavRail: 'progress rail, line progress, progress line, progress bar, sidebar, side bar, scroll indicator, scrollbar, navigation, ticks, you are here, minimap, entire set, solve all, wide screen, desktop',
   showStickyScore: 'progress window, score, solved count, counter, badge, floating score, progress badge, how many solved, tally, corner, entire set, solve all, hide score, remove score',
+  openSolutionList: 'solution list, solutions list, list of solutions, all solutions, grid, problem grid, open by default, always open, show list, available solutions, which problems have solutions, worked solutions, next solution, previous solution, browse solutions, jump to problem',
   revealWrongInstantly: 'wrong answer, correct answer, show answer, reveal answer, see correct answer, instant feedback, immediate feedback, right away, mistakes, solution, answer key, skip step, check answer, feedback',
 
   // ── Sync & Storage

@@ -69,6 +69,16 @@ function splitSolutionBlocks(text) {
   return blocks;
 }
 
+/** A figure caption as shown. Whether the editor typed a final period or
+    not, every step but the last is shown without one and the last always
+    with one; a caption ending in ? or ! keeps that instead. The saved
+    caption is never changed. */
+function figureCaptionText(text, isLast) {
+  const t = String(text || '').replace(/[\s.]+$/, '');
+  if (!t) return '';
+  return isLast && !/[?!]$/.test(t) ? t + '.' : t;
+}
+
 function renderSolutionInto(el, text) {
   if (window.MathJax && MathJax.typesetClear) { try { MathJax.typesetClear([el]); } catch (e) {} }
   el.textContent = '';

@@ -361,6 +361,18 @@ Rules:
 - If the problem has a figure, its actual image is attached alongside this
   prompt (not just the text) — look at it directly rather than guessing what
   it shows from the surrounding text.
+- If a published worked solution is provided, it was written and checked by
+  course staff: use it as your reference for the method, notation and final
+  answer, and don't contradict it. It is supporting information, not a
+  script — always answer the actual question yourself, in your own words,
+  and don't paste the solution wholesale (especially when the student only
+  wants a nudge). Students can open that solution on the site, so you may
+  add one short, low-key line saying a detailed published solution is
+  available for this problem if they want the full walkthrough — mention it
+  at most once in a thread, never as a replacement for your answer and never
+  as "just go read the solution". If you're told the problem was edited
+  after the solution was written, trust the problem text wherever the two
+  differ.
 - If the student seems to be asking for a nudge or a check on their
   reasoning rather than the final answer, don't just hand them the number —
   walk through the reasoning and let them take the last step. Use judgment.
@@ -519,14 +531,26 @@ function unescapeJsString(raw: string) {
   return raw.replace(/\\(.)/g, (_, ch) => (ch === "n" ? "\n" : ch === "t" ? "\t" : ch));
 }
 
+// Hash of a problem as the solutions editor stores it in
+// problem_solutions.problem_hash. Must match problemHashOf() in
+// editor/editor.js (and solutionProblemHash() in js/solutions.js) exactly,
+// or every published solution would look out of date.
+async function problemHashOf(text: string, answer: unknown, units: unknown): Promise<string> {
+  const src = `${text}\u0000${JSON.stringify(answer)}\u0000${JSON.stringify(units ?? [])}`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(src));
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+}
+
 // Best-effort fetch of a tagged problem's own statement text (and, if the
 // statement embeds a figure, that figure's image URL) from the live site's
 // quiz data file. Returns null (never throws) on any failure — a
 // missing/unparseable problem just means the reply goes out without that
-// extra context, not that the whole request fails.
+// extra context, not that the whole request fails. `hash` is null when the
+// answer/units fields couldn't be read, which just means a published
+// solution can't be checked for staleness (see fetchPublishedSolution).
 async function fetchProblemContext(
   problemKey: string | null
-): Promise<{ text: string; imageUrl: string | null } | null> {
+): Promise<{ text: string; imageUrl: string | null; hash: string | null } | null> {
   const parsed = parseProblemKey(problemKey);
   if (!parsed) return null;
 
@@ -539,10 +563,11 @@ async function fetchProblemContext(
     }
     const src = await res.text();
 
-    // Matches the `{ id:"P18", ... }` object literal for this problem. No
-    // nested `{}` occur inside these objects, so a non-greedy match up to
-    // the next `},` is safe.
-    const blockRe = new RegExp(`\\{\\s*id:\\s*"${parsed.problemId}"[\\s\\S]*?\\}\\s*,`, "m");
+    // Matches the `{ id:"P18", ... }` object literal for this problem. It
+    // ends where the next problem (or the end of the array) begins, not at
+    // the first `},` — problem text is LaTeX and can contain `},` itself
+    // (e.g. quiz 3 P62i's `\right)\times 10^{-6},`).
+    const blockRe = new RegExp(`\\{\\s*id:\\s*"${parsed.problemId}"[\\s\\S]*?\\}\\s*,?\\s*(?=\\{\\s*id:|\\];)`, "m");
     const block = blockRe.exec(src)?.[0];
     if (!block) return null;
 
@@ -559,9 +584,62 @@ async function fetchProblemContext(
     const imgSrc = /<img[^>]+src="([^"]+)"/.exec(text)?.[1];
     const imageUrl = imgSrc ? `${SITE_ORIGIN}/${imgSrc}` : null;
 
-    return { text, imageUrl };
+    // answer is always a plain number literal and units a JSON-compatible
+    // string array in the quiz files; Number() + JSON.parse turn them into
+    // the same values the browser hashes (e.g. 1.84199e+06 -> 1841990).
+    let hash: string | null = null;
+    const answerMatch = /answer:\s*([-+0-9.eE]+)\s*,/.exec(block);
+    const unitsMatch = /units:\s*(\[[^\]]*\])/.exec(block);
+    if (answerMatch && unitsMatch) {
+      try {
+        hash = await problemHashOf(text, Number(answerMatch[1]), JSON.parse(unitsMatch[1]));
+      } catch { /* unparseable units — leave hash null */ }
+    }
+
+    return { text, imageUrl, hash };
   } catch (err) {
     console.error("Problem text fetch/parse error:", err);
+    return null;
+  }
+}
+
+// A worked solution can run to tens of kB in the worst case; a normal one is
+// ~1-5k. Past this it's cut, so one outlier can't blow up every prompt.
+const MAX_SOLUTION_CONTEXT_CHARS = 12_000;
+
+// Best-effort fetch of the problem's published worked solution (written in
+// the solutions editor, see migration 008_problem_solutions.sql) — its text
+// plus the figure's step captions. The compiled figure SVGs aren't sent:
+// Gemini's inlineData doesn't take SVG, and the captions already say what
+// each step shows. `admin` is the service-role client, which bypasses RLS,
+// so the status = 'published' filter here is what keeps drafts out. Same
+// "never throws, null on failure" contract as fetchProblemContext.
+async function fetchPublishedSolution(
+  admin: any,
+  problemKey: string | null
+): Promise<{ text: string; captions: string[]; problemHash: string | null } | null> {
+  if (!parseProblemKey(problemKey)) return null;
+  try {
+    const { data, error } = await admin
+      .from("problem_solutions")
+      .select("solution, figure, problem_hash")
+      .eq("problem_key", problemKey)
+      .eq("status", "published")
+      .maybeSingle();
+    if (error) {
+      console.error("Published solution fetch error:", error);
+      return null;
+    }
+    if (!data || !data.solution?.trim()) return null;
+
+    let text: string = data.solution.trim();
+    if (text.length > MAX_SOLUTION_CONTEXT_CHARS) text = text.slice(0, MAX_SOLUTION_CONTEXT_CHARS) + "\n[...truncated]";
+    const captions: string[] = (data.figure?.steps ?? [])
+      .map((s: any) => (typeof s?.caption === "string" ? s.caption.trim() : ""))
+      .filter((c: string) => c);
+    return { text, captions, problemHash: data.problem_hash ?? null };
+  } catch (err) {
+    console.error("Published solution fetch error:", err);
     return null;
   }
 }
@@ -763,18 +841,28 @@ async function callGemini(
   problemText: string | null,
   repliedTo: { author_name: string; body: string } | null,
   problemImage: { mimeType: string; data: string } | null,
+  solution: { text: string; captions: string[]; stale: boolean } | null,
   msgId: number
 ): Promise<{ text: string | null; unavailable: boolean }> {
   const contextBlock = contextMessages.length
     ? contextMessages.map(m => `${m.author_name}: ${m.body}`).join("\n")
     : "(no earlier messages in this thread)";
   const problemBlock = problemText ? `\n\nThe problem this thread is about:\n${problemText}` : "";
+  const solutionBlock = solution
+    ? `\n\nThe published worked solution to this problem (supporting information, written by course staff):\n${solution.text}` +
+      (solution.captions.length
+        ? `\n\nIts figure is shown in steps, captioned:\n${solution.captions.map((c, i) => `${i + 1}) ${c}`).join("\n")}`
+        : "") +
+      (solution.stale
+        ? `\n\nNote: the problem was edited after this solution was written, so its numbers or setup may no longer match. Where they differ, the problem text above is what counts.`
+        : "")
+    : "";
   const repliedToBlock = repliedTo
     ? `\n\nThis message was sent as a direct reply to this earlier message:\n${repliedTo.author_name}: ${repliedTo.body}`
     : "";
 
   const userContent =
-    `Recent thread messages (oldest first):\n${contextBlock}${problemBlock}${repliedToBlock}\n\n` +
+    `Recent thread messages (oldest first):\n${contextBlock}${problemBlock}${solutionBlock}${repliedToBlock}\n\n` +
     `Nickname of the user tagging you: ${taggerName}\n` +
     `The message tagging you:\n${taggedMessage}`;
 
@@ -902,10 +990,20 @@ async function maybePostGeminiReply(
 
   await gLog(admin, humanMsg.id, "triggered");
 
-  const [contextMessages, problemContext] = await Promise.all([
+  const [contextMessages, problemContext, publishedSolution] = await Promise.all([
     fetchRecentContext(admin, humanMsg.scope, humanMsg.problem_key, humanMsg.id),
     fetchProblemContext(humanMsg.problem_key),
+    fetchPublishedSolution(admin, humanMsg.problem_key),
   ]);
+  // Stale only when both hashes are known and differ — an unknown hash on
+  // either side means "can't tell", and the solution goes in unflagged.
+  const solution = publishedSolution
+    ? {
+        text: publishedSolution.text,
+        captions: publishedSolution.captions,
+        stale: !!(publishedSolution.problemHash && problemContext?.hash && publishedSolution.problemHash !== problemContext.hash),
+      }
+    : null;
   // Only fetched once problemContext is in hand (it's what tells us whether
   // there's an image URL at all) — not worth parallelizing with the above,
   // since this is the rarer/slower leg (an extra image download) and most
@@ -920,6 +1018,7 @@ async function maybePostGeminiReply(
     problemContext?.text ?? null,
     repliedTo,
     problemImage,
+    solution,
     humanMsg.id
   );
   if (!reply) {
@@ -990,7 +1089,7 @@ async function maybePostGeminiReply(
     await gLog(admin, humanMsg.id, "insert_error", { raw: JSON.stringify(geminiInsertErr) });
   } else {
     console.info(
-      `Gemini reply posted (problem=${humanMsg.problem_key ?? "none"}, image=${!!problemImage})`
+      `Gemini reply posted (problem=${humanMsg.problem_key ?? "none"}, image=${!!problemImage}, solution=${solution ? (solution.stale ? "stale" : "yes") : "no"})`
     );
     await gLog(admin, humanMsg.id, "posted");
   }

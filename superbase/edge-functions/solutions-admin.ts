@@ -53,7 +53,13 @@
 //   get            { problem_key } -> { ok, row }
 //                     One full row, or row: null.
 //   save           { problem_key, solution, figure, status, problem_hash?,
-//                    expected_updated_at?, author? } -> { ok, row }
+//                    expected_updated_at?, author?, share? }
+//                    -> { ok, row, share_error? }
+//                     share: when publishing, the link-preview picture
+//                     drawn from this same content ({ image, title,
+//                     description, design }, as for share-card); stored
+//                     with the row, for its new updated_at. share_error
+//                     when only the picture could not be stored.
 //                     author: when publishing, the active editor to credit
 //                     (default: the key's owner). Drafts keep the row's
 //                     credit; saved_by is always the key's owner.
@@ -76,7 +82,18 @@
 //                     Changes ONLY who is credited (author, author_link;
 //                     saved_by and updated_at follow). 409 with the current
 //                     row if it changed since expected_updated_at.
+//   share-card     { problem_key, image, title, description, for } -> { ok, share }
+//                     Stores the link-preview picture of an already
+//                     PUBLISHED solution (migration 012; the editor's
+//                     "Make N link previews"; a publish sends its picture
+//                     with the save instead): image is a JPEG data: URL
+//                     drawn by the editor (editor/share-card.js), for the
+//                     row's updated_at it was drawn from. Refused with 409
+//                     when the row is no longer published or has been saved
+//                     since — that card would show an older version. Writes
+//                     only `share`, never updated_at.
 //   delete         { problem_key } -> { ok }
+//                     Also deletes the row's share-card picture.
 //   export         -> { ok, rows: [...] }
 //                     Everything, for the editor's JSON backup button.
 //   create-editor  { name, link? } -> { ok, name, key }   [admin key]
@@ -128,8 +145,15 @@ const MAX_SVG_SRC_CHARS = 300_000;   // pasted drawings carry long paths
 const SVG_BOX_RE = /^-?\d*\.?\d+(e[-+]?\d+)?( -?\d*\.?\d+(e[-+]?\d+)?){3}$/i;
 const MAX_CAPTION_CHARS = 500;
 
+// Share cards (migration 012). The picture is ~100-130 kB; the cap leaves
+// room without letting the bucket fill with something else.
+const SHARE_BUCKET = "share-cards";
+const MAX_SHARE_IMAGE_BYTES = 1_500_000;
+const MAX_SHARE_TITLE_CHARS = 160;
+const MAX_SHARE_DESCRIPTION_CHARS = 400;
+
 // Every column of a problem_solutions row the editor gets back.
-const ROW_COLUMNS = "problem_key, solution, figure, status, author, author_link, saved_by, problem_hash, updated_at";
+const ROW_COLUMNS = "problem_key, solution, figure, status, author, author_link, saved_by, problem_hash, updated_at, share";
 
 async function sha256Hex(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input);
@@ -278,6 +302,55 @@ function parseLink(raw: unknown): string | null | undefined {
   }
 }
 
+// A JPEG data: URL -> its bytes, or null when it is anything else.
+function jpegBytes(raw: unknown): Uint8Array | null {
+  if (typeof raw !== "string") return null;
+  const m = raw.match(/^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/);
+  if (!m || m[1].length * 3 / 4 > MAX_SHARE_IMAGE_BYTES) return null;
+  let bytes: Uint8Array;
+  try { bytes = Uint8Array.from(atob(m[1]), (c) => c.charCodeAt(0)); } catch { return null; }
+  // Starts like a JPEG (SOI marker), so the bucket only ever holds pictures.
+  return bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? bytes : null;
+}
+
+// The link-preview picture and its text as sent by the editor
+// ({ image, title, description, design }), checked; or an error message.
+function parseShareCard(raw: any): { bytes: Uint8Array; title: string; description: string; design: number | null } | string {
+  const bytes = jpegBytes(raw?.image);
+  if (!bytes) return "The picture must be a JPEG of at most 1.5 MB.";
+  const title = raw?.title;
+  const description = raw?.description ?? "";
+  if (typeof title !== "string" || !title.trim() || title.length > MAX_SHARE_TITLE_CHARS) {
+    return "The link title is missing or too long.";
+  }
+  if (typeof description !== "string" || description.length > MAX_SHARE_DESCRIPTION_CHARS) {
+    return "The link description is too long.";
+  }
+  const design = Number.isInteger(raw?.design) ? raw.design : null;
+  return { bytes, title: title.trim(), description: description.trim(), design };
+}
+
+// Uploads a picture under a new name; the name, or null if it failed.
+async function uploadShareImage(db: any, problemKey: string, bytes: Uint8Array): Promise<string | null> {
+  const image = `${problemKey}-${Date.now()}.jpg`;
+  const { error } = await db.storage
+    .from(SHARE_BUCKET)
+    .upload(image, bytes, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false });
+  if (error) {
+    console.error("share image upload error:", error);
+    return null;
+  }
+  return image;
+}
+
+// Deletes a stored share-card picture; a failure only leaves a stray file.
+async function removeShareImage(db: any, share: any) {
+  const name = share && typeof share.image === "string" ? share.image : null;
+  if (!name) return;
+  const { error } = await db.storage.from(SHARE_BUCKET).remove([name]);
+  if (error) console.error("share image delete error:", error);
+}
+
 const bad = (error: string, status = 400) => Response.json({ ok: false, error }, { status });
 
 export default {
@@ -380,14 +453,18 @@ export default {
     if (action === "index") {
       const { data: rows, error } = await admin
         .from("problem_solutions")
-        .select("problem_key, status, updated_at, author, saved_by");
+        .select("problem_key, status, updated_at, author, saved_by, share_for:share->>for, share_design:share->design");
       if (error) {
         console.error("index error:", error);
         return bad("Could not read the solutions list.", 500);
       }
       const index: Record<string, unknown> = {};
       for (const r of rows ?? []) {
-        index[r.problem_key] = { status: r.status, updated_at: r.updated_at, author: r.author, saved_by: r.saved_by };
+        index[r.problem_key] = {
+          status: r.status, updated_at: r.updated_at, author: r.author, saved_by: r.saved_by,
+          // Which version and design the link-preview picture was drawn from.
+          share: r.share_for ? { for: r.share_for, design: r.share_design } : null,
+        };
       }
       return Response.json({ ok: true, index });
     }
@@ -423,12 +500,60 @@ export default {
     }
 
     if (action === "delete") {
-      const { error } = await admin.from("problem_solutions").delete().eq("problem_key", problemKey);
+      const { data: gone, error } = await admin
+        .from("problem_solutions")
+        .delete()
+        .eq("problem_key", problemKey)
+        .select("share");
       if (error) {
         console.error("delete error:", error);
         return bad("Could not delete that solution.", 500);
       }
+      for (const r of gone ?? []) await removeShareImage(admin, r.share);
       return Response.json({ ok: true });
+    }
+
+    // The link-preview picture. Stored under a new name every time (no
+    // cached copy anywhere can outlive it), recorded in `share` only if the
+    // row is still the published version it was drawn from, and the
+    // previous picture is deleted afterwards.
+    if (action === "share-card") {
+      const card = parseShareCard(payload);
+      if (typeof card === "string") return bad(card);
+      const drawnFor = payload?.for;
+      if (typeof drawnFor !== "string" || !drawnFor) return bad("Missing the version the picture was drawn from.");
+
+      const { data: existing, error: readErr } = await admin
+        .from("problem_solutions")
+        .select("status, updated_at, share")
+        .eq("problem_key", problemKey)
+        .maybeSingle();
+      if (readErr) {
+        console.error("share-card/read error:", readErr);
+        return bad("Could not store the picture, try again.", 500);
+      }
+      if (!existing || existing.status !== "published" || existing.updated_at !== drawnFor) {
+        return bad("stale", 409);
+      }
+
+      const image = await uploadShareImage(admin, problemKey, card.bytes);
+      if (!image) return bad("Could not store the picture, try again.", 500);
+
+      const share = { image, title: card.title, description: card.description, for: drawnFor, design: card.design };
+      const { data: saved, error: writeErr } = await admin
+        .from("problem_solutions")
+        .update({ share })
+        .eq("problem_key", problemKey)
+        .eq("status", "published")
+        .eq("updated_at", drawnFor)
+        .select("share");
+      if (writeErr || !saved?.length) {
+        if (writeErr) console.error("share-card/write error:", writeErr);
+        await removeShareImage(admin, share);
+        return writeErr ? bad("Could not store the picture, try again.", 500) : bad("stale", 409);
+      }
+      if (existing.share?.image !== image) await removeShareImage(admin, existing.share);
+      return Response.json({ ok: true, share });
     }
 
     // Only the credit of an existing row: the content is never touched, so
@@ -452,9 +577,17 @@ export default {
       }
       const credit = await creditFor(admin, editor, payload?.author);
       if (typeof credit === "string") return bad(credit, credit.startsWith("Could not") ? 500 : 400);
+      const updatedAt = new Date().toISOString();
+      const change: Record<string, unknown> = { author: credit.name, author_link: credit.link, saved_by: editor.name, updated_at: updatedAt };
+      // The link preview doesn't show who is credited: a card drawn from
+      // this version stays current for the new updated_at.
+      // Compared as instants: `for` may be 2026-…Z, updated_at 2026-…+00:00.
+      if (existing.share?.for && Date.parse(existing.share.for) === Date.parse(existing.updated_at)) {
+        change.share = { ...existing.share, for: updatedAt };
+      }
       const { data: saved, error: writeErr } = await admin
         .from("problem_solutions")
-        .update({ author: credit.name, author_link: credit.link, saved_by: editor.name, updated_at: new Date().toISOString() })
+        .update(change)
         .eq("problem_key", problemKey)
         .select(ROW_COLUMNS)
         .single();
@@ -527,7 +660,29 @@ export default {
         authorLink = existing.author_link ?? null;
       }
 
-      const row = {
+      // A publish carries its link-preview picture (migration 012), drawn
+      // by the editor from exactly this content, so the two are stored
+      // together and the card is recorded for this very version. Checked
+      // before anything is written. If only the upload fails, the solution
+      // is still published (the picture only decides how a shared link
+      // looks) and share_error says why; `share` then keeps the old card,
+      // which the editor's Check all lists as out of date. Drafts never
+      // touch `share`.
+      let card: ReturnType<typeof parseShareCard> | null = null;
+      if (status === "published" && payload?.share) {
+        card = parseShareCard(payload.share);
+        if (typeof card === "string") return bad(card);
+      }
+      const updatedAt = new Date().toISOString();
+      let share: Record<string, unknown> | null = null;
+      let shareError: string | null = null;
+      if (card && typeof card !== "string") {
+        const image = await uploadShareImage(admin, problemKey, card.bytes);
+        if (image) share = { image, title: card.title, description: card.description, for: updatedAt, design: card.design };
+        else shareError = "the picture could not be stored";
+      }
+
+      const row: Record<string, unknown> = {
         problem_key: problemKey,
         solution,
         figure,
@@ -536,8 +691,9 @@ export default {
         author_link: authorLink,
         saved_by: editor.name,
         problem_hash: problemHash,
-        updated_at: new Date().toISOString(),
+        updated_at: updatedAt,
       };
+      if (share) row.share = share;
 
       const { data: saved, error: writeErr } = await admin
         .from("problem_solutions")
@@ -546,9 +702,11 @@ export default {
         .single();
       if (writeErr) {
         console.error("save/write error:", writeErr);
+        if (share) await removeShareImage(admin, share);
         return bad("Could not save, try again.", 500);
       }
-      return Response.json({ ok: true, row: saved });
+      if (share && existing?.share?.image) await removeShareImage(admin, existing.share);
+      return Response.json(shareError ? { ok: true, row: saved, share_error: shareError } : { ok: true, row: saved });
     }
 
     return bad("Unknown action.");

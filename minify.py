@@ -3,6 +3,15 @@ minify.py  ·  Builds a minified copy of the site as a zip for Netlify.
 
     python minify.py                 -> ../<folder>-netlify.zip (next to this project folder)
     python minify.py path/to/out.zip -> that file instead
+    python minify.py --deploy        -> deploys the build to Netlify instead of zipping it
+
+--deploy uses the Netlify CLI (Node.js, then `npm install -g netlify-cli`,
+`netlify login`, and once in this folder `netlify link` to pick the site).
+It is the only way that also deploys netlify/edge-functions/ — the shared
+solution links (/s/<key>) and their previews: a zip uploaded by hand
+deploys the static files only. The edge function is given this course's
+Supabase project and names from js/course-config.js, for the course set by
+<head data-course> in index.html.
 
 Never writes into this project folder: the copy is built in a temporary
 folder and only the finished zip is written, outside the project unless a
@@ -11,6 +20,7 @@ path inside it is given.
 What it does
   - copies the site, leaving out what isn't part of the website:
     .git, superbase/ (edge functions + SQL, deployed to Supabase instead),
+    netlify/ (Netlify edge functions, deployed beside the site by --deploy),
     vendor-src/ (sources the vendor/ builds are made from),
     tools/ (the generator behind course/figures/: tools/figures),
     README.md, *.zip and this script itself
@@ -42,7 +52,7 @@ ESBUILD_VERSION = '0.28.2'
 
 SRC = os.path.dirname(os.path.abspath(__file__))
 SELF = os.path.basename(__file__)
-SKIP_DIRS = {'.git', 'superbase', 'vendor-src', 'tools', '.claude', '.vscode', 'node_modules', '__pycache__'}
+SKIP_DIRS = {'.git', 'superbase', 'netlify', '.netlify', 'vendor-src', 'tools', '.claude', '.vscode', 'node_modules', '__pycache__'}
 SKIP_ROOT_FILES = {'README.md', SELF}
 SKIP_EXT = {'.zip', '.py'}
 MINIFY_EXT = {'.js', '.css', '.html', '.json', '.webmanifest'}
@@ -379,7 +389,7 @@ def check_manifest(problems):
             if _vcmp(version, prev_v) < 0:
                 actions.append(f'Version goes DOWN, {prev_v} -> {version}: open tabs on {prev_v} are told to "update" to the older one.')
             else:
-                actions.append(f'New version {version} (was {prev_v}): open tabs show the update banner and reload by themselves after 24 h.')
+                actions.append(f'New version {version} (was {prev_v}): open tabs show the update banner and reload by themselves after 48 h.')
 
     editor = data.get('editor')
     if editor is not None and not _version_ok(editor):
@@ -400,7 +410,7 @@ def check_manifest(problems):
                 'that is not deployed (once a day each, the reload guard stops more)')
         else:
             same = ' (unchanged)' if old.get('min_version') == mv else ''
-            actions.append(f'Tabs below {mv} reload within one update check (~{update_s / 60:.0f} min) instead of after 24 h; '
+            actions.append(f'Tabs below {mv} reload within one update check (~{update_s / 60:.0f} min) instead of after 48 h; '
                            f'a timed quiz first, unless it has run 3 h{same}.')
 
     if 'poll' in data:
@@ -464,10 +474,97 @@ def check_manifest(problems):
 
 
 # ── build ───────────────────────────────────────────────────────────────
+# ── Netlify edge functions (--deploy) ───────────────────────────────────
+EDGE_SRC = os.path.join('netlify', 'edge-functions')
+EDGE_COURSE_SLOT = 'JSON.parse("null")'   # in netlify/edge-functions/share.ts
+
+
+def _course_block(config, course):
+    """The `<course>: { … }` entry of COURSES in js/course-config.js."""
+    m = re.search(r'^  ' + re.escape(course) + r': \{\n(.*?)^  \},$', config, re.S | re.M)
+    return m.group(1) if m else None
+
+
+def edge_course(problems):
+    """What share.ts needs about this course, from js/course-config.js."""
+    head = re.search(r'<head\b[^>]*\bdata-course="([^"]+)"', _read('index.html'))
+    course = head.group(1).lower() if head else None
+    block = course and _course_block(_read('js/course-config.js'), course)
+    if not block:
+        problems.append(f'netlify edge function: no "{course}" course in js/course-config.js (index.html <head data-course>)')
+        return None
+    def field(name):
+        m = re.search(r'\b' + name + r":\s*(['\"])(.*?)\1,", block)
+        return m.group(2) if m else None
+    values = {k: field(k) for k in ('url', 'publishableKey', 'appName', 'ogDescription')}
+    missing = [k for k, v in values.items() if not v]
+    if missing:
+        problems.append(f'netlify edge function: {course} in js/course-config.js has no {", ".join(missing)}')
+        return None
+    return {
+        'supabaseUrl': values['url'].rstrip('/'),
+        'publishableKey': values['publishableKey'],
+        'shareTitle': f"{values['appName']} Practice App",   # SHARE_TITLE in course-config.js
+        'description': values['ogDescription'].replace("\\'", "'"),
+    }
+
+
+def stage_edge_functions(stage, problems):
+    """Copies netlify/edge-functions/ next to the built site, with this
+    course's values filled into share.ts."""
+    course = edge_course(problems)
+    if not course:
+        return
+    for f in sorted(os.listdir(os.path.join(SRC, EDGE_SRC))):
+        text = _read(os.path.join(EDGE_SRC, f))
+        if f == 'share.ts':
+            if text.count(EDGE_COURSE_SLOT) != 1:
+                problems.append(f'{EDGE_SRC}/share.ts: expected exactly one {EDGE_COURSE_SLOT} to fill in')
+                continue
+            text = text.replace(EDGE_COURSE_SLOT, 'JSON.parse(' + json.dumps(json.dumps(course, ensure_ascii=False)) + ')')
+        dst = os.path.join(stage, EDGE_SRC, f)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with open(dst, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(text)
+
+
+def netlify_site_id():
+    """The site `netlify link` tied this folder to (or NETLIFY_SITE_ID)."""
+    if os.environ.get('NETLIFY_SITE_ID'):
+        return os.environ['NETLIFY_SITE_ID']
+    try:
+        with open(os.path.join(SRC, '.netlify', 'state.json'), encoding='utf-8') as fh:
+            return json.load(fh).get('siteId')
+    except (OSError, ValueError):
+        return None
+
+
+def deploy(stage):
+    """Deploys stage/site plus stage/netlify/edge-functions to production."""
+    cli = shutil.which('netlify')
+    site = netlify_site_id()
+    if not cli or not site:
+        print('Built, but not deployed:')
+        if not cli:
+            print('  - the Netlify CLI is not installed: install Node.js, then run  npm install -g netlify-cli  and  netlify login')
+        if not site:
+            print(f'  - this folder is not linked to a Netlify site: run  netlify link  in {SRC}')
+        sys.exit(1)
+    print(f'Deploying to Netlify site {site} …')
+    # From the stage folder, so the CLI finds netlify/edge-functions there.
+    result = subprocess.run([cli, 'deploy', '--prod', '--dir', 'site', '--site', site], cwd=stage)
+    if result.returncode != 0:
+        print('Netlify deploy failed (see above). Nothing on the live site changed.')
+        sys.exit(result.returncode)
+
+
 def main():
     global ESBUILD
     project = os.path.basename(SRC.rstrip(os.sep))
-    zip_path = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.join(os.path.dirname(SRC), f'{project}-netlify.zip')
+    args = sys.argv[1:]
+    deploying = '--deploy' in args
+    args = [a for a in args if a != '--deploy']
+    zip_path = os.path.abspath(args[0]) if args else os.path.join(os.path.dirname(SRC), f'{project}-netlify.zip')
     ESBUILD = esbuild_path()
 
     stage = tempfile.mkdtemp(prefix='minify-')
@@ -517,12 +614,20 @@ def main():
             for page_rel, name in BUNDLE_PAGES.items():
                 if os.path.exists(os.path.join(out, page_rel)):
                     bundles += bundle_page(out, page_rel, name, problems)
+        if deploying and not problems:
+            stage_edge_functions(stage, problems)
 
         if problems:
-            print('Build stopped, nothing was zipped:')
+            print('Build stopped, nothing was ' + ('deployed:' if deploying else 'zipped:'))
             for p in problems:
                 print('  -', p)
             sys.exit(1)
+
+        if deploying:
+            report(stats, bundles, manifest_actions)
+            deploy(stage)
+            print('All checks passed. Deployed.')
+            return
 
         tmp_zip = os.path.join(stage, 'site.zip')
         count = 0
@@ -537,6 +642,11 @@ def main():
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 
+    report(stats, bundles, manifest_actions)
+    print(f'All checks passed. {count} files -> {zip_path} ({os.path.getsize(zip_path) / 1024 / 1024:.2f} MB)')
+
+
+def report(stats, bundles, manifest_actions):
     for k, (n, b, a) in stats.items():
         if n:
             print(f'  {k:7s} {n:4d} files  {b / 1024:9.1f} KB -> {a / 1024:9.1f} KB')
@@ -545,7 +655,6 @@ def main():
     print(f'{MANIFEST}, once deployed (compared with the last commit):')
     for line in manifest_actions or ['Nothing unusual: no new version, no settings that change what open tabs do.']:
         print('  *', line)
-    print(f'All checks passed. {count} files -> {zip_path} ({os.path.getsize(zip_path) / 1024 / 1024:.2f} MB)')
 
 
 if __name__ == '__main__':

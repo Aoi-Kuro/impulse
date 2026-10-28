@@ -64,6 +64,10 @@ const COURSES = {
       courseCode: 'PHYS162',
       // The name next to the logo in the top bar (Kanit Black Italic).
       brandName: 'FLUX',
+      // Browser-tab name: the main page shows just this; offline.html and
+      // the editor add " | Offline" / " | Editorial". Shared-link titles
+      // are "<appName> Practice App".
+      appName: 'Flux',
       ogDescription: "Interactive physics practice quiz: electric fields, Gauss's law, circuits & more. Instant feedback with scoring.",
       twitterDescription: 'Interactive physics practice quiz for PHYS 162 course at Nazarbayev University.',
       siteUrl: 'https://your-domain.com/PHYS162_Practice_Quiz.html',
@@ -100,6 +104,7 @@ const COURSES = {
     display: {
       courseCode: 'PHYS161',
       brandName: 'IMPULSE',
+      appName: 'Impulse',
       ogDescription: 'Interactive physics practice quiz: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring.',
       twitterDescription: 'Interactive physics practice quiz for PHYS 161 course at Nazarbayev University.',
       siteUrl: 'https://your-domain.com/PHYS161_Practice_Quiz.html',
@@ -191,19 +196,18 @@ const BRAND_NAME = _display.brandName;
 // hardcoded here. Falls back to COURSE_CODE unchanged if it doesn't match
 // that shape (e.g. already has a space, or no trailing digits).
 const COURSE_CODE_DISPLAY = COURSE_CODE.replace(/^([A-Za-z]+)(\d+)$/, '$1 $2');
-const COURSE_TITLE = `${COURSE_CODE_DISPLAY} Practice Quiz`;
+const APP_NAME = _display.appName;
+// Shared-link (OG/Twitter) title — "Impulse Practice App".
+const SHARE_TITLE = `${APP_NAME} Practice App`;
 
-// offline.html and index.html share this file but want different <title>
-// text ("You're offline — ..." vs plain) — distinguished by filename
-// rather than by any DOM heuristic, since offline.html has none of the
-// OG/Twitter meta tags below to key off of.
-const _isOfflinePage = /offline\.html$/i.test(location.pathname);
-// index.html loads this file in <head> BEFORE its <title> (and sets the
-// title with an inline script right after it); setting document.title
-// here with no <title> yet would create a second one. offline.html and
-// the editor load it after theirs, so they're set here.
-if (document.querySelector('title')) {
-  document.title = _isOfflinePage ? `You're offline — ${COURSE_TITLE}` : COURSE_TITLE;
+// offline.html sets its own title here ("Impulse | Offline") — told apart
+// by filename, since it has none of the OG/Twitter meta tags below to key
+// off of. index.html loads this file in <head> BEFORE its <title> (and
+// sets the title to APP_NAME with an inline script right after it);
+// setting document.title here with no <title> yet would create a second
+// one. The editor sets "<APP_NAME> | Editorial" itself in editor.js.
+if (/offline\.html$/i.test(location.pathname)) {
+  document.title = `${APP_NAME} | Offline`;
 }
 
 // index.html-only from here down — offline.html has none of these meta
@@ -215,8 +219,8 @@ function _setMetaContent(selector, value) {
   const el = document.querySelector(selector);
   if (el) el.setAttribute('content', value);
 }
-_setMetaContent('meta[property="og:title"]', COURSE_TITLE);
-_setMetaContent('meta[name="twitter:title"]', COURSE_TITLE);
+_setMetaContent('meta[property="og:title"]', SHARE_TITLE);
+_setMetaContent('meta[name="twitter:title"]', SHARE_TITLE);
 _setMetaContent('meta[property="og:description"]', _display.ogDescription);
 _setMetaContent('meta[name="twitter:description"]', _display.twitterDescription);
 _setMetaContent('meta[property="og:url"]', _display.siteUrl);

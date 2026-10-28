@@ -2227,6 +2227,32 @@
     row-gap: 0.6rem;
     column-gap: 1rem;
   }
+  /* Solution list in the middle, the outer columns equal so it stays
+     centred. Narrower: reset / rerender keep their row (wrapping as
+     before), the list button gets a full-width row under them. */
+  @media (min-width: 641px) {
+    .solve-all-actions-row { display: grid; grid-template-columns: 1fr auto 1fr; }
+    .solve-all-actions-row .btn-reset-progress { justify-self: start; }
+    .solve-all-actions-row .btn-rerender-eqs { justify-self: end; }
+  }
+  @media (max-width: 640px) {
+    .solve-all-actions-row .btn-solution-list { order: 1; flex-basis: 100%; }
+  }
+
+  .btn-solution-list {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.06em;
+    border: 1px solid var(--border);
+    border-radius: calc(4px * var(--radius-mult));
+    padding: 0.35rem 0.85rem;
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--text);
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn-solution-list:hover { border-color: var(--accent); color: var(--accent); }
 
   .btn-rerender-eqs {
     font-family: var(--mono);

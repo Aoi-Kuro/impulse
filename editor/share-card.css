@@ -1,0 +1,116 @@
+/* The link-preview card for a shared solution (editor/share-card.js).
+   Fixed 1920×1080 px, always in the Ocean dark theme: its colours are
+   set on the card itself, so the page's own theme never leaks in.
+   css/figure.css maps the figure's colours from the same variables. */
+
+.sc-card {
+  --bg:#071A26; --surface:#0D2533; --border:#173649; --text:#E3F4F8; --muted:#7FA3B3;
+  --accent:#4FE0C0; --accent2:#FF8A6B; --accent-rgb:79,224,192;
+  --glow-rgb:13,37,51;   /* the soft "white" bubbles: --surface, as white glares on a dark card */
+  --sans:'IBM Plex Sans', sans-serif;   /* .sol-text (css/figure.css) falls back to it */
+  position: relative;
+  width: 1920px; height: 1080px;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+/* A picture can't scroll. The editor's MathJax makes wide display maths
+   scrollable (displayOverflow: 'scroll'), which drew a scrollbar beside
+   the equation; on the card it is clipped instead (and the solution
+   column scales wide equations down first). */
+.sc-card mjx-container[display="true"] { overflow: hidden !important; scrollbar-width: none; }
+.sc-card ::-webkit-scrollbar { display: none; }
+
+.sc-bubbles { position: absolute; inset: 0; }
+.sc-bubble { position: absolute; border-radius: 50%; }
+.sc-bubble-c1 {
+  background: radial-gradient(circle at 50% 50%,
+    rgba(var(--accent-rgb), .20) 0%, rgba(var(--accent-rgb), .09) 45%, rgba(var(--accent-rgb), 0) 70%);
+}
+.sc-bubble-white {
+  background: radial-gradient(circle at 42% 40%,
+    rgba(var(--glow-rgb), 1) 0%, rgba(var(--glow-rgb), .75) 38%, rgba(var(--glow-rgb), 0) 70%);
+}
+
+/* ── Left: header and condition ── */
+/* Roughly 40 / 60 between the text and the figure. */
+.sc-left {
+  position: absolute; left: 96px; top: 88px; bottom: 88px; width: 680px;
+  display: flex; flex-direction: column;
+}
+.sc-solo .sc-left { width: auto; right: 96px; }   /* nothing on the right */
+
+.sc-head { display: flex; align-items: center; gap: 22px; white-space: nowrap; flex: none; }
+.sc-brand {
+  font-family: 'Kanit', sans-serif; font-weight: 900; font-style: italic;
+  font-size: 58px; line-height: 1; letter-spacing: .03em;
+  color: var(--text);
+}
+.sc-sep { width: 4px; height: 42px; border-radius: 2px; background: rgba(var(--accent-rgb), .35); }
+.sc-course, .sc-label {
+  font-family: 'IBM Plex Mono', monospace; font-weight: 600;
+  font-size: 34px; line-height: 1; letter-spacing: .02em;
+  word-spacing: -.3em;   /* a monospace space is a full letter wide */
+}
+.sc-course { color: var(--muted); }
+.sc-label  { color: var(--accent); }
+
+/* The condition sits in the middle of the space under the header.
+   .sc-text-inner is what share-card.js measures against this box. */
+.sc-text {
+  flex: 1; min-height: 0; overflow: hidden;
+  margin-top: 48px;
+  display: flex; flex-direction: column; justify-content: center;
+  font-family: 'STIX Two Text', serif;
+  font-size: 44px; line-height: 1.42;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+.sc-text-inner { flex: none; }
+.sc-text mjx-container[display="true"] { margin: .2em 0 !important; }
+
+/* ── Right: the figure's last step, straight on the background ── */
+.sc-panel {
+  position: absolute; right: 96px; top: 88px; bottom: 88px; width: 1000px;
+  /* No panel behind the figure, so its fills (c3/c4, which can cover up
+     earlier steps) are the plain page colour; the bubbles keep to the
+     edges (share-card.js) so those fills don't show as boxes. */
+  --surface: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.sc-fig { flex: 1; min-height: 0; width: 100%; display: flex; }
+.sc-fig svg { width: 100%; height: 100%; max-height: none; }
+.sc-step {
+  flex: none; margin-top: 24px;
+  font-family: 'IBM Plex Mono', monospace; font-weight: 600;
+  font-size: 34px; letter-spacing: .06em; word-spacing: -.3em;
+  color: var(--muted);
+}
+
+/* ── Right, when there is no figure: the start of the solution ──
+   Centred while it fits; when it doesn't, it starts at the top and fades
+   away at the bottom, over whatever line it is cut in. */
+.sc-sol {
+  width: 100%; height: 100%; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.sc-sol-cut {
+  justify-content: flex-start;
+  -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent 98%);
+          mask-image: linear-gradient(to bottom, #000 72%, transparent 98%);
+}
+.sc-sol-inner {
+  flex: none;
+  padding-left: 40px;
+  border-left: 4px solid rgba(var(--accent-rgb), .35);
+}
+.sc-sol-label {
+  margin-bottom: 20px;
+  font-family: 'IBM Plex Mono', monospace; font-weight: 600;
+  font-size: 30px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent);
+}
+.sc-sol .sol-text { font-size: 34px; line-height: 1.5; }
+.sc-sol .sol-text mjx-container[display="true"] { margin: .3em 0 !important; }

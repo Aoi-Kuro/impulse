@@ -1059,3 +1059,8 @@ body.man-open #edManualBtn { opacity: 1; transform: scale(1.1); }
   .manual-content-body table { display: block; overflow-x: auto; }
 }
 
+
+/* Where link-preview cards are drawn before becoming a picture
+   (editor.js, makeShareCard): rendered, since the card is measured, but
+   far off-screen. Not visibility:hidden — the picture would copy it. */
+.ed-card-host { position: fixed; left: -30000px; top: 0; width: 1920px; height: 1080px; pointer-events: none; }

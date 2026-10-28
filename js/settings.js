@@ -111,7 +111,11 @@ const SETTINGS_DEFAULTS = {
     // The 10-second "you're in full screen" banner: hidden unless turned on.
     hideFullscreenReminder: true,
     hideTopicWhileActive: false,
-    selectLatestQuizByDefault: false,
+    // The main screen preselects the set last started in Random N or
+    // Entire Set (js/quiz-engine.js, _lastUsedQuizNum). Replaced
+    // selectLatestQuizByDefault (the newest available set), dropped in
+    // migrateSettings.
+    selectLastUsedQuiz: true,
     cumulativeDefaultOn: false,
     lockSolveAllOrder: false,
     // 'ordered' | 'unordered' — sub of lockSolveAllOrder, which order gets
@@ -125,6 +129,9 @@ const SETTINGS_DEFAULTS = {
     // The floating solved-count badge, bottom-right, during Solve-All
     // (#stickyScore). Was always on; now optional, still on by default.
     showStickyScore: true,
+    // The Solution screen opens with its Solution list already showing,
+    // with no ✕, instead of the ‹ › row (js/solutions.js, openSolution).
+    openSolutionList: true,
   },
   offline: {
     // ms epoch when the current "Go offline" 24h window expires — null
@@ -180,6 +187,9 @@ function migrateSettings(raw) {
     merged.display.reduceMotion = oldStudy.reduceMotion;
   }
   delete merged.study.reduceMotion;
+  // "Select latest quiz" became "Select last used quiz" (a new key, on by
+  // default): the old choice doesn't carry over.
+  delete merged.study.selectLatestQuizByDefault;
   // Outfit became the default font; the old default ('default', the colour
   // theme's own font) is now the 'theme' option. Defaults are saved along
   // with real choices, so an old 'default' can't be told apart from a
@@ -1500,14 +1510,14 @@ function renderSettingsStudyTab() {
       </div>
     </div>
 
-    <div class="settings-row" data-row-key="selectLatestQuizByDefault">
+    <div class="settings-row" data-row-key="selectLastUsedQuiz">
       <div class="settings-row-label">
-        <div class="settings-row-title">Select latest quiz by default</div>
-        <div class="settings-row-desc">Landing on the main page selects the newest available quiz instead of always Quiz #1. Applies from your next page load.</div>
+        <div class="settings-row-title">Select last used quiz by default</div>
+        <div class="settings-row-desc">The main page opens on the set you last started, in Random or Entire Set, instead of always Quiz #1. Applies from your next page load.</div>
       </div>
       <label class="settings-switch">
-        <input type="checkbox" ${getSetting('study', 'selectLatestQuizByDefault') === true ? 'checked' : ''}
-               onchange="setSetting('study', 'selectLatestQuizByDefault', this.checked);">
+        <input type="checkbox" ${getSetting('study', 'selectLastUsedQuiz') !== false ? 'checked' : ''}
+               onchange="setSetting('study', 'selectLastUsedQuiz', this.checked);">
         <span class="settings-switch-track"></span>
       </label>
     </div>
@@ -1596,6 +1606,20 @@ function renderSettingsStudyTab() {
       <label class="settings-switch">
         <input type="checkbox" ${getSetting('study', 'revealWrongInstantly') === true ? 'checked' : ''}
                onchange="setSetting('study', 'revealWrongInstantly', this.checked);">
+        <span class="settings-switch-track"></span>
+      </label>
+    </div>
+
+    <div class="settings-section-header">Solutions</div>
+
+    <div class="settings-row" data-row-key="openSolutionList">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Show the solution list by default</div>
+        <div class="settings-row-desc">Every solution shows the grid of all the problems in its set under it. Turn off to get ‹ › buttons and a Solution list button instead, with ✕ to close the list.</div>
+      </div>
+      <label class="settings-switch">
+        <input type="checkbox" ${getSetting('study', 'openSolutionList') !== false ? 'checked' : ''}
+               onchange="setSetting('study', 'openSolutionList', this.checked); if (typeof syncSolutionListClose === 'function') syncSolutionListClose();">
         <span class="settings-switch-track"></span>
       </label>
     </div>
@@ -1892,7 +1916,7 @@ applyNotificationSettings();
 
 // Study: hide-topic-while-active and the other <html> classes, and the
 // one-time "clear every quiz's saved filter" pass — same "start of
-// session" timing as everything above. selectLatestQuizByDefault/
+// session" timing as everything above. selectLastUsedQuiz/
 // cumulativeDefaultOn/lockSolveAllOrder/autoStopAt50Min/fullscreenRandomN/
 // revealWrongInstantly/avoidRepeatProblems/warnBeforeLeavingQuiz all read getSetting() directly at the point they're
 // needed instead (quiz-engine.js), so nothing else needs applying here.

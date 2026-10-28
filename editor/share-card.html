@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head data-course="phys161">
+<!-- Test view of the shared-solution preview card (editor/share-card.js).
+     Change data-course per course site, exactly like editor/index.html.
+     ?key=q3_P148i opens that problem; &fig=q3_P2i borrows that solution's
+     figure; &nofig=1 leaves the figure out (shows the solution text
+     instead); &jpeg=1 replaces the card with the JPEG the editor would
+     store; &bare=1 shows only the card, at full size in the top-left
+     corner (for screenshots). -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Share Card Preview</title>
+<base href="/">
+<link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=STIX+Two+Text:ital,wght@0,400;1,400&family=Kanit:ital,wght@1,900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/figure.css">
+<link rel="stylesheet" href="/vendor/tikzjax/fonts.css">
+<link rel="stylesheet" href="/editor/share-card.css">
+<style>
+  body { margin: 0; background: #1b2830; color: #e3f4f8; font: 14px 'IBM Plex Sans', sans-serif; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px; }
+  .bar input { font: inherit; padding: 6px 8px; width: 12rem; }
+  .bar button { font: inherit; padding: 6px 12px; cursor: pointer; }
+  .bar .info { color: #7fa3b3; }
+  .frame { margin: 0 16px 16px; overflow: hidden; border-radius: 8px; }
+  .frame > .host { width: 1920px; height: 1080px; transform-origin: 0 0; }
+  body.bare { background: none; }
+  body.bare .bar { display: none; }
+  body.bare .frame { margin: 0; border-radius: 0; }
+</style>
+<!-- MathJax, same config as the main site (STIX Two) — keep the macros in
+     step with index.html. -->
+<script>
+  window.MathJaxReady = new Promise(resolve => {
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']],
+        macros: {
+          dd:   ['\\mathrm{d}#1', 1],
+          dv:   ['\\frac{\\mathrm{d}^{#1}#2}{\\mathrm{d}#3^{#1}}', 3, ''],
+          pdv:  ['\\frac{\\partial^{#1}#2}{\\partial #3^{#1}}', 3, ''],
+          vb:   ['\\mathbf{#1}', 1],
+          vu:   ['\\hat{\\mathbf{#1}}', 1],
+          abs:  ['\\left|#1\\right|', 1],
+          norm: ['\\left\\|#1\\right\\|', 1]
+        }
+      },
+      chtml: { fontURL: 'vendor/mathjax/fonts/woff', fontPath: '[mathjax]/stix2-font' },
+      options: { enableMenu: false, menuOptions: { settings: { assistiveMml: false } } },
+      startup: { typeset: false, ready() { MathJax.startup.defaultReady(); resolve(); } }
+    };
+  });
+</script>
+<script defer id="MathJax-script" src="/vendor/mathjax/mathjax-stix2.js"></script>
+</head>
+<body>
+
+<div class="bar">
+  <button id="prev" title="Previous published solution">◀</button>
+  <input id="key" list="keys" placeholder="q3_P148i" spellcheck="false">
+  <datalist id="keys"></datalist>
+  <button id="next" title="Next published solution">▶</button>
+  <button id="go">Show</button>
+  <button id="longest" title="The longest condition in the course">Longest</button>
+  <label><input type="checkbox" id="nofig"> No figure</label>
+  <button id="jpeg" title="Show the stored image instead of the live card">JPEG</button>
+  <span class="info" id="info"></span>
+</div>
+<div class="frame" id="frame"><div class="host" id="host"></div></div>
+
+<script src="/js/course-config.js"></script>
+<script src="/course/quizzes/quiz1.js"></script>
+<script src="/course/quizzes/quiz2.js"></script>
+<script src="/course/quizzes/quiz3.js"></script>
+<script src="/course/quizzes/quiz4.js"></script>
+<script src="/course/quizzes/quizzes.js"></script>
+<script src="/vendor/dompurify/purify.min.js"></script>
+<script src="/js/figure.js"></script>
+<script src="/js/solution-render.js"></script>
+<script src="/vendor/html-to-image/html-to-image.min.js"></script>
+<script src="/editor/share-card.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  if (params.get('bare') === '1') document.body.classList.add('bare');
+  $('nofig').checked = params.get('nofig') === '1';
+
+  const headers = { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}` };
+  const REST = `${SUPABASE_URL}/rest/v1/problem_solutions`;
+  let published = [];
+
+  function fitFrame() {
+    const host = $('host');
+    const s = document.body.classList.contains('bare') ? 1 : Math.min(1, ($('frame').parentNode.clientWidth - 32) / ShareCard.W);
+    host.style.transform = `scale(${s})`;
+    $('frame').style.width = ShareCard.W * s + 'px';
+    $('frame').style.height = ShareCard.H * s + 'px';
+  }
+  addEventListener('resize', fitFrame);
+
+  function parseKey(key) {
+    const m = /^q(\d+)_(.+)$/i.exec(String(key).trim());
+    return m ? { quiz: +m[1], id: m[2] } : null;
+  }
+
+  // figKey: take the figure from another solution (to try a long
+  // condition, which has no solution of its own, next to a figure).
+  async function show(key, figKey) {
+    const k = parseKey(key);
+    const problem = k && getQuizProblem(k.quiz, k.id);
+    if (!problem) { $('info').textContent = `No problem "${key}".`; return; }
+    figKey = figKey || key;
+    $('key').value = key;
+    const q = new URLSearchParams({ key });
+    if (figKey !== key) q.set('fig', figKey);
+    if ($('nofig').checked) q.set('nofig', '1');
+    if (document.body.classList.contains('bare')) q.set('bare', '1');
+    history.replaceState(null, '', `${location.pathname}?${q}`);
+    $('info').textContent = 'Loading…';
+
+    const row = async (k) => {
+      const r = await fetch(`${REST}?select=figure,solution&problem_key=eq.${encodeURIComponent(k)}&status=eq.published&limit=1`, { headers });
+      return ((r.ok ? await r.json() : [])[0]) || null;
+    };
+    let steps = [], solution = '';
+    try {
+      const own = await row(key);
+      const figRow = figKey === key ? own : await row(figKey);
+      solution = (own && own.solution) || '';
+      steps = (!$('nofig').checked && figRow && figRow.figure && figRow.figure.steps) || [];
+    } catch (e) { /* offline: text only */ }
+
+    const n = problemNumber(k.quiz, k.id);
+    await ShareCard.build($('host'), {
+      brand: BRAND_NAME,
+      course: COURSE_CODE_DISPLAY,
+      label: `Q${k.quiz} ${n ? 'P' + n : k.id}`,
+      condition: problem.text,
+      steps,
+      solution,
+    });
+    const len = ShareCard.conditionText(problem.text).length;
+    const meta = ShareCard.linkText({ app: APP_NAME, label: `Q${k.quiz} ${n ? 'P' + n : k.id}`, condition: problem.text });
+    $('info').textContent = `${key}${figKey !== key ? ` (figure of ${figKey})` : ''} · ${steps.length} figure step(s)`
+      + ` · condition ${len} chars (cap ${ShareCard.TEXT_CAP}) · title: ${meta.title} · description: ${meta.description}`;
+    if (params.get('jpeg') === '1') await showJpeg();
+    document.body.dataset.ready = '1';
+  }
+
+  // Swaps the live card for the image made from it, to check nothing is
+  // lost on the way (fonts, maths, figure, fade).
+  async function showJpeg() {
+    const card = $('host').firstElementChild;
+    if (!card || card.tagName === 'IMG') return;
+    const t = performance.now();
+    let url;
+    try { url = await ShareCard.toJpeg(card); } catch (e) {
+      $('info').textContent += ` · JPEG failed: ${e && e.message || e}`;
+      document.title = `JPEG failed: ${e && e.message || e}`;
+      return;
+    }
+    const kb = Math.round((url.length - url.indexOf(',') - 1) * 3 / 4 / 1024);
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    $('host').textContent = '';
+    $('host').appendChild(img);
+    $('info').textContent += ` · JPEG ${kb} KB in ${Math.round(performance.now() - t)} ms`;
+    document.title = `JPEG ${kb} KB ${Math.round(performance.now() - t)} ms`;
+  }
+
+  function step(dir) {
+    if (!published.length) return;
+    const i = published.indexOf($('key').value);
+    show(published[(i + dir + published.length) % published.length]);
+  }
+
+  function longestKey() {
+    let best = null, len = -1;
+    QUIZZES.forEach((q, qi) => (q.problems || []).forEach((p) => {
+      const l = ShareCard.conditionText(p.text).length;
+      if (l > len) { len = l; best = `q${qi + 1}_${p.id}`; }
+    }));
+    return best;
+  }
+
+  $('go').onclick = () => show($('key').value);
+  $('key').onkeydown = (e) => { if (e.key === 'Enter') show($('key').value); };
+  $('prev').onclick = () => step(-1);
+  $('next').onclick = () => step(1);
+  $('longest').onclick = () => show(longestKey(), published[0]);
+  $('nofig').onchange = () => show($('key').value, params.get('fig'));
+  $('jpeg').onclick = showJpeg;
+
+  fitFrame();
+  fetch(`${REST}?select=problem_key&status=eq.published&order=problem_key`, { headers })
+    .then((r) => (r.ok ? r.json() : []))
+    .then((rows) => {
+      published = rows.map((r) => r.problem_key);
+      $('keys').innerHTML = published.map((k) => `<option value="${k}">`).join('');
+    })
+    .catch(() => {})
+    .finally(() => show(params.get('key') || published[0] || longestKey(), params.get('fig')));
+})();
+</script>
+</body>
+</html>

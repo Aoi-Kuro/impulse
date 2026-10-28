@@ -126,7 +126,11 @@ const SolutionStore = (function () {
   /** Create or replace a row. expectedUpdatedAt guards against the other
       editor having saved in the meantime (the server answers 409).
       payload.author: who to credit when publishing (default: this key's
-      owner; the server checks it is an active editor). */
+      owner; the server checks it is an active editor).
+      payload.share: when publishing, the link-preview picture drawn from
+      this content ({ image, title, description, design }), stored with it.
+      Resolves to the saved row; row.shareError says why the picture was
+      not stored when only that failed. */
   async function save(problemKey, payload, expectedUpdatedAt) {
     const d = await call('save', {
       problem_key: problemKey,
@@ -136,7 +140,9 @@ const SolutionStore = (function () {
       problem_hash: payload.problem_hash || null,
       expected_updated_at: expectedUpdatedAt || null,
       author: payload.author || null,
+      share: payload.share || null,
     });
+    if (d.share_error) d.row.shareError = d.share_error;
     return d.row;
   }
 
@@ -150,6 +156,21 @@ const SolutionStore = (function () {
       expected_updated_at: expectedUpdatedAt || null,
     });
     return d.row;
+  }
+
+  /** Stores the link-preview picture of a published solution.
+      card: { image (JPEG data: URL), title, description, for (the row's
+      updated_at it was drawn from), design }. Rejects with err.stale when
+      the row was saved again or unpublished meanwhile. */
+  async function shareCard(problemKey, card) {
+    try {
+      const d = await call('share-card', Object.assign({ problem_key: problemKey }, card));
+      return d.share;
+    } catch (e) {
+      // 409 here means the row moved on, not that a save was refused.
+      if (e && e.conflict) { e.stale = true; e.message = 'the solution was saved again or unpublished meanwhile'; }
+      throw e;
+    }
   }
 
   /** Delete the row entirely. */
@@ -173,5 +194,5 @@ const SolutionStore = (function () {
     return { name: d.name, key: d.key };
   }
 
-  return { whoami, editors, index, get, save, setCredit, remove, exportAll, createEditor, isMock: false };
+  return { whoami, editors, index, get, save, setCredit, shareCard, remove, exportAll, createEditor, isMock: false };
 })();

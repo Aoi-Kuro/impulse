@@ -13,23 +13,38 @@ function _readStudySettingRaw(key, defaultValue) {
   return defaultValue;
 }
 
-// Highest-numbered quiz with `enabled: true` — new content is normally
-// what people actually want to jump into, not always quiz #1. Falls back
-// to 1 if every quiz is somehow disabled (shouldn't happen in practice).
-function _latestEnabledQuizNum() {
-  for (let i = QUIZZES.length; i >= 1; i--) {
-    if (QUIZZES[i - 1] && QUIZZES[i - 1].enabled) return i;
-  }
+// The set last started (Start, in Random N or Entire Set) on this device —
+// written by startSelected().
+const LAST_QUIZ_KEY = STORAGE_PREFIX + '_last_quiz';
+
+// The set to preselect when "Select last used quiz" is on: the one in
+// LAST_QUIZ_KEY, else (nothing started since that key existed) the set of
+// the newest Random N attempt in Stats, else 1. Only available sets count.
+function _lastUsedQuizNum() {
+  const ok = (n) => (Number.isInteger(n) && QUIZZES[n - 1] && QUIZZES[n - 1].enabled ? n : null);
+  try {
+    const n = ok(parseInt(localStorage.getItem(LAST_QUIZ_KEY), 10));
+    if (n) return n;
+    const stats = JSON.parse(localStorage.getItem(STORAGE_PREFIX + '_stats_v2') || 'null');
+    let newest = null;
+    if (Array.isArray(stats)) {
+      stats.forEach((a) => {
+        if (a && ok(a.quizNum) && (!newest || new Date(a.date) > new Date(newest.date))) newest = a;
+      });
+    }
+    if (newest) return newest.quizNum;
+  } catch (e) { /* corrupted/foreign value — fall through */ }
   return 1;
 }
 
-// Settings > Study > "Select latest quiz by default" / "Default to
-// cumulative for quiz 2+" (both default false) — see SETTINGS_DEFAULTS.study
-// in js/settings.js for the Settings-tab-facing copy of these same defaults.
-const _selectLatestQuizDefault = _readStudySettingRaw('selectLatestQuizByDefault', false);
-const _cumulativeDefaultOn     = _readStudySettingRaw('cumulativeDefaultOn', false);
+// Settings > Study > "Select last used quiz by default" (default on) /
+// "Default to cumulative for quiz 2+" (default off) — see
+// SETTINGS_DEFAULTS.study in js/settings.js for the Settings-tab-facing
+// copy of these same defaults.
+const _selectLastUsedQuiz  = _readStudySettingRaw('selectLastUsedQuiz', true) !== false;
+const _cumulativeDefaultOn = _readStudySettingRaw('cumulativeDefaultOn', false);
 
-let selectedQuizNum = _selectLatestQuizDefault ? _latestEnabledQuizNum() : 1;
+let selectedQuizNum = _selectLastUsedQuiz ? _lastUsedQuizNum() : 1;
 let selectedMode    = 'quiz'; // 'quiz' | 'solveall'
 // Quiz 2+ defaults to cumulative (draws from every quiz up to and
 // including the selected one) rather than single, when that setting is on
@@ -1735,6 +1750,17 @@ function resetCardVisuals(i) {
   ansEl.value = '';
 }
 
+// A wrong answer in Solve them all briefly lights up the card's
+// "📘 See solution" button (css/solutions.css, .solution-btn-hint), a nudge
+// toward it. Nothing when the problem has no solution (button hidden).
+function hintSolutionButton(row) {
+  const sol = row && row.querySelector('.solution-btn');
+  if (!sol || sol.style.display === 'none') return;
+  sol.classList.remove('solution-btn-hint');
+  void sol.offsetWidth;                 // restart it on a second wrong answer
+  sol.classList.add('solution-btn-hint');
+}
+
 function checkSingleProblem(i) {
   // Permanently locked (answer was revealed)
   if (solveAllLocked.has(i)) return;
@@ -1783,6 +1809,7 @@ function checkSingleProblem(i) {
     // ── Wrong or partial: allow retry ──────────────────────────────────────
     const resultType = pts === 0.9 ? 'partial' : 'wrong';
     solveAllChecked.set(i, resultType);
+    if (resultType === 'wrong') hintSolutionButton(btnRow);
 
     // Settings > Study > "Reveal wrong answer instantly" — a genuinely
     // wrong answer (not partial-credit unit slip-ups, which still get a
@@ -2185,7 +2212,7 @@ function selectQuiz(n) {
   // Settings > Study > "Default to cumulative for quiz 2+" — quiz #1 is
   // always forced to 'single' above, so that setting's effect never got a
   // chance to apply once the page had already loaded on quiz #1 (e.g.
-  // "Select latest quiz by default" off). Mirror the same default here the
+  // "Select last used quiz by default" off). Mirror the same default here the
   // moment you leave quiz #1 for quiz #2+, same as what boot itself
   // computes when the page loads directly on a 2+ quiz. Only fires on that
   // 1 -> 2+ transition, so a manual per-quiz choice made afterwards (e.g.
@@ -2303,6 +2330,7 @@ function startSelected() {
     openGettingStartedModal(() => openForumClaimModal('create', '', () => startSelected()));
     return;
   }
+  try { localStorage.setItem(LAST_QUIZ_KEY, String(selectedQuizNum)); } catch (e) { /* private mode / quota */ }
   const landing = document.getElementById('landingScreen');
   fadeOutScreen(landing, 300, () => {
     if (selectedMode === 'solveall') {
@@ -2596,7 +2624,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '13.2.0';
+const CURRENT_VERSION = '13.2.3';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.
@@ -2636,7 +2664,7 @@ let _lastUpdateCheckAt = 0;
 // Counted from the first time any tab of this browser saw that the running
 // version (CURRENT_VERSION) is outdated, so a newer release arriving in
 // the meantime doesn't restart the clock.
-const UPDATE_FORCE_AFTER = 24 * 60 * 60 * 1000;
+const UPDATE_FORCE_AFTER = 48 * 60 * 60 * 1000;
 const UPDATE_FORCE_DURING_QUIZ_AFTER = 3 * 60 * 60 * 1000;
 const UPDATE_OUTDATED_KEY = STORAGE_PREFIX + '-update-outdated';  // { from: CURRENT_VERSION, at }
 let _updateSeenAt = 0;  // same, for this tab only (localStorage can be unavailable)
@@ -2683,7 +2711,7 @@ BannerManager.register('update', () => {
 //     together with "Hide update reminder" — the point is to still get the
 //     update applied for someone who's opted out of ever seeing the nag
 //     banner; or
-//   • the update has been waiting UPDATE_FORCE_AFTER (24 h), or this
+//   • the update has been waiting UPDATE_FORCE_AFTER (48 h), or this
 //     version is below site-version.json's "min_version", whatever the
 //     settings or a dismissed banner say — a tab kept open for days must
 //     not stay on old code forever.
@@ -2711,13 +2739,14 @@ async function maybeForceUpdateOutsideQuiz() {
 // A forced reload that didn't bring the new version (site-version.json bumped
 // without CURRENT_VERSION, say) would land straight back here and reload
 // again, forever, for every visitor. So: one forced reload per outdated
-// version per UPDATE_FORCE_AFTER. Without localStorage there's no way to
+// version per UPDATE_FORCED_GAP. Without localStorage there's no way to
 // tell, so no forced reload at all.
+const UPDATE_FORCED_GAP = 24 * 60 * 60 * 1000;
 const UPDATE_FORCED_KEY = STORAGE_PREFIX + '-update-forced';  // { from: CURRENT_VERSION, at }
 function _claimForcedReload() {
   try {
     const rec = JSON.parse(localStorage.getItem(UPDATE_FORCED_KEY) || 'null');
-    if (rec && rec.from === CURRENT_VERSION && Date.now() - rec.at < UPDATE_FORCE_AFTER) return false;
+    if (rec && rec.from === CURRENT_VERSION && Date.now() - rec.at < UPDATE_FORCED_GAP) return false;
     localStorage.setItem(UPDATE_FORCED_KEY, JSON.stringify({ from: CURRENT_VERSION, at: Date.now() }));
     return true;
   } catch (_) { return false; }

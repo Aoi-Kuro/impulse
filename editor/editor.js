@@ -92,7 +92,7 @@ function setThemeMode(light) {
     'box — fitted to what is drawn; type x y width height to clip instead',
   ].join('\n');
 
-  document.title = 'Editorial';
+  document.title = `${APP_NAME} | Editorial`;
   $('edGateEyebrow').textContent = `${COURSE_CODE_DISPLAY} · Solutions editor`;
   $('edPreamble').textContent = PREAMBLE_SHOWN;
   $('edSvgHelp').textContent = SVG_HELP;
@@ -278,6 +278,9 @@ function setThemeMode(light) {
      answer to "did my collaborator publish anything since I opened this?" */
   let checking = false;
   let rebuilding = false;                // a figure rebuild is running (Check all waits)
+  // Problems with a save or publish on its way (doSave); their buttons stay
+  // off until it finishes, so it can't be sent twice.
+  const savingKeys = new Set();
 
   function closeCheckReport() {
     const box = $('edCheck');
@@ -349,11 +352,14 @@ function setThemeMode(light) {
     serverIndex = {};
     Object.keys(rows).forEach((k) => {
       const r = rows[k];
-      serverIndex[k] = { status: r.status, updated_at: r.updated_at, author: r.author, saved_by: r.saved_by };
+      serverIndex[k] = {
+        status: r.status, updated_at: r.updated_at, author: r.author, saved_by: r.saved_by,
+        share: r.share ? { for: r.share.for, design: r.share.design } : null,
+      };
     });
 
     const keys = Object.keys(serverIndex);
-    const stale = [], published = [], drafted = [], orphan = [], unsaved = [], oldFigs = [];
+    const stale = [], published = [], drafted = [], orphan = [], unsaved = [], oldFigs = [], noCard = [];
     progress.textContent = `Checking ${keys.length} solution${keys.length === 1 ? '' : 's'}…`;
     await figBuildReady;
 
@@ -376,6 +382,7 @@ function setThemeMode(light) {
         stale.push({ p, status: row.status });
       }
       if (figureBuildState(row) === 'older') oldFigs.push({ p, status: row.status });
+      if (row.status === 'published' && !shareCardCurrent(serverIndex[key])) noCard.push(p);
       if (key === (cur && cur.key)) {           // keep the open problem in step
         curRow = row;
         curStale = row.problem_hash ? stale.some((s) => s.p.key === key) : null;
@@ -412,6 +419,7 @@ function setThemeMode(light) {
     addCount('draft', `${drafted.length} draft`);
     if (stale.length) addCount('stale', `${stale.length} out of date`);
     if (oldFigs.length) addCount('stale', `${oldFigs.length} old figure${oldFigs.length === 1 ? '' : 's'}`);
+    if (noCard.length) addCount('stale', `${noCard.length} without link preview`);
     if (unsaved.length) addCount('local', `${unsaved.length} unsaved here`);
     box.appendChild(counts);
 
@@ -438,6 +446,22 @@ function setThemeMode(light) {
       rb.addEventListener('click', () => rebuildFigures(oldFigs, rb, rn));
       box.append(rb, rn);
     }
+    if (noCard.length) {
+      const g = document.createElement('div');
+      g.className = 'ed-check-group';
+      g.textContent = 'Link preview missing or out of date';
+      box.appendChild(g);
+      noCard.forEach((p) => checkRow(box, p, serverIndex[p.key].share ? 'out of date' : 'none', true));
+      const mb = document.createElement('button');
+      mb.className = 'ed-abtn ed-check-rebuild';
+      mb.textContent = `Make ${noCard.length} link preview${noCard.length === 1 ? '' : 's'}`;
+      mb.title = 'Draw the picture a shared link to each of these solutions shows, and store it';
+      const mn = document.createElement('div');
+      mn.className = 'ed-check-note';
+      mn.textContent = 'A shared link previews as a picture of the problem and its figure, made when the solution is published. These have none yet, one drawn from an earlier version, or one in an older card design. Their solutions are not changed.';
+      mb.addEventListener('click', () => makeShareCards(noCard, mb, mn));
+      box.append(mb, mn);
+    }
     if (unsaved.length) {
       const g = document.createElement('div');
       g.className = 'ed-check-group';
@@ -459,7 +483,7 @@ function setThemeMode(light) {
         box.appendChild(b);
       });
     }
-    if (!stale.length && !unsaved.length && !orphan.length && !oldFigs.length) {
+    if (!stale.length && !unsaved.length && !orphan.length && !oldFigs.length && !noCard.length) {
       const ok = document.createElement('div');
       ok.className = 'ed-check-empty';
       ok.textContent = keys.length ? 'Everything matches its problem.' : 'No solutions stored yet.';
@@ -506,10 +530,17 @@ function setThemeMode(light) {
       steps: res.svgs.map((svg, k) => ({ svg, caption: (stored[k] && stored[k].caption) || '' })),
       build: figBuild,
     });
+    // A published one is published again, so its link preview is redrawn
+    // with the rebuilt figure, as on any publish (if that fails, it is
+    // listed by the next Check all).
+    let share = null;
+    if (row.status === 'published') {
+      try { share = await drawShareCard(p, { figure, solution: row.solution }); } catch (e) { /* see above */ }
+    }
     const saved = await SolutionStore.save(p.key, {
-      solution: row.solution, figure, status: row.status, problem_hash: row.problem_hash, author: row.author,
+      solution: row.solution, figure, status: row.status, problem_hash: row.problem_hash, author: row.author, share,
     }, row.updated_at);
-    serverIndex[p.key] = { status: saved.status, updated_at: saved.updated_at };
+    serverIndex[p.key] = { status: saved.status, updated_at: saved.updated_at, share: shareOf(saved) };
     if (cur && cur.key === p.key) { curRow = saved; refreshState(); }
     return 'rebuilt';
   }
@@ -571,6 +602,87 @@ function setThemeMode(light) {
       setRebuilding(false);
     }
   });
+
+  /* ───────────────────────── link previews ─────────────────────────
+     A shared solution link (/s/<key>, answered by
+     netlify/edge-functions/share.ts) previews as a picture of the problem
+     and its figure — or the start of the solution when there is none —
+     drawn here by editor/share-card.js. Publishing draws it first and sends
+     it with the save, so the solution and its picture are stored together
+     (doSave). Check all lists the published solutions whose picture is
+     missing, was drawn from an older version, or from an older card
+     design, with a button to make them all (share-card action). */
+  let cardQueue = Promise.resolve();
+
+  // `for` and updated_at are compared as instants: the server writes `for`
+  // as 2026-…Z while Postgres returns updated_at as 2026-…+00:00.
+  const shareCardCurrent = (entry) => !!(entry && entry.share && entry.share.for
+    && Date.parse(entry.share.for) === Date.parse(entry.updated_at) && entry.share.design === ShareCard.DESIGN);
+  const shareOf = (row) => (row && row.share ? { for: row.share.for, design: row.share.design } : null);
+
+  // The picture and link text for problem `p` with `content` ({ figure,
+  // solution }, saved or about to be): { image, title, description,
+  // design }. One at a time: every card is typeset by the same MathJax,
+  // in the same off-screen spot.
+  function drawShareCard(p, content) {
+    const job = cardQueue.then(async () => {
+      const host = document.createElement('div');
+      host.className = 'ed-card-host';
+      document.body.appendChild(host);
+      try {
+        const label = `Q${p.quiz} ${p.pos ? 'P' + p.pos : p.id}`;
+        const card = await ShareCard.build(host, {
+          brand: BRAND_NAME, course: COURSE_CODE_DISPLAY, label, condition: p.text,
+          steps: (content.figure && content.figure.steps) || [], solution: content.solution,
+        });
+        const image = await ShareCard.toJpeg(card);
+        return Object.assign({ image, design: ShareCard.DESIGN },
+          ShareCard.linkText({ app: APP_NAME, label, condition: p.text }));
+      } finally {
+        host.remove();
+      }
+    });
+    cardQueue = job.catch(() => {});
+    return job;
+  }
+
+  // Draws and stores the picture for `row`, a row already published.
+  async function makeShareCard(p, row) {
+    const card = await drawShareCard(p, row);
+    const share = await SolutionStore.shareCard(p.key, Object.assign({ for: row.updated_at }, card));
+    if (serverIndex[p.key]) serverIndex[p.key].share = shareOf({ share });
+    if (cur && cur.key === p.key && curRow && curRow.updated_at === row.updated_at) curRow.share = share;
+    return share;
+  }
+
+  // "Make N link previews" in the Check report. Reads each row again, so
+  // the picture is drawn from what is stored now.
+  async function makeShareCards(list, btn, note) {
+    if (rebuilding || checking) return;
+    setRebuilding(true);
+    btn.disabled = true;
+    let made = 0;
+    const failed = [];
+    try {
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i];
+        btn.textContent = `Making ${i + 1} / ${list.length}…`;
+        try {
+          const row = await SolutionStore.get(p.key);
+          if (!row || row.status !== 'published') continue;
+          await makeShareCard(p, row);
+          made++;
+        } catch (e) {
+          failed.push(`Q${p.quiz} · ${p.id}: ${(e && e.message) || e}`);
+          if (e && (e.auth || e.offline)) break;     // every later one would fail the same way
+        }
+      }
+    } finally {
+      setRebuilding(false);
+    }
+    btn.textContent = failed.length ? `Made ${made} · ${failed.length} failed` : `Made ${made}`;
+    note.textContent = failed.length ? 'Not made: ' + failed.join('; ') + '.' : 'Done. Shared links now preview these solutions.';
+  }
 
   /* ───────────────────────── colour hint ─────────────────────────
      Shows the five figure colours as they will actually render, in every
@@ -1206,7 +1318,7 @@ function setThemeMode(light) {
     const el = $('edCapShow');
     const t = cur ? (draft().captions[viewStep - 1] || '') : '';
     if (!t.trim()) { if (window.MathJax && MathJax.typesetClear) { try { MathJax.typesetClear([el]); } catch (e) {} } el.textContent = ''; return; }
-    renderSolutionInto(el, t);
+    renderSolutionInto(el, figureCaptionText(t, viewStep === stepState.n));
   }
 
   function renderViewer() {
@@ -1949,7 +2061,7 @@ function setThemeMode(light) {
       let timer = null;
       const show = () => {
         if (!view || !view.isConnected) return;
-        if (inp.value.trim()) renderSolutionInto(view, inp.value); else view.textContent = '';
+        if (inp.value.trim()) renderSolutionInto(view, figureCaptionText(inp.value, i === n - 1)); else view.textContent = '';
       };
       inp.addEventListener('input', () => {
         d.captions[i] = inp.value;
@@ -2389,7 +2501,7 @@ function setThemeMode(light) {
         if (s.svg) holder.innerHTML = figSanitizeSvg(s.svg);
         else holder.append(mk('span', 'ed-cmp-meta', 'not compiled yet'));
         st.append(holder);
-        if ((s.caption || '').trim()) { const c = mk('div', 'sol-text ed-cmp-cap'); st.append(c); caps.push([c, s.caption]); }
+        if ((s.caption || '').trim()) { const c = mk('div', 'sol-text ed-cmp-cap'); st.append(c); caps.push([c, figureCaptionText(s.caption, i === n - 1)]); }
         box.append(st);
       });
       cell.append(box);
@@ -2594,11 +2706,12 @@ function setThemeMode(light) {
     $('edStBuildBtn').disabled = rebuilding || checking;
 
     const empty = !hasContent(drafts[key]);
-    $('edBtnPublish').disabled = empty || missingSvg;
+    const saving = savingKeys.has(key);
+    $('edBtnPublish').disabled = empty || missingSvg || saving;
     // Published and unchanged: nothing to publish, but the credit can still change.
     $('edBtnPublish').textContent = status === 'published' ? (dirty ? 'Publish changes' : 'Change credit…') : 'Publish';
-    $('edBtnSave').disabled = empty || !dirty;
-    $('edBtnUnpublish').disabled = status !== 'published';
+    $('edBtnSave').disabled = empty || !dirty || saving;
+    $('edBtnUnpublish').disabled = status !== 'published' || saving;
     $('edBtnReload').disabled = !curRow;
     $('edBtnClear').disabled = !curRow && empty;
     if (missingSvg && !empty) setMsg(figKind(drafts[key]) === 'svg'
@@ -2610,28 +2723,65 @@ function setThemeMode(light) {
   // expected: the stored version this save may replace (default: the one
   // this window last saw); "Overwrite with mine" passes the newer one.
   // author: who to credit when publishing (default: you).
+  //
+  // Publishing draws the link-preview picture from the same content first
+  // and sends both in one save, so a solution goes live together with its
+  // picture. If only the picture fails, it is published without one (and
+  // says so); Check all can make it later.
+  //
+  // Everything the save needs is taken from this problem before the first
+  // wait, so opening another problem meanwhile never changes what is sent
+  // or stops it: the save finishes, the list and history are updated, and
+  // the outcome shows in the state panel if this problem is still open,
+  // otherwise as a toast.
   async function doSave(status, expected, author) {
-    const key = cur.key;
+    const p = cur;
+    const key = p.key;
+    if (savingKeys.has(key)) return false;
+    const content = payloadOf(key);
+    const exp = expected !== undefined ? expected : (curRow ? curRow.updated_at : null);
+    const here = () => !!cur && cur.key === key;
+    const name = `Q${p.quiz} · ${p.id}`;
+    const tell = (text, cls) => { if (here()) setMsg(text, cls); else if (cls) toast(`${name}: ${text}`, cls); };
+
     if (await editorIsOutdated()) {
-      setStateOpen(true);
-      setMsg('A newer version of the editor is out. Tap the red version label at the top to reload (your drafts are kept), then save again.', 'err');
+      if (here()) setStateOpen(true);
+      tell('A newer version of the editor is out. Tap the red version label at the top to reload (your drafts are kept), then save again.', 'err');
       return false;
     }
-    setMsg('Saving…', '');
+    savingKeys.add(key);
+    if (here()) refreshState();
     try {
-      const problem_hash = await problemHashOf(cur);
-      const exp = expected !== undefined ? expected : (curRow ? curRow.updated_at : null);
-      const row = await SolutionStore.save(key, Object.assign(payloadOf(key), { status, problem_hash, author }), exp);
-      if (cur.key !== key) return;                           // moved on meanwhile
-      curRow = row;
-      curStale = false;
-      serverIndex[key] = { status: row.status, updated_at: row.updated_at };
-      markItem(key);
-      refreshState();
-      setMsg(status === 'published' ? 'Published.' : 'Draft saved.', 'ok');
+      const problem_hash = await problemHashOf(p);
+      let share = null, cardError = null;
+      if (status === 'published') {
+        tell('Publishing… drawing the link preview', '');
+        try { share = await drawShareCard(p, content); } catch (e) { cardError = (e && e.message) || String(e); }
+        tell('Publishing…', '');
+      } else {
+        tell('Saving…', '');
+      }
+      const row = await SolutionStore.save(key, Object.assign({}, content, { status, problem_hash, author, share }), exp);
+      serverIndex[key] = { status: row.status, updated_at: row.updated_at, share: shareOf(row) };
       histSnapshot(key, status === 'published' ? 'Published' : 'Saved as draft');
+      savingKeys.delete(key);
+      if (here()) { curRow = row; curStale = false; }
+      markItem(key);
+      if (here()) refreshState();
+      if (status !== 'published') tell('Draft saved.', 'ok');
+      else if (shareCardCurrent(row)) tell('Published, with its link preview.', 'ok');
+      else tell('Published, but without a link preview: ' + (cardError || row.shareError
+        || 'the server did not store it (is solutions-admin up to date?)') + '. Check all can make it later.', 'err');
       return true;
     } catch (e) {
+      savingKeys.delete(key);
+      if (!here()) {
+        // Opened another problem meanwhile: say what happened; the choices
+        // below need this problem open.
+        tell(e && e.conflict ? 'not saved, someone else saved it meanwhile. Open it to choose whose version to keep.'
+          : 'not saved: ' + ((e && e.message) || e), 'err');
+        return false;
+      }
       if (e && e.conflict) {
         const them = e.current || null;
         const who = them && savedBy(them) ? '@' + savedBy(them) : 'Someone else';
@@ -2677,7 +2827,7 @@ function setThemeMode(light) {
       if (row) {
         histSnapshot(key, 'Before loading from the database');
         drafts[key] = draftFromRow(row);
-        serverIndex[key] = { status: row.status, updated_at: row.updated_at };
+        serverIndex[key] = { status: row.status, updated_at: row.updated_at, share: shareOf(row) };
       } else {
         delete serverIndex[key];
       }
@@ -2705,7 +2855,7 @@ function setThemeMode(light) {
       curRow = row;
       curStale = row && row.problem_hash ? (row.problem_hash !== await problemHashOf(cur)) : null;
       if (cur.key !== key) return;
-      if (row) serverIndex[key] = { status: row.status, updated_at: row.updated_at };
+      if (row) serverIndex[key] = { status: row.status, updated_at: row.updated_at, share: shareOf(row) };
       else delete serverIndex[key];
       markItem(key);
       refreshState();
@@ -2741,7 +2891,7 @@ function setThemeMode(light) {
       const row = await SolutionStore.setCredit(key, who || null, curRow.updated_at);
       if (cur.key !== key) return;
       curRow = row;
-      serverIndex[key] = { status: row.status, updated_at: row.updated_at };
+      serverIndex[key] = { status: row.status, updated_at: row.updated_at, share: shareOf(row) };
       markItem(key);
       refreshState();
       setMsg(name ? `Credit changed to @${name}.` : 'Credit changed.', 'ok');
@@ -2839,7 +2989,7 @@ function setThemeMode(light) {
     showProblem(p);
     setProbOpen(false); setStateOpen(false);
     curRow = null; curStale = null;
-    hideNote(); setMsg('');
+    hideNote(); setMsg(savingKeys.has(key) ? 'Still saving…' : '');
     loadIntoFields();
     refreshState();
     localStorage.setItem(LS.last, key);

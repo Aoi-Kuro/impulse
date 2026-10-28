@@ -22,13 +22,13 @@ const Quiz_4_Problems = [
     text:"A railroad rail made of steel is 1028 m long and it is fastened securely at both ends when the temperature is 16 °C. As the temperature increases, the rail begins to buckle upwards, taking the shape of an isosceles triangle. How high is this buckle when the temperature is 34 °C? Assume that the coefficient of linear expansion for steel is $11.9 \\times 10^{-6}$ K$^{-1}$." },
 
   { id:"P8", topic:"Thermal expansion", answer:0.158688, units:["m"],
-    text:"A railroad rail made of steel is 870 m long and is fastened securely at both ends when the temperature is 17 °. By how much would the rail expand if it were free to do so when the temperature rises to 33 °? Assume that the coefficient of linear expansion for steel is $11.4 \\times 10^{-6}$ K$^{-1}$." },
+    text:"A railroad rail made of steel is 870 m long and is fastened securely at both ends when the temperature is 17 °C. By how much would the rail expand if it were free to do so when the temperature rises to 33 °C? Assume that the coefficient of linear expansion for steel is $11.4 \\times 10^{-6}$ K$^{-1}$." },
 
   { id:"P9", topic:"Specific heat, phase changes", answer:0.2763517005988, units:["kg"],
     text:"An insulated cup containing 0.35 kg of ice at 0 °C is filled with 0.133 kg of water at 86 °C. Calculate the mass of liquid after the system reaches thermal equilibrium. Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$. Latent heat of fusion for water is 334 kJ kg$^{-1}$." },
 
   { id:"P10", topic:"Specific heat, phase changes", answer:0.224166, units:["kg"],
-    text:"An insulated cup containing 0.375 kg of ice at 0 ° is filled with 0.145 kg of water at 83 °. Calculate the mass of ice still unmelted after the system reaches thermal equilibrium. Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$. Latent heat of fusion for water is 334 kJ kg$^{-1}$." },
+    text:"An insulated cup containing 0.375 kg of ice at 0 °C is filled with 0.145 kg of water at 83 °C. Calculate the mass of ice still unmelted after the system reaches thermal equilibrium. Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$. Latent heat of fusion for water is 334 kJ kg$^{-1}$." },
 
   { id:"P11", topic:"Specific heat, phase changes", answer:0.26523035928144, units:["kg"],
     text:"A portion of 0.13 kg of water at 83 °C is poured into an insulated cup containing 2.81 kg of ice at 0 °C. Calculate the mass of liquid when the system reaches thermal equilibrium. Heat of fusion of water is 334 kJ kg$^{-1}$. Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$." },
@@ -61,25 +61,25 @@ const Quiz_4_Problems = [
     text:"A machinist bores a hole of diameter 1.5 cm in a steel plate at a temperature of 21 °C. What is the cross-sectional area of the hole when the temperature of the plate is increased to 176 °C? Linear coefficient of expansion for steel is $1.2 \\times 10^{-5}$ °C$^{-1}$." },
 
   { id:"P21", topic:"Thermal expansion", answer:0.0140257, units:["m"],
-    text:"A machinist bores a hole of diameter 1.4 cm in a steel plate at a temperature of 16 °. What is the diameter of the hole when the temperature of the plate is increased to 170 °? Linear coefficient of expansion for steel is $1.19 \\times 10^{-5}$ °C$^{-1}$." },
+    text:"A machinist bores a hole of diameter 1.4 cm in a steel plate at a temperature of 16 °C. What is the diameter of the hole when the temperature of the plate is increased to 170 °C? Linear coefficient of expansion for steel is $1.19 \\times 10^{-5}$ °C$^{-1}$." },
 
   { id:"P22", topic:"Thermal expansion", answer:0.0005296896, units:["m^2"],
     text:"A cube made of brass, with an edge length of 44 cm, is heated from 44.5 °C to 56.5 °C. Calculate the increase of the cube's surface area. Assume that the coefficient of linear expansion for brass is $19 \\times 10^{-6}$ K$^{-1}$." },
 
   { id:"P23", topic:"Thermal expansion", answer:2.92533e-05, units:["m^3"],
-    text:"A cube made of brass, with an edge length of 36 cm, is heated from 44.5 ° to 55.5 °. Calculate the increase of the cube's volume. Assume that the coefficient of linear expansion for brass is $19 \\times 10^{-6}$ K$^{-1}$." },
+    text:"A cube made of brass, with an edge length of 36 cm, is heated from 44.5 °C to 55.5 °C. Calculate the increase of the cube's volume. Assume that the coefficient of linear expansion for brass is $19 \\times 10^{-6}$ K$^{-1}$." },
 
   { id:"P24", topic:"Specific heat, phase changes", answer:451505.6, units:["J"],
     text:"An aluminum tea kettle with mass 1.5 kg and containing 1.6 kg of water is placed on a stove. If no heat is lost to the surroundings, how much heat must be added to raise the temperature from 21 °C to 77 °C? Specific heat of aluminum is 910 J kg$^{-1}$ K$^{-1}$, Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$." },
 
   { id:"P25", topic:"Specific heat, phase changes", answer:45.6237, units:[],
-    text:"An aluminum tea kettle with mass 1.7 kg containing 1.55 kg of water is placed on a stove at 17 °. If no heat is lost to the surroundings and 230 kJ of heat is added, what is the final temperature? Specific heat of aluminum is 910 J kg$^{-1}$ K$^{-1}$. Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$." },
+    text:"An aluminum tea kettle with mass 1.7 kg containing 1.55 kg of water is placed on a stove at 17 °C. If no heat is lost to the surroundings and 230 kJ of heat is added, what is the final temperature? Specific heat of aluminum is 910 J kg$^{-1}$ K$^{-1}$. Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$." },
 
   { id:"P26", topic:"Specific heat, phase changes", answer:2372.0666666667, units:["s"],
     text:"A student makes a cup of coffee by first placing a 180-W electric immersion heater in 1.7 kg of water. How much time is required to raise the temperature from 20 °C to 80 °C? Assume that all of the heater's power goes into heating the water. Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$." },
 
   { id:"P27", topic:"Specific heat, phase changes", answer:199.712, units:["W"],
-    text:"A student makes a cup of coffee by placing an electric immersion heater in 1.4 kg of water. The temperature must be raised from 16 ° to 77 ° in 1790 s. Assuming that all of the heater's power goes into heating the water, what power must the heater have? Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$." },
+    text:"A student makes a cup of coffee by placing an electric immersion heater in 1.4 kg of water. The temperature must be raised from 16 °C to 77 °C in 1790 s. Assuming that all of the heater's power goes into heating the water, what power must the heater have? Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$." },
 
   { id:"P28", topic:"Specific heat, phase changes", answer:0.10891956342291, units:["kg"],
     text:"An insulated beaker with negligible mass contains 0.225 kg of water at a temperature of 91 °C. How many kilograms of ice at a temperature of $-$14 °C must be dropped into the water to make the final temperature of the system 33 °C? Specific heat of water is 4186 J kg$^{-1}$ K$^{-1}$. Specific heat of ice is 2100 J kg$^{-1}$ K$^{-1}$. Latent heat of fusion for water is 334 kJ kg$^{-1}$." },
@@ -97,7 +97,7 @@ const Quiz_4_Problems = [
     text:"A polystyrene foam icebox has a total area of 0.94 m$^{2}$ and walls with an average thickness of 2 cm. The box contains ice, water, and canned beverages at 0 °C. The inside of the box is kept cold by melting ice. How much ice melts in one day if the icebox is kept in the trunk of a car at 27 °C? Thermal conductivity of polystyrene foam is $k$ = 0.010 W m$^{-1}$ °C$^{-1}$. Latent heat of fusion of water is 334 kJ kg$^{-1}$." },
 
   { id:"P33", topic:"Heat conduction", answer:17.4225, units:["W"],
-    text:"A polystyrene foam icebox has a total area of 1.01 m$^{2}$ and walls with an average thickness of 2.2 cm. The box contains ice and water at 0 °, and the outside temperature is 33 °. What is the rate of heat flow into the box? The thermal conductivity of polystyrene foam is $k$ = 0.0115 W m$^{-1}$ °C$^{-1}$." },
+    text:"A polystyrene foam icebox has a total area of 1.01 m$^{2}$ and walls with an average thickness of 2.2 cm. The box contains ice and water at 0 °C, and the outside temperature is 33 °C. What is the rate of heat flow into the box? The thermal conductivity of polystyrene foam is $k$ = 0.0115 W m$^{-1}$ °C$^{-1}$." },
 
   { id:"P34", topic:"Specific heat, phase changes", answer:0.048148, units:["g/s"],
     text:"A person produces heat at the rate of about 117 W when at rest. At what rate must water evaporate from the body to get rid of all this energy? Ignore heat transfer by other methods. Latent heat of vaporization for water is 2.430 kJ g$^{-1}$. Answer in g s$^{-1}$." },
@@ -109,7 +109,7 @@ const Quiz_4_Problems = [
     text:"A major source of heat loss from a house in cold weather is through the windows. Calculate the rate of heat flow through a glass window 2 m $\\times$ 1.3 m in $A$ area and $d$ = 3.4 mm thick, if the temperatures at the inner and outer surfaces are $T_{1}$ = 16 °C and $T_{2}$ = 13 °C, respectively. Thermal conductivity of the glass $k$ = 0.84 W m$^{-1}$ °C$^{-1}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_4/unnamed(3).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
   { id:"P37", topic:"Heat conduction", answer:7.12273e+07, units:["J"],
-    text:"A major source of heat loss from a house in cold weather is through the windows. A glass window is 1.95 m $\\times$ 1 m in area and $d$ = 4.1 mm thick. The inner and outer surface temperatures are 19.5 ° and 11.5 ° respectively. How much energy flows through this window in 6.5 hours? Thermal conductivity of the glass $k$ = 0.8 W m$^{-1}$ °C$^{-1}$." },
+    text:"A major source of heat loss from a house in cold weather is through the windows. A glass window is 1.95 m $\\times$ 1 m in area and $d$ = 4.1 mm thick. The inner and outer surface temperatures are 19.5 °C and 11.5 °C respectively. How much energy flows through this window in 6.5 hours? Thermal conductivity of the glass $k$ = 0.8 W m$^{-1}$ °C$^{-1}$." },
 
   { id:"P38", topic:"Heat conduction", answer:0.040634249471459, units:["W/(m K)"],
     text:"A power input of 155 W is required to keep the interior surface of the box of an apparatus 55 °C above the temperature of the outer surface. The total area of the box is 2.15 m$^{2}$, and the wall thickness is 3.1 cm. Find the thermal conductivity of the material of the box." },
@@ -121,7 +121,7 @@ const Quiz_4_Problems = [
     text:"An air bubble at the bottom of a lake 27 m deep has a volume of 1.4 cm$^{3}$. If the temperature at the bottom is 5.5 °C and the top 17.5 °C, what is the radius of the bubble just before it reaches the surface? Normal atmosphere pressure $P_{0}$ = 101325 Pa. Density of water $\\rho_{\\text{water}}$ = 997 kg m$^{-3}$. Gravitational acceleration $g$ = 9.8 m s$^{-2}$." },
 
   { id:"P41", topic:"Ideal gas law and moles", answer:6.68524, units:["cm^3"],
-    text:"An air bubble at the bottom of a lake 29 m deep has a volume of 1.7 cm$^{3}$. The temperature at the bottom is 6 ° and at the top 16 °. What is the volume of the bubble just before it reaches the surface? Atmospheric pressure is 101325 Pa, the density of water is 997 kg m$^{-3}$ and $g$ = 9.8 m s$^{-2}$." },
+    text:"An air bubble at the bottom of a lake 29 m deep has a volume of 1.7 cm$^{3}$. The temperature at the bottom is 6 °C and at the top 16 °C. What is the volume of the bubble just before it reaches the surface? Atmospheric pressure is 101325 Pa, the density of water is 997 kg m$^{-3}$ and $g$ = 9.8 m s$^{-2}$." },
 
   { id:"P42", topic:"Kinetic theory of gases", answer:1230.365799, units:["m/s"],
     text:"Consider a gas mixture of Helium and Oxygen molecules assuming O$_{2}$ is diatomic. The root-mean-square velocity for the O$_{2}$ molecules is 435 m s$^{-1}$. Find $v_{\\text{rms}}$ for the Helium atoms. Molar mass of helium is 4 g mol$^{-1}$, molar mass of oxygen is 32 g mol$^{-1}$." },
@@ -181,7 +181,7 @@ const Quiz_4_Problems = [
     text:"Calculate the number of molecules in the air in one breath, with a volume of 490 mL, 16 °C and 1.02 atm. Boltzmann's constant $k_{\\mathrm{B}} = 1.38 \\times 10^{-23}$ J K$^{-1}$. 1 atm = 101325 Pa. 1 L = 0.001 m$^{3}$." },
 
   { id:"P61", topic:"Ideal gas law and moles", answer:0.0260057, units:["mol"],
-    text:"Calculate the number of moles of air in one breath, with a volume of 585 mL, at 15 ° and 1.05 atm. The universal gas constant is $R$ = 8.31 J mol$^{-1}$ K$^{-1}$. 1 atm = 101325 Pa. 1 L = 0.001 m$^{3}$." },
+    text:"Calculate the number of moles of air in one breath, with a volume of 585 mL, at 15 °C and 1.05 atm. The universal gas constant is $R$ = 8.31 J mol$^{-1}$ K$^{-1}$. 1 atm = 101325 Pa. 1 L = 0.001 m$^{3}$." },
 
   { id:"P62", topic:"Ideal gas law and moles", answer:1.3451937424789, units:["kg/m^3"],
     text:"Calculate the density of 510 mL air under 1.04 atm pressure at 0 °C. In terms of molar fraction, air contains 78% N$_{2}$, 21% O$_{2}$, and 1% Ar molecules. Molar masses: $M_{\\text{N}_{2}}$ = 28 g mol$^{-1}$, $M_{\\text{O}_{2}}$ = 32 g mol$^{-1}$, and $M_{\\text{Ar}}$ = 40 g mol$^{-1}$. The universal gas constant is $R$ = 8.31 J mol$^{-1}$ K$^{-1}$. 1 atm = 101325 Pa. 1 L = 0.001 m$^{3}$." },
@@ -202,7 +202,7 @@ const Quiz_4_Problems = [
     text:"A vacuum system can achieve a pressure of $1.9 \\times 10^{-7}$ N m$^{-2}$ at 25 °C. How many molecules are there in a cubic centimeter at given pressure and temperature? Avogadro's number $N_{\\mathrm{A}} = 6.022 \\times 10^{23}$ mol$^{-1}$. The universal gas constant is $R$ = 8.31 J mol$^{-1}$ K$^{-1}$. Answer without units." },
 
   { id:"P68", topic:"Ideal gas law and moles", answer:1.93032e-10, units:["mol"],
-    text:"A vacuum system can achieve a pressure of $4.7 \\times 10^{-7}$ N m$^{-2}$ at 20 °. How many moles of gas are there in one cubic metre at this pressure and temperature? The universal gas constant is $R$ = 8.31 J mol$^{-1}$ K$^{-1}$." },
+    text:"A vacuum system can achieve a pressure of $4.7 \\times 10^{-7}$ N m$^{-2}$ at 20 °C. How many moles of gas are there in one cubic metre at this pressure and temperature? The universal gas constant is $R$ = 8.31 J mol$^{-1}$ K$^{-1}$." },
 
   { id:"P69", topic:"Kinetic theory of gases", answer:19068.598595354, units:["Pa"],
     text:"If the root-mean-square speed of oxygen molecules inside a refrigerator of volume 617 L is 445 m s$^{-1}$, what is the partial pressure of the oxygen? There are 5.57 moles of oxygen in the refrigerator, and the molar mass of oxygen is 32 g mol$^{-1}$. The universal gas constant is $R$ = 8.31 J mol$^{-1}$ K$^{-1}$." },
@@ -304,7 +304,7 @@ const Quiz_4_Problems = [
     text:"In a cylinder sealed with a piston, you rapidly compress 1.65 L of N$_{2}$ gas initially at 0.98 atm pressure and 2 °C to half its original volume. Assume N$_{2}$ behaves like an ideal gas. Assume the compression is adiabatic, $\\gamma$ = 1.4. Calculate the final temperature of the gas. 1 atm = 101325 Pa. 1 L = 0.001 m$^{3}$." },
 
   { id:"P102", topic:"Adiabatic processes", answer:128.339, units:["J"],
-    text:"In a cylinder sealed with a piston, you rapidly compress 1.57 L of N$_{2}$ gas initially at 1.01 atm and 2 ° to half its original volume. Assume N$_{2}$ behaves like an ideal diatomic gas and that the compression is adiabatic with $\\gamma$ = 1.4. How much work is done on the gas? 1 atm = 101325 Pa. 1 L = 0.001 m$^{3}$. The universal gas constant is $R$ = 8.31 J mol$^{-1}$ K$^{-1}$." },
+    text:"In a cylinder sealed with a piston, you rapidly compress 1.57 L of N$_{2}$ gas initially at 1.01 atm and 2 °C to half its original volume. Assume N$_{2}$ behaves like an ideal diatomic gas and that the compression is adiabatic with $\\gamma$ = 1.4. How much work is done on the gas? 1 atm = 101325 Pa. 1 L = 0.001 m$^{3}$. The universal gas constant is $R$ = 8.31 J mol$^{-1}$ K$^{-1}$." },
 
   { id:"P103", topic:"Adiabatic processes", answer:270072.26089931, units:["Pa"],
     text:"In a cylinder sealed with a piston, you rapidly compress 1.23 L of N$_{2}$ gas initially at 1.01 atm pressure and 2 °C to half its original volume. Assume N$_{2}$ behaves like an ideal gas. Assume the compression is adiabatic, $\\gamma$ = 1.4. Calculate the final pressure of the gas. 1 atm = 101325 Pa. 1 L = 0.001 m$^{3}$." },
@@ -340,7 +340,7 @@ const Quiz_4_Problems = [
     text:"Determine the change in internal energy of 1.6 L of water at 100 °C when it is fully boiled from liquid to gas, which results in 1607 L of steam at 100 °C. Assume the process is done at atmospheric pressure $P$ = 1 atm. Latent heat of vaporization of water is $L_{v}$ = 2256 kJ kg$^{-1}$. Density of water $\\rho$ = 1000 kg m$^{-3}$. 1 atm = 101325 Pa, 1 L = 0.001 m$^{3}$." },
 
   { id:"P114", topic:"First law and PV diagrams", answer:179234, units:["J"],
-    text:"Determine the work done by 1.1 L of water at 100 ° when it is fully boiled from liquid to gas at constant atmospheric pressure, producing 1770 L of steam at 100 °. 1 atm = 101325 Pa. 1 L = 0.001 m$^{3}$." },
+    text:"Determine the work done by 1.1 L of water at 100 °C when it is fully boiled from liquid to gas at constant atmospheric pressure, producing 1770 L of steam at 100 °C. 1 atm = 101325 Pa. 1 L = 0.001 m$^{3}$." },
 
   { id:"P115", topic:"Heat engines and Carnot cycles", answer:189.61616161616, units:["J"],
     text:"A Carnot engine operates between a hot reservoir at 495 K and a cold reservoir at 305 K. If it absorbs 494 J of heat per cycle at the hot reservoir, how much work per cycle does it deliver?" },
@@ -358,13 +358,13 @@ const Quiz_4_Problems = [
     text:"The maximum possible efficiency of a heat engine which exhausts its heat at a temperature of 31 °C is 57 percent. What is the minimum value of the temperature at which the engine takes in heat?" },
 
   { id:"P120", topic:"Heat engines and Carnot cycles", answer:0.567308, units:[],
-    text:"A heat engine exhausts its heat at a temperature of 42 ° and takes in heat at 455 °. What is the maximum possible efficiency of this engine? Give the answer as a fraction, not a percentage." },
+    text:"A heat engine exhausts its heat at a temperature of 42 °C and takes in heat at 455 °C. What is the maximum possible efficiency of this engine? Give the answer as a fraction, not a percentage." },
 
   { id:"P121", topic:"Entropy", answer:291.17948717949, units:["J/K"],
     text:"A block of ice with a mass of 238 g at 0 °C is placed in a large lake. The temperature of the lake is just slightly higher than 0 °C, and the ice melts. What is the entropy change of the ice? Heat of fusion of water is 334 kJ kg$^{-1}$." },
 
   { id:"P122", topic:"Entropy", answer:246.844, units:["g"],
-    text:"A block of ice at 0 ° is placed in a large lake whose temperature is just slightly above 0 °, and the ice melts completely. The entropy change of the ice is 302 J K$^{-1}$. What was the mass of the block? Latent heat of fusion for water is 334 kJ kg$^{-1}$." },
+    text:"A block of ice at 0 °C is placed in a large lake whose temperature is just slightly above 0 °C, and the ice melts completely. The entropy change of the ice is 302 J K$^{-1}$. What was the mass of the block? Latent heat of fusion for water is 334 kJ kg$^{-1}$." },
 
   { id:"P123", topic:"Entropy", answer:-289.95604395604, units:["J/K"],
     text:"A block of ice with a mass of 237 g at 0 °C is placed in a large lake. The temperature of the lake is just slightly higher than 0 °C, and the ice melts. What is the entropy change of the lake? Heat of fusion of water is 334 kJ kg$^{-1}$." },
@@ -373,7 +373,7 @@ const Quiz_4_Problems = [
     text:"A 8 kg piece of lead at a temperature of 320 °C is placed in a lake whose temperature is 14 °C. Determine the entropy change of the lake. Specific heat of the lead is $c_{\\text{lead}}$ = 128 J kg$^{-1}$ K$^{-1}$." },
 
   { id:"P125", topic:"Entropy", answer:242250, units:["J"],
-    text:"A 6 kg piece of lead at a temperature of 340 ° is placed in a lake whose temperature is 17 °. How much heat flows from the lead into the lake? Specific heat of the lead is 125 J kg$^{-1}$ K$^{-1}$." },
+    text:"A 6 kg piece of lead at a temperature of 340 °C is placed in a lake whose temperature is 17 °C. How much heat flows from the lead into the lake? Specific heat of the lead is 125 J kg$^{-1}$ K$^{-1}$." },
 
   { id:"P126", topic:"Entropy", answer:-371.56, units:["J/K"],
     text:"A 4 kg piece of lead at a temperature of 320 °C is placed in a lake whose temperature is 14 °C. Determine the entropy change of the lead piece. Specific heat of the lead is $c_{\\text{lead}}$ = 128 J kg$^{-1}$ K$^{-1}$." },
@@ -409,7 +409,7 @@ const Quiz_4_Problems = [
     text:"Three moles of an ideal gas undergo a reversible isothermal compression at 22 °C. During this compression, 1550 J of work is done on the gas. What is the change in entropy of the gas?" },
 
   { id:"P137", topic:"Entropy", answer:5.28497, units:["J/K"],
-    text:"Three moles of an ideal gas undergo a reversible isothermal compression at 16.5 °. During this compression, 1530 J of work is done on the gas, and the heat produced flows into the surroundings at the same temperature. What is the entropy change of the surroundings?" },
+    text:"Three moles of an ideal gas undergo a reversible isothermal compression at 16.5 °C. During this compression, 1530 J of work is done on the gas, and the heat produced flows into the surroundings at the same temperature. What is the entropy change of the surroundings?" },
 
   { id:"P138", topic:"Entropy", answer:-143.27077747989, units:["J/K"],
     text:"A student immerses one end of a copper rod in boiling water at 100 °C and the other end in an ice-water mixture at 0 °C. The sides of the rod are insulated. After steady-state conditions have been achieved in the rod, 0.16 kg of ice melts in a certain time interval. For this time interval, find the entropy change of the boiling water. Heat of fusion of water is 334 kJ kg$^{-1}$." },
@@ -430,7 +430,7 @@ const Quiz_4_Problems = [
     text:"What is the entropy change of 222 g of steam at 100 °C when it condenses to water at the same temperature? Heat of fusion of water is 2256 kJ kg$^{-1}$." },
 
   { id:"P144", topic:"Entropy", answer:199.408, units:["g"],
-    text:"Steam at 100 ° condenses to water at the same temperature, and the entropy change of the steam is $-$1205 J K$^{-1}$. What mass of steam condensed? Latent heat of vaporization of water is 2254 kJ kg$^{-1}$." },
+    text:"Steam at 100 °C condenses to water at the same temperature, and the entropy change of the steam is $-$1205 J K$^{-1}$. What mass of steam condensed? Latent heat of vaporization of water is 2254 kJ kg$^{-1}$." },
 
   { id:"P145", topic:"Heat engines and Carnot cycles", answer:260.45, units:["K"],
     text:"A Carnot engine has CO$_{2}$ as its working substance. The gas is to have a maximum temperature of 491 °C. With a heat input of 440 J per cycle, you want 290 J of useful work. Find the temperature of the cold reservoir. Answer in kelvins (K)." },
@@ -442,7 +442,7 @@ const Quiz_4_Problems = [
     text:"A Carnot engine whose low-temperature reservoir is at $-$90 °C has an efficiency of 25%. The efficiency is to be increased to 50%. By how many kelvins must the temperature of the high-temperature reservoir be increased if the temperature of the low-temperature reservoir remains constant?" },
 
   { id:"P148", topic:"Heat engines and Carnot cycles", answer:228.75, units:["K"],
-    text:"A Carnot engine whose low-temperature reservoir is at $-$90 ° has an efficiency of 20%. What is the temperature of its high-temperature reservoir? Answer in kelvins (K)." },
+    text:"A Carnot engine whose low-temperature reservoir is at $-$90 °C has an efficiency of 20%. What is the temperature of its high-temperature reservoir? Answer in kelvins (K)." },
 
   { id:"P149", topic:"Heat engines and Carnot cycles", answer:67.667, units:["K"],
     text:"A Carnot engine whose low-temperature reservoir is at $-$70 °C has an efficiency of 25%. The efficiency is to be increased to 50%. By how many kelvins must the temperature of the low-temperature reservoir be decreased if the temperature of the high-temperature reservoir remains constant? Find the magnitude of the temperature change." },

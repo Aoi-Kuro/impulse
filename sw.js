@@ -337,7 +337,26 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(routeFetch(event));
 });
 
+// ── Shared solution links (/s/<problem_key>) ──
+// On the server they are answered by netlify/edge-functions/share.ts, for
+// the link previews. A visitor who already has the site is sent straight
+// to the solution from here instead: no round trip, and it works in full
+// offline mode too, where the cached app shell served at /s/... would load
+// with every relative path pointing under /s/.
+function respondShareLink(event) {
+  if (event.request.mode !== 'navigate') return null;
+  const scope = new URL(self.registration.scope);
+  const url = new URL(event.request.url);
+  const prefix = scope.pathname + 's/';
+  if (url.origin !== scope.origin || !url.pathname.startsWith(prefix)) return null;
+  let key = '';
+  try { key = decodeURIComponent(url.pathname.slice(prefix.length).replace(/\/+$/, '')); } catch (e) { /* bad escape */ }
+  return Response.redirect(new URL(key ? '?solution=' + encodeURIComponent(key) : '', scope).href, 302);
+}
+
 async function routeFetch(event) {
+  const shared = respondShareLink(event);
+  if (shared) return shared;
   const until = await readOfflineModeUntil();
   if (until && Date.now() < until) {
     const handled = await respondFullOffline(event);

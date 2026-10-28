@@ -159,12 +159,12 @@
 
 <!-- ── Open Graph / Telegram / Social preview ─────────────────────────────── -->
 <meta property="og:type"        content="website" />
-<meta property="og:title"       content="PHYS 161 Practice Quiz" />
+<meta property="og:title"       content="Impulse Practice App" />
 <meta property="og:description" content="Interactive physics practice quiz: classical mechanics, thermodynamics, and vectors. Instant feedback with scoring." />
 <meta property="og:image"       content="course/preview.png" />
 <meta property="og:url"         content="https://your-domain.com/PHYS162_Practice_Quiz.html" />
 <meta name="twitter:card"       content="summary_large_image" />
-<meta name="twitter:title"      content="PHYS 161 Practice Quiz" />
+<meta name="twitter:title"      content="Impulse Practice App" />
 <meta name="twitter:description" content="Interactive physics practice quiz for PHYS 161 course at Nazarbayev University." />
 <meta name="twitter:image"      content="course/preview.png" />
 <!-- ── Keep these two lines' course-config.js values (display.ogDescription
@@ -177,10 +177,10 @@
      before <title>, so the title below is replaced the moment it's parsed
      and the tab never shows the placeholder. See its own header. ── -->
 <script src="js/course-config.js"></script>
-<!-- Placeholder for crawlers that don't run JS; hand-edit with the meta
-     tags above. -->
-<title>PHYS 161 Practice Quiz</title>
-<script>document.title = COURSE_TITLE;</script>
+<!-- Placeholder for crawlers that don't run JS; the tab shows APP_NAME
+     ("Impulse" / "Flux") from course-config.js. -->
+<title>Impulse</title>
+<script>document.title = APP_NAME;</script>
 
 
 <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=1.0.5" sizes="96x96" />
@@ -655,6 +655,9 @@
 
   <div class="solve-all-actions-row">
     <button class="btn-reset-progress" onclick="resetSolveAll()">🗑 Reset Progress</button>
+    <!-- Every problem of this set, the ones with a solution clickable
+         (openSolutionBrowser in js/solutions.js). -->
+    <button class="btn-solution-list" onclick="openSolutionBrowser(selectedQuizNum)" title="Solutions for this set">📘 Solution list</button>
     <button class="btn-rerender-eqs" onclick="rerenderSolveAllEquations()">🔁 Rerender Equations</button>
   </div>
   <div id="solveAllContainer"></div>
@@ -1048,7 +1051,7 @@
 
       <section class="license-card">
         <h2>Third-Party Components</h2>
-        <p>Bundled libraries and fonts keep their own licenses: MathJax, DOMPurify and SheetJS (Apache 2.0), jsPDF (MIT), IBM Plex fonts (SIL Open Font License 1.1) and TikZJax. Their license files are kept with them in <code>vendor/</code>.</p>
+        <p>Bundled libraries and fonts keep their own licenses: MathJax, DOMPurify and SheetJS (Apache 2.0), jsPDF and html-to-image (MIT), IBM Plex fonts (SIL Open Font License 1.1) and TikZJax. Their license files are kept with them in <code>vendor/</code>.</p>
         <p>The site name next to the logo is set in Kanit, © 2020 The Kanit Project Authors (<a href="https://github.com/cadsondemak/kanit" target="_blank" rel="noopener">github.com/cadsondemak/kanit</a>), loaded from Google Fonts under the <a href="https://openfontlicense.org" target="_blank" rel="noopener license">SIL Open Font License 1.1</a>. So are the fonts offered in Settings → Display → Font (Atkinson Hyperlegible Next, Golos Text, Hanken Grotesk, Mona Sans, Outfit and Source Sans 3), each © its authors.</p>
       </section>
 
@@ -1509,8 +1512,6 @@
       </div>
     </div>
 
-    <div class="solution-loading" id="solutionLoading" hidden>Loading…</div>
-
     <div class="solution-problem" id="solutionProblem">
       <div class="solution-problem-head">
         <span class="solution-section-label">Problem</span>
@@ -1519,6 +1520,9 @@
       </div>
       <div class="problem-text" id="solutionProblemText"></div>
     </div>
+
+    <!-- Under the problem, so the problem doesn't move when it goes. -->
+    <div class="solution-loading" id="solutionLoading" hidden>Loading…</div>
 
     <div class="solution-stale" id="solutionStale" hidden>
       This problem has been edited since the solution was written, so some numbers may no longer match.
@@ -1556,16 +1560,26 @@
     <div class="solution-main" id="solutionMain">
       <div class="solution-section-label">Solution</div>
       <div class="sol-text" id="solutionBody"></div>
+      <div class="solution-credit" id="solutionCredit" hidden></div>
     </div>
 
-    <!-- Previous / next problem with a published solution in this quiz
-         (renderSolutionPager in js/solutions.js). -->
+    <!-- Previous / next problem with a published solution in this quiz, and
+         the Solution list between them (renderSolutionPager in
+         js/solutions.js). The list takes the pager's place while open. -->
     <div class="solution-pager" id="solutionPager" hidden>
       <button type="button" class="solution-close-btn solution-pager-btn" id="solutionPrevProblem"></button>
+      <button type="button" class="solution-close-btn solution-pager-btn" id="solutionListBtn" onclick="openSolutionList()" title="Every problem of this quiz">Solution list</button>
       <button type="button" class="solution-close-btn solution-pager-btn" id="solutionNextProblem"></button>
     </div>
 
-    <div class="solution-credit" id="solutionCredit"></div>
+    <div class="solution-list" id="solutionList" hidden>
+      <div class="solution-list-head">
+        <div class="solution-list-title">Solution list <span class="solution-list-count" id="solutionListCount"></span></div>
+        <div class="solution-list-sets" id="solutionListSets" role="group" aria-label="Set"></div>
+        <button type="button" class="solution-close-btn solution-list-close" onclick="closeSolutionList()" title="Close the list" aria-label="Close the solution list">✕</button>
+      </div>
+      <div class="solution-list-grid" id="solutionListGrid"></div>
+    </div>
   </div>
 </div>
 

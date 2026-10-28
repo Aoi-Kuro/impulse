@@ -54,6 +54,7 @@ The procedure is described in [Deploying a new course](#deploying-a-new-course).
   - [Figures (SVG)](#figures-svg)
   - [Solution text](#solution-text)
   - [Saving, publishing and conflicts](#saving-publishing-and-conflicts)
+  - [Link previews](#link-previews)
   - [Drafts and local history](#drafts-and-local-history)
   - [Other editor tools](#other-editor-tools)
   - [Managing editor keys](#managing-editor-keys)
@@ -82,8 +83,10 @@ The procedure is described in [Deploying a new course](#deploying-a-new-course).
   + Edge Functions (Deno/TypeScript). The browser talks to it directly with a
   public, RLS-restricted *publishable* key; every write goes through an Edge
   Function.
-- **Netlify** serves the static files. A minified upload zip is produced by
-  `minify.py` (see [Building for deployment](#building-for-deployment-minifypy)).
+- **Netlify** serves the static files, plus one Edge Function
+  (`netlify/edge-functions/share.ts`) for shared solution links. `minify.py`
+  builds the minified site and either zips it or deploys it with the Netlify
+  CLI (see [Building for deployment](#building-for-deployment-minifypy)).
 - **MathJax 3** (STIX Two font, vendored in `vendor/mathjax/`) renders LaTeX,
   with a persistent IndexedDB render cache for Solve-All mode.
 - **TikZJax** (vendored in `vendor/tikzjax/`, ~9.5 MB) compiles TikZ figures
@@ -127,8 +130,11 @@ impulse/
 │                            optional remote settings (see below)
 ├── _headers                 Netlify Cache-Control: vendor/, images/, favicon/
 │                            reusable for a day (cuts billed revalidations)
-├── minify.py                Builds the minified Netlify upload zip and checks
-│                            site-version.json
+├── minify.py                Builds the minified site and checks
+│                            site-version.json; zips it, or with --deploy
+│                            deploys it (and netlify/) with the Netlify CLI
+├── netlify/edge-functions/
+│   └── share.ts             /s/<key>: a shared solution's link preview
 ├── LICENSE                  GNU AGPL v3 (shown on the Copyright screen)
 ├── vendor-src/              Sources of vendor/ builds (not deployed)
 │   └── pt-answer/           Answer engine: source, build.py, tests
@@ -216,7 +222,9 @@ impulse/
 │   ├── manual.js            Editor manual screen (📖, reads editor/manual.json)
 │   ├── manual.json          Editor manual content (sections/subsections)
 │   ├── store.js             Talks to the solutions-admin Edge Function
-│   └── store-mock.js        Drop-in localStorage stand-in for store.js
+│   ├── store-mock.js        Drop-in localStorage stand-in for store.js
+│   ├── share-card.js/.css   The link-preview picture of a solution
+│   └── share-card.html      Test view of that picture (?key=q3_P148i)
 │
 ├── css/
 │   ├── style.css            Core UI, landing screen, theme presets
@@ -244,10 +252,11 @@ impulse/
 │   ├── pt-answer/           Answer engine (built from vendor-src/pt-answer)
 │   ├── jspdf/               jsPDF, svg2pdf, jspdf-autotable
 │   ├── sheetjs/             SheetJS (xlsx)
+│   ├── html-to-image/       html-to-image (editor: link-preview pictures)
 │   └── fonts/               IBM Plex embedded for PDF export
 │
 └── superbase/               [sic] Supabase backend for ONE project
-    ├── migrations/          000–010, run in order on a fresh project
+    ├── migrations/          000–012, run in order on a fresh project
     ├── edge-functions/      Deno/TypeScript Edge Functions
     ├── database.sql         Old context-only schema dump (reference only)
     └── schema-phys162.png   Reference screenshot of the phys162 schema
@@ -275,7 +284,7 @@ course-specific too, although they live outside `course/`.
 
 `course/course.json` is **historical only**. It used to be a copy-paste
 reference for titles and meta text; nothing loads it today (it is only listed
-in the offline-mode download manifest). The eyebrow labels and `document.title`
+in the offline-mode download manifest). The eyebrow labels and the tab titles
 are driven by `js/course-config.js`; the static meta tags are covered under
 [Manual-swap items](#manual-swap-items).
 
@@ -323,7 +332,7 @@ reads instead of hardcoding values:
 | `QUIZ_CUMULATIVE_PREV_COUNT` | In cumulative mode, how many of the `QUIZ_SIZE` problems come from earlier quizzes; the rest come from the selected quiz. Must be `<= QUIZ_SIZE` (an error is logged otherwise). |
 | `FORUM_PINNED_MESSAGE_ID` | The `forum_messages` row shown pinned at the top of the forum. No default exists; an error is logged when it is missing and the banner stays hidden. |
 | `COURSE_CHANGELOG_SCOPE` | Filters changelog entries (see below). When missing, every entry is shown unfiltered and an error is logged. |
-| `COURSE_CODE` / `COURSE_CODE_DISPLAY` / `COURSE_TITLE` | `"PHYS161"`, `"PHYS 161"`, `"PHYS 161 Practice Quiz"`. Set `document.title` (with a "You're offline — " prefix on `offline.html`), the four eyebrow labels, and the editor's title. They also update the OG/Twitter meta tags in-browser, which link-preview crawlers never see (see [Manual-swap items](#manual-swap-items)). |
+| `COURSE_CODE` / `COURSE_CODE_DISPLAY` / `APP_NAME` | `"PHYS161"`, `"PHYS 161"`, `"Impulse"` (`"Flux"` on PHYS162, from `display.appName`). The course code sets the four eyebrow labels. `APP_NAME` sets the tab titles (`Impulse`, `Impulse \| Offline`, `Impulse \| Editorial`) and, in-browser only, the OG/Twitter titles (`Impulse Practice App`); link-preview crawlers never see that (see [Manual-swap items](#manual-swap-items)). |
 
 A course without `quizSettings` falls back to phys162's values (6, 3). The file
 must load before anything that reads `STORAGE_PREFIX`, so it is the first
@@ -861,6 +870,17 @@ thread on tap.
   (`figCropToContent`, one shared box for all steps) and scaled by
   `figure.scale`. `vendor/tikzjax/fonts.css` is loaded on the site because the
   SVG glyphs use Computer Modern private-use codepoints.
+- **🔗 Share** copies `https://<site>/s/<problem_key>`. That link is answered
+  by the Netlify Edge Function `netlify/edge-functions/share.ts` with a tiny
+  page holding the solution's own preview tags (title, description and the
+  picture the editor drew, see [Link previews](#link-previews)) and a script
+  that sends people on to `/?solution=<key>`; crawlers don't run it, so they
+  keep the tags. No meta refresh, which some crawlers would follow to the
+  plain site. Without a picture (or when unpublished) the site's own preview
+  is used. Netlify's CDN keeps each link's page for 5 minutes. A visitor who
+  has the site installed never reaches the function: `sw.js` redirects `/s/`
+  itself (which also covers full offline mode). On `localhost` the button
+  copies `?solution=` directly, as there is no edge function.
 - Solution text is rendered by `renderSolutionInto` (`js/solution-render.js`):
   each line becomes its own block inserted as text (never HTML); multi-line
   `$$…$$`, `\[…\]` and `\begin{env}…\end{env}` blocks are kept together; an
@@ -1121,7 +1141,7 @@ saved values over `SETTINGS_DEFAULTS`. `getSetting(tab, key)` /
 |---|---|
 | **Display** | *Main screen*: Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme). *Animations and figures*: Reduce motion (sub, independent of it: Off / XX% with ▲▼ arrows, 10–40% — reduce motion automatically while the battery is below that and not charging; `navigator.getBattery()`, Chromium only, blocked elsewhere) · Figure size slider (50–200%, scales problem images, redrawn figures and solution figures) · Default animation speed slider (0.25–5×; the speed chip under a figure multiplies it) · Repeat one-shot animations (they go round again until ⏸, which then finishes the round) · Play looped animations only once (one cycle, then they stop by themselves) · Hide animation control buttons (the play button and speed chip, so animated figures stay still) · Logo animation (the logo cube's tumble, `js/logo-tumble.js`) · Hide field lines by default. *Extra*: Show floating forum button · Show running line (top-bar tips) |
 | **Notifications** | Hide update reminder (sub: Update anyway outside quiz mode) · Hide try-new-theme reminder · Hide bug report reminder · Go silent — hides every badge and banner and mutes push (sub: Turn off automatically after 24 hours) |
-| **Study** | Redrawn figures (on: theme-coloured SVGs, off: original images) · Show live timer · Reset filter on page load · Automatically stop after 50 minutes · Full screen for Random N (sub: Don't show full-screen reminder) · Select latest quiz by default · Select cumulative by default · Hide topic while active · Solve-All: Lock order + Order · Line progress (rail) · Show progress window (sticky score) · Reveal wrong answer instantly |
+| **Study** | Redrawn figures (on: theme-coloured SVGs, off: original images) · Show live timer · Reset filter on page load · Automatically stop after 50 minutes · Full screen for Random N (sub: Don't show full-screen reminder) · Select last used quiz by default (on) · Select cumulative by default · Hide topic while active · Solve-All: Lock order + Order · Line progress (rail) · Show progress window (sticky score) · Reveal wrong answer instantly |
 | **Sync & Storage** | Sync settings on this device (on by default; never synced itself) · Go offline (24 h) · Cache & storage tools · Backup |
 | **Search** | A search box; matching settings appear under it as their real rows, with a link to their own tab (`js/settings-search.js`) |
 
@@ -1267,7 +1287,7 @@ and the full-screen reminder queue first-come-first-served. API: `register`,
   available" with Reload (which purges the service-worker cache first). With
   "Hide update reminder" on, the banner is suppressed, and "Update anyway
   outside quiz mode" reloads silently as soon as no timed attempt is running.
-  An update left waiting for 24 hours (dismissed or not), or one the running
+  An update left waiting for 48 hours (dismissed or not), or one the running
   version is below `min_version` for, is applied the same way regardless of
   settings, and even during a timed attempt once that attempt has run for 3
   hours. At most one forced reload per outdated version per 24 hours, so a
@@ -1305,7 +1325,7 @@ check.
 
 | Key | Effect | Default |
 |---|---|---|
-| `min_version` | Tabs on an older version reload as soon as they're outside a timed quiz (a timed quiz once it has run 3 h), instead of after 24 h. Must not be above `version`. | no minimum |
+| `min_version` | Tabs on an older version reload as soon as they're outside a timed quiz (a timed quiz once it has run 3 h), instead of after 48 h. Must not be above `version`. | no minimum |
 | `poll` | Background intervals in seconds, each clamped to its limits: `attempts` 45 (15–3600), `solve_all` 60 (15–3600), `settings` 900 (60–86400), `stats` 45 (15–3600), `forum` 90 (15–3600), `forum_quiet` 900 (60–21600), `solutions` 1800 (60–86400, how long one solutions index fetch is reused), `update` 300 (60–1800). Zero or a negative value is ignored (default), not clamped to the fastest rate. A changed value takes effect at once. A timer tick is skipped when the same work already ran less than an interval ago (tab return, Realtime ping), so a catch-up isn't repeated seconds later. | values shown |
 | `off` | `realtime`: no Realtime connections; everything runs on its `poll` interval. `forum_posting`: the forum is read-only (no new messages, replies or edits). | nothing off |
 | `sync_paused` | `true`: attempts, Solve-All progress and settings stay in each browser and are neither sent nor fetched; deleting an attempt and resetting Solve-All still go through. Removing it syncs every visible tab at once. | `false` |
@@ -1332,7 +1352,7 @@ builds keep reading the old name.
 
 | Situation | Setting | Notes |
 |---|---|---|
-| Release fixes something every open tab must get now | bump `version` and set `min_version` to it | Tabs reload within one check; a running timed quiz is never interrupted before it ends or has run 3 h. Only tabs on 12.5.1 or newer read it: older tabs still get the banner and the 24 h reload (12.4.5+), or need a manual reload (12.4.4 and older). |
+| Release fixes something every open tab must get now | bump `version` and set `min_version` to it | Tabs reload within one check; a running timed quiz is never interrupted before it ends or has run 3 h. Only tabs on 12.5.1 or newer read it: older tabs still get the banner and the timed reload (12.4.5+; after 24 h up to 13.2.0, 48 h since), or need a manual reload (12.4.4 and older). |
 | Supabase quota running high | `poll` with longer intervals (`attempts`, `forum`, `update` first) | Takes effect at once, also mid-interval. Realtime still delivers changes, so slower fallbacks mostly cost freshness after a missed ping. |
 | Supabase or its Realtime service is down or flaky | `off: ["realtime"]` | Drops every live connection; the fallback polls carry on unchanged. |
 | Database trouble, or a sync bug | `sync_paused: true` | Work stays in each browser; removing it makes every visible tab sync at once (one catch-up each). |
@@ -1341,7 +1361,7 @@ builds keep reading the old name.
 
 **What the safety rules guarantee** (checked in the test below):
 
-- A forced reload (`min_version`, or the 24 h rule) happens at most once per
+- A forced reload (`min_version`, or the 48 h rule) happens at most once per
   outdated version per 24 hours per browser, even when the new code is not
   actually on the server, so a misconfigured release cannot loop. In that
   case the update banner stays up after the one reload, since the newer
@@ -1636,6 +1656,52 @@ untouched. Commands, environment names, options, numbers, math regions and
 - **Ctrl+S** re-publishes a published solution, or saves anything else as a
   draft, asking first in the cases above (a toast points to the state panel).
 
+### Link previews
+
+A shared solution link previews as a picture laid out at 1920×1080 and
+stored as a 1280×720 JPEG (`editor/share-card.js` + `.css`), always in the
+Ocean dark theme: the
+course name (Kanit), course code and `Q3 P143` on top; the problem's
+condition on the left (40%), vertically centred, typeset with MathJax; on the
+right (60%) the figure's last step with `N / N`, or, for a solution without a
+figure, the start of the solution text (centred if it fits, otherwise faded
+out at the bottom; too-wide equations are scaled down). The condition steps
+down from 44 to 32 px to fit, is capped at 680 visible characters (the
+longest problem today is ~650), and is trimmed word by word if it still
+overflows, so it never runs off the card. Figure fills (c3/c4) are the page
+colour and the background bubbles keep to the edges, so they never show as
+boxes.
+
+- **When:** as part of publishing. The picture is drawn from the content
+  being published first ("Publishing… drawing the link preview"), then sent
+  in the same `save` request, which stores both together. If only the
+  picture fails, the solution is still published and the message says so.
+  *Rebuild figures* redraws the picture of each published one it re-saves;
+  *Change credit* keeps it (the card doesn't show the credit). *Check all*
+  lists published solutions whose picture is missing, drawn from an older
+  version, or from an older design (`ShareCard.DESIGN`; bump it after
+  changing the card's look) with **Make N link previews**.
+- **Switching problems while saving:** everything a save or publish needs is
+  taken when it starts, so opening another problem never changes or stops
+  it. Its buttons stay off until it finishes; the result shows in the state
+  panel, or as a toast if another problem is open by then.
+- **How:** the card is built off-screen and turned into a JPEG (~100–130 kB)
+  by html-to-image (`vendor/html-to-image`). The Google fonts the card uses
+  (latin, latin-ext and greek subsets) are fetched once and inlined, as the
+  library can't read that cross-origin stylesheet; MathJax and TikZ fonts it
+  embeds itself.
+- **Stored** by `solutions-admin`'s `share-card` action (migration 012): the
+  JPEG in the public `share-cards` bucket under a new name each time (the old
+  one is deleted), and `{ image, title, description, for, design }` in
+  `problem_solutions.share` (`for` = the `updated_at` it was drawn for). With
+  a publish it is written with the row; `share-card` writes it only if the row
+  is still that published version, never touching `updated_at`. Title: `Q3 P143 · Solution | Impulse`;
+  description: the condition as plain text (maths turned into symbols,
+  superscripts and subscripts), up to 200 characters.
+- **Test view:** `/editor/share-card.html?key=q3_P148i` draws any problem's
+  card from its published solution (◀ ▶ step through them; *No figure*,
+  *Longest* and *JPEG* to try the other cases and the stored picture).
+
 ### Drafts and local history
 
 - Field contents are kept per problem in localStorage (`<prefix>-editor-drafts`,
@@ -1734,6 +1800,7 @@ never meant to be run.
 | `009_editor_links.sql` | `solution_editors.link`, `problem_solutions.author_link`, and the trigger that keeps them in sync. |
 | `010_solution_credit.sql` | `problem_solutions.saved_by` (who saved last), so `author` can be the credited editor. Run before deploying the `solutions-admin` that writes it. |
 | `011_settings_sync.sql` | `settings_sync` (one row per identity, RLS on, no policies), `merge_settings_sync()` (per-setting merge, bumps `rev` only on a real change) and the trigger pinging `settings:<identity_id>` with `{rev, device_id}`. Run before deploying `sync-settings`. |
+| `012_share_cards.sql` | `problem_solutions.share` (the link-preview picture's name, title, description and what it was drawn from) and the public `share-cards` storage bucket (JPEG only, 2 MB). Run before deploying the `solutions-admin` that writes it. |
 
 **Tables**
 
@@ -1785,7 +1852,7 @@ stand between the public key and the database. Request bodies carry
 | `sync-solve-all.ts` | Pull, push or reset (tombstone) Solve-All progress. |
 | `sync-settings.ts` | Push changed settings and get back the merged set in one call; with no changes and a matching `known_rev` it answers `unchanged`. Clamps future timestamps to server time and returns `server_now` for the client's clock offset. |
 | `save-push-subscription.ts` | Register/remove a Web Push subscription. |
-| `solutions-admin.ts` | Everything the editor needs: `whoami`, `editors`, `index`, `get`, `save` (with 409 conflict check), `delete`, `export`; and, with the admin key, `create-editor`, `set-editor-link`, `revoke-editor`. Validates sizes (solution ≤ 60 000 chars, ≤ 12 steps, SVG ≤ 400 000 chars per step, TikZ ≤ 20 000, caption ≤ 500) and rejects SVG containing `<script>`, `<foreignObject>`, `<iframe>`, `<object>`, `<embed>`, `on…=` handlers, `javascript:`, `data:text/html` or `<!ENTITY` before storing; DOMPurify in the browser remains the real defence. |
+| `solutions-admin.ts` | Everything the editor needs: `whoami`, `editors`, `index`, `get`, `save` (with 409 conflict check), `share-card` (stores a link-preview JPEG, 409 if the row moved on), `delete` (also removes the picture), `export`; and, with the admin key, `create-editor`, `set-editor-link`, `revoke-editor`. Validates sizes (solution ≤ 60 000 chars, ≤ 12 steps, SVG ≤ 400 000 chars per step, TikZ ≤ 20 000, caption ≤ 500) and rejects SVG containing `<script>`, `<foreignObject>`, `<iframe>`, `<object>`, `<embed>`, `on…=` handlers, `javascript:`, `data:text/html` or `<!ENTITY` before storing; DOMPurify in the browser remains the real defence. |
 
 **Secrets** (Edge Function secrets are project-wide):
 
@@ -1936,10 +2003,21 @@ the editor uses `<base href="/">` and absolute paths.
 ```bash
 python minify.py                  # -> ../<folder>-netlify.zip
 python minify.py path/to/out.zip  # -> that file
+python minify.py --deploy         # build, then deploy to Netlify
 ```
 
+**`--deploy`** is the only way the Edge Function in `netlify/edge-functions/`
+(shared solution links) goes live: a zip uploaded by hand deploys the static
+files only. It needs, once per machine, Node.js and the Netlify CLI
+(`npm install -g netlify-cli`, then `netlify login`), and once per project
+folder `netlify link` (stored in `.netlify/`, git-ignored; `NETLIFY_SITE_ID`
+overrides it). The build is the same as for the zip; `share.ts` is then
+copied next to it with this course's Supabase URL, publishable key and
+names filled in from `js/course-config.js` (the course in `index.html`'s
+`<head data-course>`), and `netlify deploy --prod` runs from that folder.
+
 The script never writes into the project folder. It copies the site to a
-temporary folder, leaving out `.git`, `superbase/`, `vendor-src/`, `tools/`,
+temporary folder, leaving out `.git`, `superbase/`, `netlify/`, `vendor-src/`, `tools/`,
 `README.md`, `*.zip`, `*.py` and editor/IDE folders, then:
 
 - minifies own `.js` and `.css` with **esbuild** (whitespace, syntax and
@@ -2011,8 +2089,9 @@ forum, paused sync, a cache refill for a new `purge_id`.
    `<title>` and meta tags in `index.html` are edited by hand to match
    `display` (see below).
 8. **`CACHE_NAME` in `sw.js` is changed** to the new course's prefix.
-9. **The site is built** with `python minify.py` and deployed to Netlify as a
-   new site with its own domain; `og:url` in `index.html` and `SITE_ORIGIN` in
+9. **The site is built and deployed** with `python minify.py --deploy` to a
+   new Netlify site with its own domain (`netlify link` in the new folder
+   first; see [Building for deployment](#building-for-deployment-minifypy)); `og:url` in `index.html` and `SITE_ORIGIN` in
    `post-message.ts` are updated once the domain is known.
 10. **Editor keys are created** with `create-editor` (see
     [Managing editor keys](#managing-editor-keys)). Keys from another course's
@@ -2052,7 +2131,7 @@ On every release of the site the version is bumped in **three places**:
 3. `CURRENT_VERSION` in `js/quiz-engine.js`.
 
 `minify.py` refuses to build when the three differ. A version bump is also
-what moves open tabs onto new code (banner, then a forced reload after 24 h
+what moves open tabs onto new code (banner, then a forced reload after 48 h
 or below `min_version`), so a release whose code must reach open tabs needs
 one even without a user-facing change.
 

@@ -105,8 +105,42 @@ async function fetchSolutionAuthorRows() {
 }
 
 let solutionsIndex = null;          // Set of problem_key with a published solution
+let solutionsIndexStamps = null;    // problem_key -> updated_at, from the same index
 let solutionsIndexPromise = null;   // in-flight load, so parallel callers share one request
 const solutionsRowCache = new Map();
+
+/* Opened solutions are also kept across page loads, in Cache Storage (a
+   row with its figures can be far bigger than localStorage allows), under
+   this course's own prefix. A stored row is used without a request while
+   the index lists it with the same updated_at (the index itself is at
+   most poll.solutions old), or, before the index has loaded (a shared link
+   on a fresh page), while it was fetched less than poll.solutions ago.
+   sw.js's activate step clears it with the other caches on each new
+   version, which is fine: it only costs one fetch per solution. */
+const SOLUTION_ROWS_CACHE = 'flux-solution-rows-v1';
+const solutionRowUrl = (key) => new URL(`__solution-rows/${STORAGE_PREFIX}/${encodeURIComponent(key)}`, location.href).href;
+
+async function readStoredSolutionRow(key) {
+  try {
+    if (typeof caches === 'undefined') return null;
+    const res = await (await caches.open(SOLUTION_ROWS_CACHE)).match(solutionRowUrl(key));
+    if (!res) return null;
+    const { row, at } = await res.json();
+    if (!row) return null;
+    const fresh = solutionsIndexStamps
+      ? solutionsIndexStamps.get(key) === row.updated_at
+      : Date.now() - at < sitePollMs('solutions');
+    return fresh ? row : null;
+  } catch (e) { return null; }   // unreadable: just fetch it
+}
+
+// Keeps `row` for the next page load; null (no longer published) drops it.
+function storeSolutionRow(key, row) {
+  if (typeof caches === 'undefined') return;
+  caches.open(SOLUTION_ROWS_CACHE).then((c) => (row
+    ? c.put(solutionRowUrl(key), new Response(JSON.stringify({ row, at: Date.now() }), { headers: { 'Content-Type': 'application/json' } }))
+    : c.delete(solutionRowUrl(key)))).catch(() => { /* quota / private mode: memory only */ });
+}
 
 const solutionKeyFor = (quizNum, problemId) => `q${quizNum}_${problemId}`;
 
@@ -130,6 +164,7 @@ function applySolutionsIndexRows(rows) {
   });
 
   solutionsIndex = fresh;
+  solutionsIndexStamps = stamps;
   return solutionsIndex;
 }
 
@@ -197,15 +232,22 @@ function hasPublishedSolution(quizNum, problemId) {
   return !!solutionsIndex && solutionsIndex.has(solutionKeyFor(quizNum, problemId));
 }
 
-/** One published row, or null. Only the body is cached; the background
-    index refresh above drops it once it is unpublished or edited. While
-    offline mode is active the row comes from the download instead: the
-    network request would only be refused by sw.js. */
+/** One published row, or null. Kept in memory for the page's life and in
+    Cache Storage across loads (readStoredSolutionRow); the background
+    index refresh above drops the memory copy once it is unpublished or
+    edited, and a stored copy no longer matching the index is fetched
+    again. While offline mode is active the row comes from the download
+    instead: the network request would only be refused by sw.js. */
 async function fetchSolution(problemKey) {
   if (solutionsRowCache.has(problemKey)) return solutionsRowCache.get(problemKey);
   if (solutionsOfflineActive()) {
     const rows = await loadOfflineSolutionRows();
     return rows.find((r) => r && r.problem_key === problemKey) || null;
+  }
+  const stored = await readStoredSolutionRow(problemKey);
+  if (stored) {
+    solutionsRowCache.set(problemKey, stored);
+    return stored;
   }
   const url = `${SOLUTIONS_REST}?select=${SOLUTIONS_ROW_COLUMNS}`
             + `&problem_key=eq.${encodeURIComponent(problemKey)}&status=eq.published&limit=1`;
@@ -214,6 +256,7 @@ async function fetchSolution(problemKey) {
   const rows = await res.json();
   const row = (rows && rows[0]) || null;
   solutionsRowCache.set(problemKey, row);
+  storeSolutionRow(problemKey, row);
   return row;
 }
 
@@ -229,13 +272,21 @@ function refreshSolutionButtons() {
   });
 }
 
+// The index was (re)loaded: the quiz cards' buttons and, on the Solution
+// screen, the arrows or the open list follow it at once.
+function refreshSolutionsUi() {
+  refreshSolutionButtons();
+  if (!isSolutionScreenOpen() || !solutionCurrent || solutionPreviewMode) return;
+  renderSolutionPager(solutionCurrent.quizNum, solutionCurrent.problemId);
+}
+
 function initSolutions() {
-  loadSolutionsIndex().then(refreshSolutionButtons);
+  loadSolutionsIndex().then(refreshSolutionsUi);
 
   // Coming back to a tab, and every few minutes while one stays in front,
   // pick up the newest copy: usually another tab's, read from localStorage
   // without a request; a fetch only once the 30 minutes are up.
-  const recheck = () => { if (!document.hidden) loadSolutionsIndex().then(refreshSolutionButtons); };
+  const recheck = () => { if (!document.hidden) loadSolutionsIndex().then(refreshSolutionsUi); };
   document.addEventListener('visibilitychange', recheck);
   setInterval(recheck, SOLUTIONS_INDEX_CHECK_MS);
 }
@@ -446,9 +497,34 @@ function drawSolutionStep() {
   if (!text.trim()) {
     if (window.MathJax && MathJax.typesetClear) { try { MathJax.typesetClear([cap]); } catch (e) {} }
     cap.textContent = '';
-  } else {
-    renderSolutionInto(cap, text);
+    return Promise.resolve();
   }
+  return renderSolutionInto(cap, figureCaptionText(text, i === n - 1));   // its math typeset
+}
+
+/* ── Building without jumps ───────────────────────────────────────────
+   openSolution keeps the screen's parts invisible (but in their places)
+   while they are assembled: the problem box until its math and pictures
+   are done, everything under it until the figure, the solution's math and
+   the credit are. Then each part fades in whole, so nothing on screen is
+   pushed around by the next part arriving. A typeset that never finishes
+   only delays this by SOLUTION_SETTLE_MAX_MS. */
+const SOLUTION_SETTLE_MAX_MS = 4000;
+
+// Settles once every <img> in `el` has loaded or failed.
+function solutionImagesSettled(el) {
+  return Promise.all([...el.querySelectorAll('img')].map((img) => (img.complete ? null : new Promise((res) => {
+    img.addEventListener('load', res, { once: true });
+    img.addEventListener('error', res, { once: true });
+  }))));
+}
+
+// `promise`, but given up on after SOLUTION_SETTLE_MAX_MS; never rejects.
+function solutionSettled(promise) {
+  return Promise.race([
+    Promise.resolve(promise).catch(() => {}),
+    new Promise((res) => setTimeout(res, SOLUTION_SETTLE_MAX_MS)),
+  ]);
 }
 
 // Bumped on every openSolution() call. Each call checks it after every
@@ -461,6 +537,50 @@ let solutionCurrent = null;   // { quizNum, problemId }
 // the row comes from the editor, not the database.
 let solutionPreviewMode = false;
 
+// Puts the Solution screen in place of the screen it was opened from (if
+// it isn't showing yet), at the top.
+function showSolutionScreen(screen) {
+  if (!solutionOpen) {
+    hideHostScreen();
+    // #saNavRail (Solve-All's progress line) and #stickyScore are
+    // position:fixed, so they float above this screen until hidden — see
+    // the html.solution-screen-open rule in css/solutions.css.
+    document.documentElement.classList.add('solution-screen-open');
+    if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(false);
+    screen.classList.add('visible');
+    solutionOpen = true;
+    document.documentElement.classList.remove('solution-preview-boot');
+    if (typeof syncForumFabVisibility === 'function') syncForumFabVisibility();
+  }
+  window.scrollTo(0, 0);
+}
+
+// The Solution screen with no solution open, only the Solution list of set
+// quizNum (Entire Set's "Solution list" button). Nothing is current in the
+// list and it has no ✕ (the screen's own ✕ goes back); picking a problem
+// opens its solution as usual.
+function openSolutionBrowser(quizNum) {
+  const screen = solutionScreenEl();
+  if (!screen) return;
+  ++solutionOpenToken;                  // a solution still loading won't paint over this
+  stopSolutionAutoplay();
+  solutionViewer = null;
+  ['solutionBody', 'solutionCaption'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && window.MathJax && MathJax.typesetClear) { try { MathJax.typesetClear([el]); } catch (e) {} }
+  });
+  solutionCurrent = { quizNum, problemId: null };
+  setSolutionPreviewMode(false);
+  screen.classList.remove('sol-problem-pending', 'sol-body-pending');
+  resetSolutionFigTools();
+  document.getElementById('solutionTitle').textContent = '📘 Solutions';
+  document.getElementById('solutionShareBtn').hidden = true;     // nothing to share
+  ['solutionProblem', 'solutionLoading', 'solutionStale', 'solutionFigureWrap', 'solutionMain', 'solutionPager', 'solutionList']
+    .forEach((id) => { document.getElementById(id).hidden = true; });
+  showSolutionScreen(screen);
+  showSolutionList(false);
+}
+
 // previewRow: a row built by the editor's Full preview — shown instead of
 // fetching the published one.
 async function openSolution(quizNum, problemId, previewRow) {
@@ -471,6 +591,11 @@ async function openSolution(quizNum, problemId, previewRow) {
   const stale = () => token !== solutionOpenToken || !solutionOpen;
   solutionCurrent = { quizNum, problemId };
   setSolutionPreviewMode(!!previewRow);
+  // Invisible until built (see "Building without jumps" above).
+  screen.classList.add('sol-problem-pending', 'sol-body-pending');
+  const reveal = () => {
+    if (token === solutionOpenToken) screen.classList.remove('sol-problem-pending', 'sol-body-pending');
+  };
 
   // Switching from one solution to another (Previous/Next) while the
   // screen stays open: stop the old figure's autoplay and release the old
@@ -495,17 +620,21 @@ async function openSolution(quizNum, problemId, previewRow) {
   document.getElementById('solutionTitle').textContent =
     (p ? '📘 Solution' : `📘 Solution · ${label}`) + (solutionPreviewMode ? ' · Preview' : '');
   const probBox = document.getElementById('solutionProblem');
-  let probMath = Promise.resolve();   // typesetting of the problem text
+  let probReady = Promise.resolve();  // its math typeset and pictures loaded
   if (p) {
     document.getElementById('solutionProblemNum').textContent = label;
     document.getElementById('solutionProblemTopic').textContent = p.topic || '';
     const pt = document.getElementById('solutionProblemText');
     pt.innerHTML = p.text;            // the site's own trusted problem text
     probBox.hidden = false;
-    probMath = renderMathIn(pt);
+    probReady = Promise.all([renderMathIn(pt), solutionImagesSettled(pt)]);
   } else {
     probBox.hidden = true;
   }
+  // The problem shows as soon as it is ready, the rest maybe later.
+  solutionSettled(probReady).then(() => {
+    if (token === solutionOpenToken) screen.classList.remove('sol-problem-pending');
+  });
 
   resetSolutionFigTools();
 
@@ -517,23 +646,13 @@ async function openSolution(quizNum, problemId, previewRow) {
   document.getElementById('solutionStale').hidden = true;
   const credit = document.getElementById('solutionCredit');
   credit.hidden = true;
+  document.getElementById('solutionList').hidden = true;   // picked from it, or a new solution
   renderSolutionPager(quizNum, problemId);
+  if (!previewRow && solutionListByDefault()) showSolutionList(false);
   const loading = document.getElementById('solutionLoading');
   loading.hidden = false;
 
-  if (!solutionOpen) {
-    hideHostScreen();
-    // #saNavRail (Solve-All's progress line) and #stickyScore are
-    // position:fixed, so they float above this screen until hidden — see
-    // the html.solution-screen-open rule in css/solutions.css.
-    document.documentElement.classList.add('solution-screen-open');
-    if (typeof setFieldLinesVisible === 'function') setFieldLinesVisible(false);
-    screen.classList.add('visible');
-    solutionOpen = true;
-    document.documentElement.classList.remove('solution-preview-boot');
-    if (typeof syncForumFabVisibility === 'function') syncForumFabVisibility();
-  }
-  window.scrollTo(0, 0);
+  showSolutionScreen(screen);
 
   let row;
   try {
@@ -543,18 +662,22 @@ async function openSolution(quizNum, problemId, previewRow) {
     loading.hidden = true;
     document.getElementById('solutionMain').hidden = false;
     body.textContent = 'Could not load this solution. Check your connection and try again.';
+    reveal();
     if (solutionPreviewMode) notifyPreviewParent('solution-preview-ready');
     return;
   }
   if (stale()) return;                             // closed, or another solution asked for
-  loading.hidden = true;
 
   if (!row) {
+    loading.hidden = true;
     document.getElementById('solutionMain').hidden = false;
     body.textContent = 'This solution is no longer published.';
+    reveal();
     if (solutionPreviewMode) notifyPreviewParent('solution-preview-ready');
     return;
   }
+
+  let capMath = Promise.resolve();
 
   const steps = (row.figure && Array.isArray(row.figure.steps) ? row.figure.steps : [])
     .filter((s) => s && typeof s.svg === 'string' && s.svg.trim());
@@ -577,9 +700,8 @@ async function openSolution(quizNum, problemId, previewRow) {
     figCropToContent(holder);                      // only measurable once visible
     solutionViewer = { steps, index: 0, manual: false };
     document.getElementById('solutionNav').style.display = steps.length > 1 ? '' : 'none';
-    drawSolutionStep();
+    capMath = drawSolutionStep();
     attachSolutionSwipe(stage);
-    startSolutionAutoplay();
   } else {
     stopSolutionAutoplay();
     solutionViewer = null;
@@ -625,20 +747,26 @@ async function openSolution(quizNum, problemId, previewRow) {
   credit.appendChild(lic);
   credit.hidden = false;
 
-  // Editor Full preview: the overlay keeps this page invisible until now,
-  // so none of the start-up screens flicker past. It waits for the problem
-  // and solution math to be typeset, then two frames for layout to settle.
-  if (solutionPreviewMode) {
-    Promise.all([probMath, bodyMath]).finally(() => {
-      if (stale()) return;
-      requestAnimationFrame(() => requestAnimationFrame(() => notifyPreviewParent('solution-preview-ready')));
-    });
-  }
+  // The problem may have been edited after the solution was written:
+  // decided before the reveal, so the note doesn't push the rest down.
+  const staleCheck = row.problem_hash && p
+    ? solutionProblemHash(p).then((now) => {
+        if (!stale() && now !== row.problem_hash) document.getElementById('solutionStale').hidden = false;
+      })
+    : null;
 
-  // The problem may have been edited after the solution was written.
-  if (row.problem_hash && p) {
-    const now = await solutionProblemHash(p);
-    if (!stale() && now !== row.problem_hash) document.getElementById('solutionStale').hidden = false;
+  await solutionSettled(Promise.all([probReady, bodyMath, capMath, staleCheck]));
+  if (stale()) return;
+  loading.hidden = true;
+  reveal();
+  // Only now, so its first step change is seen.
+  if (solutionViewer) startSolutionAutoplay();
+
+  // Editor Full preview: the overlay keeps this page invisible until now,
+  // so none of the start-up screens flicker past; two frames for the
+  // layout to settle.
+  if (solutionPreviewMode) {
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (!stale()) notifyPreviewParent('solution-preview-ready'); }));
   }
 
   // The published list may not have arrived yet (a shared link opened on a
@@ -675,6 +803,8 @@ function renderSolutionPager(quizNum, problemId) {
   const pager = document.getElementById('solutionPager');
   if (!pager) return;
   if (solutionPreviewMode) { pager.hidden = true; return; }   // would lead to published solutions
+  // The index arrived while the list is open: update the list instead.
+  if (isSolutionListOpen()) { pager.hidden = true; updateSolutionList(true); return; }
   const { prev, next } = solutionNeighbours(quizNum, problemId);
   [['solutionPrevProblem', prev, (l) => `‹ ${l}`], ['solutionNextProblem', next, (l) => `${l} ›`]]
     .forEach(([id, target, text]) => {
@@ -686,18 +816,203 @@ function renderSolutionPager(quizNum, problemId) {
       btn.onclick = target ? () => openSolution(quizNum, target) : null;
       btn.title = target ? (id === 'solutionPrevProblem' ? 'Previous solution' : 'Next solution') : '';
     });
-  pager.hidden = !prev && !next;
+  // Always shown: the Solution list is useful even with no neighbours.
+  pager.hidden = false;
+}
+
+/* ── Solution list ────────────────────────────────────────────────────
+   Shown under every solution by default (solutionListByDefault), in the
+   pager's place: one small box per active problem of a set, in the order
+   students see them, the ones with a published solution clickable, and
+   Q1–Q4 to look at another set. A dot in a box's corner is how that
+   problem stands in the set's Solve them all (none if not tried there).
+   With the setting off, the pager shows instead and its middle button
+   opens the list, which then has a ✕ (or Esc) to bring the pager back.
+   Picking a problem opens its solution (openSolution). When the index is
+   refreshed while the list is open (refreshSolutionsUi), newly published
+   boxes light up in place. */
+let solutionListQuiz = null;   // the set the list shows
+
+function isSolutionListOpen() {
+  const list = document.getElementById('solutionList');
+  return !!list && !list.hidden;
+}
+
+// Settings → Study → "Show the solution list by default" (on unless turned
+// off): every solution opens with the list showing, and it has no ✕. Off,
+// the pager shows instead, and a list opened from it can be closed.
+function solutionListByDefault() {
+  return typeof getSetting !== 'function' || getSetting('study', 'openSolutionList') !== false;
+}
+
+// Only a list opened from the pager can be closed: not one shown by
+// default, nor the list alone (openSolutionBrowser).
+function solutionListClosable() {
+  return !solutionListByDefault() && !!solutionCurrent && !!solutionCurrent.problemId;
+}
+
+// Also run when the setting changes: an open list gains or loses its ✕,
+// and turned on with a solution open, the list replaces the pager.
+function syncSolutionListClose() {
+  const btn = document.querySelector('#solutionList .solution-list-close');
+  if (btn) btn.hidden = !solutionListClosable();
+  if (solutionListByDefault() && solutionOpen && !solutionPreviewMode && !isSolutionListOpen()) showSolutionList(false);
+}
+
+// problemId -> 'correct' | 'partial' | 'wrong' | 'revealed': the set's
+// Solve-them-all progress, from the same key its screen would open
+// (saStorageKey in js/quiz-engine.js, for set quizNum).
+function solveAllStatusesFor(quizNum) {
+  const cum = typeof selectedCumulativeMode !== 'undefined' && selectedCumulativeMode === 'cumulative' ? 'c' : 's';
+  try {
+    const snap = JSON.parse(localStorage.getItem(`${STORAGE_PREFIX}_sa_q${quizNum}_${cum}`) || 'null');
+    return (snap && snap.checkedById) || {};
+  } catch (e) { return {}; }
+}
+const SOLVE_ALL_DOT = {
+  correct:  ['correct', 'solved'],
+  partial:  ['partial', 'value right, unit or form not'],
+  wrong:    ['wrong', 'wrong so far'],
+  revealed: ['wrong', 'answer revealed'],
+};
+
+// Restarts a one-shot animation class (css/solutions.css).
+function replaySolutionAnim(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+// Builds the set buttons and the boxes of solutionListQuiz; which boxes
+// are available is updateSolutionList's job.
+function renderSolutionList() {
+  const sets = document.getElementById('solutionListSets');
+  const grid = document.getElementById('solutionListGrid');
+  if (!sets || !grid || !solutionCurrent) return;
+  const quizzes = typeof QUIZZES !== 'undefined' ? QUIZZES : [];
+  const quizNum = solutionListQuiz || solutionCurrent.quizNum;
+
+  sets.textContent = '';
+  quizzes.forEach((q, i) => {
+    const n = i + 1;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'solution-close-btn solution-list-set';
+    b.textContent = 'Q' + n;
+    b.title = q.name ? `Set #${n}: ${q.name}` : `Set #${n}`;
+    b.setAttribute('aria-pressed', String(n === quizNum));
+    if (!q.enabled || !(q.problems || []).length) {
+      b.disabled = true;
+      b.title += ' (not available yet)';
+    } else {
+      b.onclick = () => {
+        if (solutionListQuiz === n) return;
+        solutionListQuiz = n;
+        renderSolutionList();
+        replaySolutionAnim(grid, 'sol-list-swap');
+      };
+    }
+    sets.appendChild(b);
+  });
+
+  const statuses = solveAllStatusesFor(quizNum);
+  const quiz = quizzes[quizNum - 1];
+  grid.textContent = '';
+  grid.dataset.quiz = String(quizNum);
+  ((quiz && quiz.problems) || []).forEach((p) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'solution-close-btn solution-list-item';
+    btn.dataset.problem = p.id;
+    btn.textContent = problemLabel(quizNum, p.id);
+    const dot = SOLVE_ALL_DOT[statuses[p.id]];
+    if (dot) {
+      const i = document.createElement('i');
+      i.className = 'solution-list-dot ' + dot[0];
+      btn.appendChild(i);
+      btn.dataset.tried = 'Solve them all: ' + dot[1];
+    }
+    btn.onclick = () => {
+      if (btn.getAttribute('aria-current')) closeSolutionList();
+      else openSolution(quizNum, p.id);
+    };
+    grid.appendChild(btn);
+  });
+  updateSolutionList(false);
+}
+
+// Marks the available boxes and the count. announce: pulse the boxes that
+// just became available (the index was refreshed with the list open).
+function updateSolutionList(announce) {
+  const grid = document.getElementById('solutionListGrid');
+  if (!grid || !solutionCurrent) return;
+  const quizNum = +grid.dataset.quiz;
+  const here = solutionCurrent.quizNum === quizNum ? solutionCurrent.problemId : null;
+  let available = 0;
+  const boxes = grid.querySelectorAll('.solution-list-item');
+  boxes.forEach((btn) => {
+    const id = btn.dataset.problem;
+    const published = hasPublishedSolution(quizNum, id);
+    if (published) available++;
+    const open = published || id === here;
+    if (announce && open && btn.disabled) replaySolutionAnim(btn, 'sol-list-new');
+    btn.disabled = !open;
+    if (id === here) btn.setAttribute('aria-current', 'true');
+    else btn.removeAttribute('aria-current');
+    btn.title = (id === here ? 'This solution' : open ? 'Open the solution' : 'No solution yet')
+      + (btn.dataset.tried ? ' · ' + btn.dataset.tried : '');
+  });
+  document.getElementById('solutionListCount').textContent =
+    boxes.length ? `(${available}/${boxes.length} available now)` : '';
+}
+
+function openSolutionList() { showSolutionList(true); }
+
+// focus: move keyboard focus to the open problem's box — on a tap of the
+// list button, not when the setting opens it with the solution.
+function showSolutionList(focus) {
+  const list = document.getElementById('solutionList');
+  if (!list || solutionPreviewMode || !solutionCurrent) return;
+  solutionListQuiz = solutionCurrent.quizNum;
+  list.hidden = false;
+  document.getElementById('solutionPager').hidden = true;
+  syncSolutionListClose();
+  renderSolutionList();
+  // A tap eases it in; shown with a solution, it fades in with the rest.
+  if (focus) replaySolutionAnim(list, 'sol-list-in');
+  const here = list.querySelector('.solution-list-item[aria-current]');
+  if (focus && here) here.focus({ preventScroll: true });
+  // A copy older than poll.solutions is fetched again now, so the list is
+  // as fresh as the rest of the site allows.
+  loadSolutionsIndex().then(refreshSolutionsUi);
+}
+
+function closeSolutionList() {
+  const list = document.getElementById('solutionList');
+  if (!list || list.hidden) return;
+  list.hidden = true;
+  if (solutionCurrent) renderSolutionPager(solutionCurrent.quizNum, solutionCurrent.problemId);
+  const pager = document.getElementById('solutionPager');
+  if (pager && !pager.hidden) replaySolutionAnim(pager, 'sol-list-in');
+  const btn = document.getElementById('solutionListBtn');
+  if (btn) btn.focus({ preventScroll: true });
 }
 
 /* ── Share ────────────────────────────────────────────────────────────
-   Copies a link that opens this solution directly (?solution=q4_P16, read
-   back by openSolutionFromURL below). Falls back to the share sheet, then
-   to a prompt the link can be copied from by hand. */
+   Copies a link that opens this solution directly: /s/q4_P16, which
+   netlify/edge-functions/share.ts answers with the solution's own link
+   preview (its picture, from the editor) and then sends on to
+   ?solution=q4_P16, read back by openSolutionFromURL below. A local copy
+   of the site has no edge function, so there the link is ?solution=
+   itself. Falls back to the share sheet, then to a prompt the link can be
+   copied from by hand. */
 let solutionShareTimer = null;
 async function shareSolutionLink() {
   if (!solutionCurrent) return;
-  const url = new URL(window.location.pathname, window.location.origin);
-  url.searchParams.set('solution', solutionKeyFor(solutionCurrent.quizNum, solutionCurrent.problemId));
+  const key = solutionKeyFor(solutionCurrent.quizNum, solutionCurrent.problemId);
+  const base = new URL(window.location.pathname.replace(/[^/]*$/, ''), window.location.origin);
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+  const url = local ? new URL('?solution=' + encodeURIComponent(key), base) : new URL('s/' + encodeURIComponent(key), base);
   const link = url.href;
   const btn = document.getElementById('solutionShareBtn');
   const flash = (text) => {
@@ -745,8 +1060,8 @@ function setSolutionPreviewMode(on) {
 
 // A shared link (?solution=q4_P16) opens that solution once the page has
 // loaded, then the parameter is dropped from the address bar so a reload
-// does not reopen it. Unknown keys, disabled quizzes and problems that no
-// longer exist are ignored.
+// does not reopen it. The problem id is matched ignoring case. Unknown
+// keys, disabled quizzes and problems that no longer exist are ignored.
 (function openSolutionFromURL() {
   const params = new URLSearchParams(window.location.search);
   const key = params.get('solution');
@@ -792,10 +1107,16 @@ function setSolutionPreviewMode(on) {
 
   const m = /^q([1-9][0-9]?)_([A-Za-z][A-Za-z0-9_-]{0,30})$/.exec(key);
   if (!m) return;
-  const quizNum = +m[1], problemId = m[2];
+  const quizNum = +m[1];
   const quiz = typeof QUIZZES !== 'undefined' ? QUIZZES[quizNum - 1] : null;
-  if (!quiz || quiz.enabled === false || !getQuizProblem(quizNum, problemId)) return;
-  whenLoaded(() => openSolution(quizNum, problemId));
+  if (!quiz || quiz.enabled === false) return;
+  // A link can arrive lowercased (an address bar's autocomplete, typed by
+  // hand: ?solution=q3_p17i), so the id is matched ignoring case.
+  const lower = m[2].toLowerCase();
+  const p = getQuizProblem(quizNum, m[2]) ||
+    [...(quiz.problems || []), ...(quiz.retired || [])].find((q) => q.id.toLowerCase() === lower);
+  if (!p) return;
+  whenLoaded(() => openSolution(quizNum, p.id));
 })();
 
 function safeAuthorLink(raw) {
@@ -1013,7 +1334,12 @@ async function solutionProblemHash(p) {
 document.addEventListener('keydown', (e) => {
   if (!isSolutionScreenOpen()) return;              // not while another screen sits on top
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target && e.target.tagName)) return;
-  if (e.key === 'Escape') { closeSolutionScreen(); return; }
+  if (e.key === 'Escape') {
+    // A list that can be closed (it has its ✕) goes first, then the screen.
+    if (isSolutionListOpen() && solutionListClosable()) closeSolutionList();
+    else closeSolutionScreen();
+    return;
+  }
   if (e.key === '+' || e.key === '=') { stepSolutionZoom(1); return; }
   if (e.key === '-' || e.key === '_') { stepSolutionZoom(-1); return; }
   if (e.key === '0') { setSolutionZoom(1); return; }
