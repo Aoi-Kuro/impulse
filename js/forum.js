@@ -791,10 +791,10 @@ function populateForumComposerProblemSelect(quizValue, selectId = 'forumScopePro
   sel.appendChild(generalOpt);
 
   if (quiz && Array.isArray(quiz.problems)) {
-    quiz.problems.forEach((p, pi) => {
+    quiz.problems.forEach((p) => {
       const opt = document.createElement('option');
-      opt.value = p.id;                 // stored key — stable
-      opt.textContent = 'P' + (pi + 1); // what the user sees — current position
+      opt.value = p.id;                                              // stored key — stable
+      opt.textContent = problemLabel(parseInt(quizNum, 10), p.id);   // what the user sees — current number
       sel.appendChild(opt);
     });
   }
@@ -3687,10 +3687,10 @@ function updateForumFilterProblemSelect() {
   sel.appendChild(generalOpt);
 
   if (quiz && Array.isArray(quiz.problems)) {
-    quiz.problems.forEach((p, pi) => {
+    quiz.problems.forEach((p) => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      opt.textContent = 'P' + (pi + 1);
+      opt.textContent = problemLabel(parseInt(quizNum, 10), p.id);
       sel.appendChild(opt);
     });
   }

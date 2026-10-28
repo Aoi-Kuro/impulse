@@ -1226,15 +1226,15 @@ let _randomOrderSampleTimer = null;
 function _startRandomOrderSample() {
   const el = document.getElementById('randomOrderSample');
   if (!el) return;
-  const n = ACTIVE_PROBLEMS.length;
-  const slot = `width:${String(n).length}ch`;
+  const all = ACTIVE_PROBLEMS.map(p => problemNumber(selectedQuizNum, p.id));
+  const slot = `width:${String(Math.max(...all)).length}ch`;
   function tick() {
     if (document.getElementById('choicePage').classList.contains('hidden')) {
       clearInterval(_randomOrderSampleTimer);
       _randomOrderSampleTimer = null;
       return;
     }
-    const nums = pickRandom(Array.from({ length: n }, (_, i) => i + 1), 3);
+    const nums = pickRandom(all, 3);
     el.innerHTML = '(' + nums.map(v => `<span class="order-choice-num" style="${slot}">${v}</span>`).join(', ') + '...)';
   }
   clearInterval(_randomOrderSampleTimer);
@@ -2624,7 +2624,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '13.2.3';
+const CURRENT_VERSION = '13.2.4';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.

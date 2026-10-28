@@ -949,9 +949,10 @@ function setThemeMode(light) {
       const src = await res.text();
       const out = new Function(src + `;return {
         problems: typeof Quiz_${n}_Problems !== 'undefined' ? Quiz_${n}_Problems : [],
-        retired:  typeof Quiz_${n}_Retired  !== 'undefined' ? Quiz_${n}_Retired  : []
+        retired:  typeof Quiz_${n}_Retired  !== 'undefined' ? Quiz_${n}_Retired  : [],
+        gaps:     typeof Quiz_${n}_Gaps     !== 'undefined' ? Quiz_${n}_Gaps     : []
       };`)();
-      return { n, problems: out.problems, retired: out.retired };
+      return { n, problems: out.problems, retired: out.retired, gaps: out.gaps };
     } catch (e) { return null; }         // missing file, fallback HTML page, syntax error
   }
 
@@ -961,8 +962,14 @@ function setThemeMode(light) {
       key: `q${q.n}_${p.id}`, quiz: q.n, pos, retired, id: p.id, topic: p.topic || '',
       text: p.text || '', answer: p.answer, units: p.units,
     });
+    // Displayed numbers skip the quiz's gaps, as problemNumber() in quizzes.js does.
+    const numbers = (q) => {
+      const gaps = new Set(q.gaps);
+      let n = 0;
+      return q.problems.map(() => { do n++; while (gaps.has(n)); return n; });
+    };
     return quizzes.flatMap((q) => [
-      ...q.problems.map((p, i) => mk(q, p, i + 1, false)),
+      ...numbers(q).map((n, i) => mk(q, q.problems[i], n, false)),
       ...q.retired.map((p) => mk(q, p, null, true)),
     ]);
   }

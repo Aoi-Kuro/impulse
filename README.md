@@ -149,7 +149,8 @@ impulse/
 ├── course/                  ★ Everything specific to the deployed course
 │   ├── quizzes/
 │   │   ├── quiz1.js .. quiz4.js   Problem banks: Quiz_N_Problems and
-│   │   │                          Quiz_N_Retired arrays
+│   │   │                          Quiz_N_Retired arrays (+ optional
+│   │   │                          Quiz_N_Gaps)
 │   │   └── quizzes.js       QUIZZES registry + id/number helpers
 │   ├── images/quiz_1..4/    Figure images referenced from problem text
 │   ├── figures/quiz1.js .. quiz4.js  Redrawn SVG for those images, by file
@@ -370,7 +371,8 @@ platform's development history, not course content.
 
 ### Problem object format
 
-Each `course/quizzes/quizN.js` declares two arrays:
+Each `course/quizzes/quizN.js` declares two arrays, plus an optional list of
+skipped numbers (see [retiring problems](#problem-ids-numbers-and-retiring-problems)):
 
 ```js
 const Quiz_3_Problems = [
@@ -379,6 +381,7 @@ const Quiz_3_Problems = [
   // ...
 ];
 const Quiz_3_Retired = [];
+const Quiz_3_Gaps = [122, 125];   // optional
 ```
 
 | Field | Meaning |
@@ -394,7 +397,7 @@ const Quiz_3_Retired = [];
 `course/quizzes/quizzes.js` defines `QUIZZES`, one entry per quiz slot:
 
 ```js
-{ name: "Gravity and Waves", problems: Quiz_3_Problems, retired: Quiz_3_Retired, enabled: true }
+{ name: "Gravity and Waves", problems: Quiz_3_Problems, retired: Quiz_3_Retired, gaps: Quiz_3_Gaps, enabled: true }
 ```
 
 `enabled: false` hides a slot from the landing screen. The file also builds a
@@ -403,7 +406,7 @@ a stored `(quizNum, id)` into something visible:
 
 | Helper | Returns |
 |---|---|
-| `problemNumber(quizNum, id)` | 1-based position of an active problem, or `null`. |
+| `problemNumber(quizNum, id)` | Displayed number of an active problem (1-based position, skipping gap numbers), or `null`. |
 | `getQuizProblem(quizNum, id)` | The problem object, active or retired, or `null`. Used wherever a stored id must be shown again. |
 | `isProblemRetired(quizNum, id)` | `true` for any id that is not currently served. |
 | `problemLabel(quizNum, id)` | `"P12"` for an active problem, `"DEL"` otherwise. |
@@ -421,9 +424,12 @@ and the math cache. It is never shown to students and never has to match the
 problem's position.
 
 What students **see** is the problem's current 1-based position in its quiz's
-`problems` array (`P12`). Problems can therefore be reordered or inserted
-anywhere without any history moving with the numbers. The number filter in
-quiz mode also works on displayed numbers, not ids.
+`problems` array (`P12`), skipping any numbers listed in `Quiz_N_Gaps`.
+Problems can therefore be reordered or inserted anywhere without any history
+moving with the numbers. The number filter in quiz mode also works on displayed
+numbers, not ids. Code that shows a number goes through `problemNumber()` /
+`problemLabel()` rather than computing `index + 1`; the editor, which does not
+load `quizzes.js`, repeats the same gap-skipping loop in `loadAllProblems()`.
 
 - **New problem:** the next unused id is assigned (an id is never reused), and
   the object is placed at the position where it should be shown.
@@ -435,6 +441,14 @@ quiz mode also works on displayed numbers, not ids.
   restores its attempt history and forum threads; its Solve-All progress is
   not restored, because Solve-All pushes overwrite the server row with only the
   problems currently served.
+- **Retiring without renumbering:** retiring a problem normally shifts every
+  later problem down by one. To keep the later numbers, the retired problem's
+  number (as shown before retiring) is also added to `Quiz_N_Gaps`; numbering
+  then skips it, leaving a hole. For example, Set 3 retired P122 and P125 with
+  `Quiz_3_Gaps = [122, 125]`, so it runs …P121, P123, P124, P126… Gap numbers
+  are final displayed numbers, so several gaps are all listed in the original
+  numbering. Moving a problem back to its old place means removing its number
+  from the gaps too.
 - **Substantial change** (new numbers, different question): the old problem is
   retired and the new one is added under a fresh id. Keeping the id would
   carry the old solved status — and the old worked solution — over to what is
@@ -627,7 +641,7 @@ row (a P⇄Q toggle switches cumulative rows between problem and quiz labels), a
 
 - **Problem Pool Filter**, per quiz, with four modes saved per quiz in
   localStorage: *none*, *topic* (checkboxes), *number* (ranges such as
-  `3, 5-6, 15-19`, include or exclude; numbers are displayed positions), and
+  `3, 5-6, 15-19`, include or exclude; numbers are the displayed ones, so a gap number matches nothing), and
   *type* (attempt status: not attempted / wrong / almost correct / correct,
   following the Last/Best switch of the Stats problems overview). An empty
   filtered pool falls back to the whole quiz. A note appears under the header
@@ -850,7 +864,9 @@ thread on tap.
   opened and kept in memory until the index shows it was unpublished or saved
   again. While offline mode runs, both come from the offline download.
 - **"📘 See solution"** appears in Random N only after the score is revealed
-  (so a solution cannot replace the attempt), and always in Solve-All.
+  (so a solution cannot replace the attempt), always in Solve-All, and on every
+  card of an attempt review (Stats), retired `DEL` problems included: their
+  solutions stay published and open like any other.
 - The **Solution screen** replaces the current screen (like the forum) and
   shows: the problem text (without the answer), a "problem changed since" note
   when the current problem's hash differs from the stored `problem_hash`, the

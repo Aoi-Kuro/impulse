@@ -253,14 +253,21 @@ function renderAttemptReview(attempt) {
     const card = document.createElement('div');
     card.id = `reviewCard-${idx}`;
     card.className = 'problem-card review-problem-card';
+    const idArg = _escAttr(a.problem_id).replace(/'/g, "\\'");
+    // 📘 as on the quiz cards: js/solutions.js shows it only when this
+    // problem has a published solution — retired (DEL) ones included, since
+    // their solutions stay published and open like any other.
     const forumRowHtml = `
         <div class="card-check-row" id="rv-forum-row-${idx}">
           <button class="forum-problem-btn" id="rv-forum-btn-${idx}" title="Forum thread for ${problemLabel(a.quiz_num, a.problem_id)}"
-            onclick="openForumForProblem(${a.quiz_num}, '${_escAttr(a.problem_id).replace(/'/g, "\\'")}')">
+            onclick="openForumForProblem(${a.quiz_num}, '${idArg}')">
             💬 <span id="rv-forum-total-${idx}"></span>
             <span class="forum-problem-btn-badge" id="rv-forum-badge-${idx}" style="display:none;"></span>
             <span class="forum-problem-btn-at" id="rv-forum-at-${idx}" style="display:none;">@</span>
           </button>
+          <button class="solution-btn" data-quiz="${a.quiz_num}" data-problem="${_escAttr(a.problem_id)}" style="display:none;"
+            title="Worked solution for ${problemLabel(a.quiz_num, a.problem_id)}"
+            onclick="openSolution(${a.quiz_num}, '${idArg}')">📘 See solution</button>
         </div>`;
 
     if (!p) {
@@ -308,6 +315,7 @@ function renderAttemptReview(attempt) {
     listEl.appendChild(card);
   });
   renderMathIn(listEl);
+  if (typeof refreshSolutionButtons === 'function') refreshSolutionButtons();
 }
 
 // ── Filter state ──────────────────────────────────────────────────────────────
@@ -950,8 +958,8 @@ function renderProblemsOverview() {
 
     const total = q.problems.length;
     const attemptedCount = q.problems.reduce((n, p) => n + (scores.has(`${quizNum}_${p.id}`) ? 1 : 0), 0);
-    const boxes = q.problems.map((p, pi) => {
-      const pLabel = 'P' + (pi + 1);  // same as problemLabel(quizNum, p.id) for an active problem
+    const boxes = q.problems.map((p) => {
+      const pLabel = problemLabel(quizNum, p.id);
       const rec = scores.get(`${quizNum}_${p.id}`);
       const cls = !rec ? 'score-box-unattempted'
         : rec.points === 1 ? 'score-box-correct'

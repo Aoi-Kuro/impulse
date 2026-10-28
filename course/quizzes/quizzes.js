@@ -12,7 +12,8 @@
 // anywhere without touching anybody's history.
 //
 // What users SEE ("P12") is the problem's current 1-based position in the
-// quiz's `problems` array — see problemLabel() below.
+// quiz's `problems` array, skipping the quiz's gap numbers — see
+// problemLabel() below.
 //
 // Rules:
 //   • An id is unique within its quiz, and is NEVER reused for a different
@@ -24,11 +25,15 @@
 //   • Never delete a problem object outright if anyone may have attempted it.
 //   • New problem: give it a fresh id (next unused number) and put it at the
 //     position you want it to appear at.
+//   • Gaps: to retire a problem WITHOUT renumbering the ones after it, also add
+//     its number (as shown before retiring) to Quiz_N_Gaps (same file). Numbering
+//     then skips it: retire P122 with gaps [122] and P123 stays P123. Gap numbers
+//     are final displayed numbers, so list them in the original numbering.
 const QUIZZES = [
-  { name: "Kinematics & Dynamics", problems: Quiz_1_Problems, retired: (typeof Quiz_1_Retired !== "undefined" ? Quiz_1_Retired : []), enabled: true  },
-  { name: "Energy, Momentum & Rotation", problems: Quiz_2_Problems, retired: (typeof Quiz_2_Retired !== "undefined" ? Quiz_2_Retired : []), enabled: true },
-  { name: "Gravity and Waves",       problems: Quiz_3_Problems, retired: (typeof Quiz_3_Retired !== "undefined" ? Quiz_3_Retired : []), enabled: true },
-  { name: "Heat and Thermodynamics", problems: Quiz_4_Problems, retired: (typeof Quiz_4_Retired !== "undefined" ? Quiz_4_Retired : []), enabled: true },
+  { name: "Kinematics & Dynamics", problems: Quiz_1_Problems, retired: (typeof Quiz_1_Retired !== "undefined" ? Quiz_1_Retired : []), gaps: (typeof Quiz_1_Gaps !== "undefined" ? Quiz_1_Gaps : []), enabled: true  },
+  { name: "Energy, Momentum & Rotation", problems: Quiz_2_Problems, retired: (typeof Quiz_2_Retired !== "undefined" ? Quiz_2_Retired : []), gaps: (typeof Quiz_2_Gaps !== "undefined" ? Quiz_2_Gaps : []), enabled: true },
+  { name: "Gravity and Waves",       problems: Quiz_3_Problems, retired: (typeof Quiz_3_Retired !== "undefined" ? Quiz_3_Retired : []), gaps: (typeof Quiz_3_Gaps !== "undefined" ? Quiz_3_Gaps : []), enabled: true },
+  { name: "Heat and Thermodynamics", problems: Quiz_4_Problems, retired: (typeof Quiz_4_Retired !== "undefined" ? Quiz_4_Retired : []), gaps: (typeof Quiz_4_Gaps !== "undefined" ? Quiz_4_Gaps : []), enabled: true },
 ];
 
 // ─── Problem lookup + display helpers ────────────────────────────────────────
@@ -38,15 +43,20 @@ const QUIZZES = [
 //
 // Built once at load: QUIZZES is static for the page's lifetime.
 const _problemIndex = QUIZZES.map((q) => {
-  const number  = new Map();  // active id -> 1-based position
+  const number  = new Map();  // active id -> 1-based position (gap numbers skipped)
   const byId    = new Map();  // active + retired id -> problem object
   const retired = new Set();  // retired ids
-  (q.problems || []).forEach((p, i) => { number.set(p.id, i + 1); byId.set(p.id, p); });
+  const gaps    = new Set(q.gaps || []);
+  let n = 0;
+  (q.problems || []).forEach((p) => {
+    do n++; while (gaps.has(n));
+    number.set(p.id, n); byId.set(p.id, p);
+  });
   (q.retired  || []).forEach((p)    => { retired.add(p.id); if (!byId.has(p.id)) byId.set(p.id, p); });
   return { number, byId, retired };
 });
 
-// 1-based position of an ACTIVE problem, or null (retired / unknown id).
+// Displayed number of an ACTIVE problem, or null (retired / unknown id).
 function problemNumber(quizNum, problemId) {
   const ix = _problemIndex[quizNum - 1];
   return (ix && ix.number.get(problemId)) || null;

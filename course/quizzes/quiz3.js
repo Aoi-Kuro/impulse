@@ -363,17 +363,11 @@ const Quiz_3_Problems = [
   { id:"P86i", topic:"Sound intensity, organ pipes", answer:185, units:["Hz"],
     text:"An organ pipe has two successive harmonics with frequencies 555 Hz and 925 Hz. What is the fundamental frequency?" },
 
-  { id:"P141i", topic:"Sound intensity, organ pipes", answer:11, units:[],
-    text:"An organ pipe that is open at one end and closed at the other has two successive harmonics with frequencies 473 Hz and 559 Hz. Which harmonic is the 473 Hz one? Give the harmonic number." },
-
   { id:"P87i", topic:"Sound intensity, organ pipes", answer:183, units:["Hz"],
     text:"An organ pipe has two successive harmonics with frequencies 732 Hz and 915 Hz. What is the fundamental frequency?" },
 
   { id:"P88i", topic:"Sound intensity, organ pipes", answer:0.465, units:["m"],
     text:"An organ pipe has two successive harmonics with frequencies 555 Hz and 925 Hz. What is the length of the pipe? Speed of sound in air is 344 m s$^{-1}$." },
-
-  { id:"P142i", topic:"Sound intensity, organ pipes", answer:347.5, units:["m/s"],
-    text:"An organ pipe that is open at one end and closed at the other is 0.52 m long and has two successive harmonics with frequencies 501.202 Hz and 835.337 Hz. What is the speed of sound in the air inside the pipe?" },
 
   { id:"P89i", topic:"Sound intensity, organ pipes", answer:0.8866, units:["m"],
     text:"An organ pipe has two successive harmonics with frequencies 582 Hz and 776 Hz. What is the length of the pipe? Speed of sound in air is 344 m s$^{-1}$." },
@@ -455,4 +449,16 @@ const Quiz_3_Problems = [
 // Retired problems: no longer served (Random quiz / Solve-All) but still openable from
 // attempt review, stats and forum threads. See the rules in quizzes.js. Move a problem
 // object here unchanged — keep its id.
-const Quiz_3_Retired = [];
+const Quiz_3_Retired = [
+
+  { id:"P141i", topic:"Sound intensity, organ pipes", answer:11, units:[],
+    text:"An organ pipe that is open at one end and closed at the other has two successive harmonics with frequencies 473 Hz and 559 Hz. Which harmonic is the 473 Hz one? Give the harmonic number." },
+
+  { id:"P142i", topic:"Sound intensity, organ pipes", answer:347.5, units:["m/s"],
+    text:"An organ pipe that is open at one end and closed at the other is 0.52 m long and has two successive harmonics with frequencies 501.202 Hz and 835.337 Hz. What is the speed of sound in the air inside the pipe?" },
+
+];
+// Problem numbers left unused, so the problems after a removed one keep the
+// numbers people already know (P123 stays P123 after P122 is retired). See
+// "Gaps" in quizzes.js.
+const Quiz_3_Gaps = [122, 125];
