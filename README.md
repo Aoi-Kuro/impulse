@@ -381,7 +381,7 @@ const Quiz_3_Problems = [
   // ...
 ];
 const Quiz_3_Retired = [];
-const Quiz_3_Gaps = [122, 125];   // optional
+const Quiz_3_Gaps = [87, 105, 106, 122, 125];   // optional
 ```
 
 | Field | Meaning |
@@ -444,8 +444,9 @@ load `quizzes.js`, repeats the same gap-skipping loop in `loadAllProblems()`.
 - **Retiring without renumbering:** retiring a problem normally shifts every
   later problem down by one. To keep the later numbers, the retired problem's
   number (as shown before retiring) is also added to `Quiz_N_Gaps`; numbering
-  then skips it, leaving a hole. For example, Set 3 retired P122 and P125 with
-  `Quiz_3_Gaps = [122, 125]`, so it runs …P121, P123, P124, P126… Gap numbers
+  then skips it, leaving a hole. For example, Set 3 retired P87, P105, P106,
+  P122 and P125 with `Quiz_3_Gaps = [87, 105, 106, 122, 125]`, so it serves 145
+  problems numbered up to P150 and runs …P121, P123, P124, P126… Gap numbers
   are final displayed numbers, so several gaps are all listed in the original
   numbering. Moving a problem back to its old place means removing its number
   from the gaps too.

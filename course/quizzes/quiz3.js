@@ -258,9 +258,6 @@ const Quiz_3_Problems = [
   { id:"P61i", topic:"Sound intensity, organ pipes", answer:0.143178, units:["s"],
     text:"An animal emits an echolocation wave. If an obstacle is 100 m from the animal, how long does it take for the echolocation wave to make a round trip between the animal and the object? Density of the sea water is $1.025 \\times 10^{3}$ kg m$^{-3}$. Bulk modulus of water $B_{\\mathrm{w}} = 2.0 \\times 10^{9}$ N m$^{-2}$." },
 
-  { id:"P62i", topic:"Traveling and standing waves", answer:0.006112, units:["s"],
-    text:"A nylon string is stretched between two rigid columns such that the tension in it is 175 N. The string is of length $L$ = 2 m and has the cross-sectional area that varies with distance as $$A(x) = \\left(1+\\frac{x}{L}\\right)\\times 10^{-6},$$ where $A$ is in meters squared and $x$ is in meters. Determine the time it takes for a transverse pulse in the string to travel from one end to the other. The density of nylon is 1.1 g cm$^{-3}$." },
-
   { id:"P63i", topic:"Traveling and standing waves", answer:1.9322, units:["s"],
     text:"Calculate the time required to travel the distance 620 m by a wave with wavelength 0.755 m and frequency 425 Hz." },
 
@@ -311,12 +308,6 @@ const Quiz_3_Problems = [
 
   { id:"P73i", topic:"Traveling and standing waves", answer:0.05639, units:["s"],
     text:"Three pieces of string, each of length 58 cm, are joined together end to end, to make a combined string of length 174 cm. The first piece of string has mass per unit length $3.55 \\times 10^{-6}$ kg cm$^{-1}$, the second piece has mass per unit length $14.2 \\times 10^{-6}$ kg cm$^{-1}$, and the third piece has mass per unit length $0.8875 \\times 10^{-6}$ kg cm$^{-1}$. If the combined string is under tension 0.46 N, how much time does it take a transverse wave to travel the entire length of 174 cm?" },
-
-  { id:"P74i", topic:"Traveling and standing waves", answer:11.876, units:["Hz"],
-    text:"A 6-m, 0.825-kg wire is used to support two uniform 230-N posts of equal length inclined at an angle of $\\theta$ = 56°. Assume that the wire is essentially horizontal and that the speed of sound is 344 m s$^{-1}$. A strong wind is blowing, causing the wire to vibrate in its 5th overtone. What is the frequency of the sound this wire produces? <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_3/unnamed(7).webp\" alt=\"figure\" width=\"350px\"></div>" },
-
-  { id:"P75i", topic:"Traveling and standing waves", answer:32.75, units:["m"],
-    text:"A 9-m, 0.825-kg wire is used to support two uniform 230-N posts of equal length inclined at an angle of $\\theta$ = 66°. Assume that the wire is essentially horizontal and that the speed of sound is 344 m s$^{-1}$. A strong wind is blowing, causing the wire to vibrate in its 7th overtone. What is the wavelength of the sound this wire produces? <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_3/unnamed(7).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
   { id:"P76i", topic:"Traveling and standing waves", answer:0.00538, units:["s"],
     text:"A 1700-N irregular beam is hanging horizontally by its ends from the ceiling by two vertical wires ($A$ and $B$), each 1.25 m long and weighing 1.5 N. The center of gravity of this beam is $\\frac{1}{3}$ of the way along the beam from the end where wire $A$ is attached. If you pluck both strings at the same time at the beam, what is the time delay between the arrival of the two pulses at the ceiling? <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_3/unnamed(8).webp\" alt=\"figure\" width=\"350px\"></div>" },
@@ -451,6 +442,15 @@ const Quiz_3_Problems = [
 // object here unchanged — keep its id.
 const Quiz_3_Retired = [
 
+  { id:"P62i", topic:"Traveling and standing waves", answer:0.006112, units:["s"],
+    text:"A nylon string is stretched between two rigid columns such that the tension in it is 175 N. The string is of length $L$ = 2 m and has the cross-sectional area that varies with distance as $A(x) = \\left(1+\\frac{x}{L}\\right)\\times 10^{-6},$ where $A$ is in meters squared and $x$ is in meters. Determine the time it takes for a transverse pulse in the string to travel from one end to the other. The density of nylon is 1.1 g cm$^{-3}$." },
+
+  { id:"P74i", topic:"Traveling and standing waves", answer:11.876, units:["Hz"],
+    text:"A 6-m, 0.825-kg wire is used to support two uniform 230-N posts of equal length inclined at an angle of $\\theta$ = 56°. Assume that the wire is essentially horizontal and that the speed of sound is 344 m s$^{-1}$. A strong wind is blowing, causing the wire to vibrate in its 5th overtone. What is the frequency of the sound this wire produces? <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_3/unnamed(7).webp\" alt=\"figure\" width=\"350px\"></div>" },
+
+  { id:"P75i", topic:"Traveling and standing waves", answer:32.75, units:["m"],
+    text:"A 9-m, 0.825-kg wire is used to support two uniform 230-N posts of equal length inclined at an angle of $\\theta$ = 66°. Assume that the wire is essentially horizontal and that the speed of sound is 344 m s$^{-1}$. A strong wind is blowing, causing the wire to vibrate in its 7th overtone. What is the wavelength of the sound this wire produces? <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_3/unnamed(7).webp\" alt=\"figure\" width=\"350px\"></div>" },
+
   { id:"P141i", topic:"Sound intensity, organ pipes", answer:11, units:[],
     text:"An organ pipe that is open at one end and closed at the other has two successive harmonics with frequencies 473 Hz and 559 Hz. Which harmonic is the 473 Hz one? Give the harmonic number." },
 
@@ -461,4 +461,4 @@ const Quiz_3_Retired = [
 // Problem numbers left unused, so the problems after a removed one keep the
 // numbers people already know (P123 stays P123 after P122 is retired). See
 // "Gaps" in quizzes.js.
-const Quiz_3_Gaps = [122, 125];
+const Quiz_3_Gaps = [87, 105, 106, 122, 125];
