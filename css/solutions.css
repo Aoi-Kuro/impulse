@@ -12,7 +12,10 @@
   font-family: var(--mono); font-size: .78rem;
   transition: border-color .15s, color .15s;
 }
-.solution-btn:hover { border-color: var(--accent); color: var(--accent); }
+.solution-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+/* Random quiz before Check answers (js/quiz-engine.js render()). */
+.solution-btn:disabled { opacity: .45; cursor: not-allowed; }
+.card-check-row.rq-locked .forum-problem-btn { display: none; }
 /* A wrong answer in Solve them all: a quick flash, then straight back
    (hintSolutionButton in js/quiz-engine.js). It waits until the card has
    settled from showing the feedback, so the flash isn't lost in that jump. */

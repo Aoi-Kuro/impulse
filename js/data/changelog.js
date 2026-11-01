@@ -23,8 +23,15 @@
 // PHYS162-only, not something PHYS 161 users should see in their history.
 
 
+// One-time message for this deploy: shown once as the main-menu splash to
+// everyone who already used the site before it, never to first-time
+// visitors (js/splash.js, takeDeployMessage). '' = nothing special. Set or
+// clear it on every deploy; changing only the text shows it again too.
+const DEPLOY_MESSAGE = 'You can now flag the problems!';
+
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 const CHANGELOG = [
+  { version: "13.3.0", note: "Problems can be flagged, with a flagged-only filter in Entire Set. See correct answer no longer locks the problem.", scope: 0 },
   { version: "13.2.5", note: "Updated problem list.", scope: 1 },
   { version: "13.2.4", note: "Updated problem list.", scope: 1 },
   { version: "13.2.3", note: "Solution list was added.", scope: 0 },

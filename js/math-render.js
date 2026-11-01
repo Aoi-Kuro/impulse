@@ -2,7 +2,7 @@
 // Problem `text` fields can contain inline math delimited by $...$ or \( \),
 // and display math delimited by $$...$$ or \[ \]. Call renderMathIn(el)
 // after any dynamic innerHTML update that may contain problem text
-// (quiz cards, solve-all cards, mistakes cards, etc.)
+// (quiz cards, solve-all cards, etc.)
 function renderMathIn(el) {
   if (!el) return Promise.resolve();
   if (window.MathJax && window.MathJax.typesetPromise) {

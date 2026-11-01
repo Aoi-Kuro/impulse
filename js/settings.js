@@ -1601,7 +1601,7 @@ function renderSettingsStudyTab() {
     <div class="settings-row" data-row-key="revealWrongInstantly">
       <div class="settings-row-label">
         <div class="settings-row-title">Reveal wrong answer instantly</div>
-        <div class="settings-row-desc">Skips the "See correct answer" step. A wrong answer (not partial credit) shows the correct one right away.</div>
+        <div class="settings-row-desc">Skips the "See correct answer" step. A wrong answer (not partial credit) shows the correct one right away; you can still solve the problem.</div>
       </div>
       <label class="settings-switch">
         <input type="checkbox" ${getSetting('study', 'revealWrongInstantly') === true ? 'checked' : ''}

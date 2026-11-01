@@ -259,7 +259,7 @@ function closeManualScreen(forceLanding) {
     manualHostId = null;
 
     if (forceLanding && typeof exitAppOrChoiceToLanding === 'function') {
-      // Also unwinds solve-all/mistakes state the same way leaving that
+      // Also unwinds solve-all state the same way leaving that
       // screen normally does, if appPage was the host underneath — not
       // just "hide manual, show landing" — see exitAppOrChoiceToLanding()
       // in quiz-engine.js.

@@ -1,0 +1,103 @@
+/* Flags on problem cards (js/problem-flags.js). */
+
+/* The flag sits at the far right of .card-header, with the topic just
+   before it: the number takes the free space instead of the topic, so
+   this holds with the topic hidden (Settings > Study > "Hide problem
+   topic while active") or missing (a retired problem in Stats review). */
+.card-header:has(> .problem-flag-btn) > .problem-num { margin-right: auto; }
+.card-header:has(> .problem-flag-btn) > .problem-topic { margin-left: 0; }
+
+.problem-flag-btn {
+  align-self: center;
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  /* Bigger to tap than it looks, without making the header taller. */
+  padding: .3rem; margin: -.35rem -.45rem -.35rem -.2rem;
+  background: none; border: 0;
+  border-radius: calc(4px * var(--radius-mult));
+  color: var(--muted);                 /* faint like the topic beside it */
+  cursor: pointer;
+  transition: color .15s, transform .15s;
+}
+.problem-flag-btn:hover { transform: scale(1.12); }
+.problem-flag-btn[data-flag="0"]:hover { color: var(--text); }
+.problem-flag-btn:focus-visible,
+.problem-flag-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.problem-flag-btn svg,
+.problem-flag-choice svg {
+  width: 1rem; height: 1rem;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.problem-flag-btn[data-flag="1"], .problem-flag-choice[data-flag="1"] { color: var(--accent); }
+.problem-flag-btn[data-flag="2"], .problem-flag-choice[data-flag="2"] { color: var(--accent2); }
+.problem-flag-btn:not([data-flag="0"]) .problem-flag-cloth,
+.problem-flag-choice .problem-flag-cloth { fill: currentColor; }
+
+/* The C1 / C2 window under a flag just turned on. */
+.problem-flag-pop {
+  position: fixed;
+  z-index: 1000;
+  display: flex; gap: .25rem;
+  padding: .3rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  animation: problemFlagPopIn .14s ease-out;
+}
+@keyframes problemFlagPopIn {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .problem-flag-pop { animation: none; }
+}
+.problem-flag-choice {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: .4rem .55rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: calc(4px * var(--radius-mult));
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.problem-flag-choice:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+.problem-flag-choice[aria-pressed="true"] { border-color: currentColor; }
+
+/* Solve them all, flagged only (setSolveAllFlagFilter in
+   js/problem-flags.js): a card disappears as soon as it is unflagged. */
+#solveAllContainer.flags-only > .problem-card:not(:has(.problem-flag-btn:not([data-flag="0"]))) {
+  display: none;
+}
+
+/* Its button in the floating score box (#stickyScore, css/style.css). */
+.sticky-flag-filter-btn {
+  display: flex; align-items: center; justify-content: center; gap: .2rem;
+  margin-top: .5rem;
+  width: 100%;
+  padding: .28rem .5rem;
+  font-family: var(--mono);
+  font-size: .7rem;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: calc(3px * var(--radius-mult));
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.sticky-flag-filter-btn[hidden] { display: none; }
+.sticky-flag-filter-btn svg {
+  width: .9rem; height: .9rem;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.sticky-flag-filter-btn span { margin-left: .15rem; }
+.sticky-flag-filter-btn:hover { color: var(--text); border-color: var(--muted); }
+.sticky-flag-filter-btn[aria-pressed="true"] {
+  color: var(--accent2);
+  border-color: var(--accent2);
+  background: color-mix(in srgb, var(--accent2) 12%, transparent);
+}
+.sticky-flag-filter-btn[aria-pressed="true"] .problem-flag-cloth { fill: currentColor; }
+.sticky-flag-filter-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

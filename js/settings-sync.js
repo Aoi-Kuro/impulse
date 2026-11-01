@@ -160,6 +160,23 @@ const SETTINGS_SYNC_CODES = (() => {
     write: v => _ssSetCustom('font', v),
     apply: _ssApplyCustom,
   };
+  // Problem flags (js/problem-flags.js), one code per set: { P7: 2, P23: 1 }.
+  // Per set rather than per problem, so the whole course stays far under
+  // the server's 200 codes and an unflagged problem leaves nothing behind.
+  // The cost: two devices changing the same set's flags before either has
+  // synced keep only the newer device's flags for that set.
+  if (typeof QUIZZES !== 'undefined' && typeof readProblemFlagSet === 'function') {
+    QUIZZES.forEach((q, i) => {
+      const n = i + 1;
+      codes['flags.q' + n] = {
+        get: () => readProblemFlagSet(n),
+        def: {},
+        valid: validProblemFlagSet,
+        write: v => writeProblemFlagSet(n, v),
+        apply: applyProblemFlags,
+      };
+    });
+  }
   return codes;
 })();
 
@@ -476,7 +493,7 @@ function renderSettingsSyncSection() {
     <div class="settings-row" data-row-key="syncSettings">
       <div class="settings-row-label">
         <div class="settings-row-title">Sync settings on this device</div>
-        <div class="settings-row-desc">Keeps settings and your color theme the same on every device signed in with your nickname. The newest change wins. Figure size, battery saving, Go silent, the Entire Set progress rail and Follow device theme stay per device.</div>
+        <div class="settings-row-desc">Keeps settings, your color theme and your problem flags the same on every device signed in with your nickname. The newest change wins. Figure size, battery saving, Go silent, the Entire Set progress rail and Follow device theme stay per device. Turned off, your flags stay on this device only too.</div>
         <div class="settings-row-desc settings-sync-status" id="settingsSyncStatus">${_ssStatusText()}</div>
       </div>
       <label class="settings-switch">

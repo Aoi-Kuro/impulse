@@ -325,14 +325,45 @@
     }
   }
 
+  /* ── Deploy message ────────────────────────────────────────────────
+     DEPLOY_MESSAGE (js/data/changelog.js), when not empty, is the splash
+     the first time the main screen shows after this browser gets the
+     deploy, and never again. A browser visiting for the first time never
+     sees it: it is marked as handled straight away. Keyed on version AND
+     text, so a new message on a redeploy without a version bump still
+     shows once. */
+  const DEPLOY_MSG_KEY = STORAGE_PREFIX + '_deploy_msg_seen';
+  // Every earlier visit left a device id (js/site-visits.js runs on each
+  // page load); read before this load creates one for a first visit.
+  const returningBrowser = (() => {
+    try { return !!localStorage.getItem(STORAGE_PREFIX + '_forum_device_id'); } catch (e) { return false; }
+  })();
+
+  // The message, once, or null. Waits while the main screen is hidden (a
+  // shared solution link opens over it), so it isn't used up unseen.
+  function takeDeployMessage () {
+    const msg = typeof DEPLOY_MESSAGE === 'string' ? DEPLOY_MESSAGE.trim() : '';
+    if (!msg || typeof CURRENT_VERSION === 'undefined') return null;
+    const landing = document.getElementById('landingScreen');
+    if (landing && landing.classList.contains('hidden')) return null;
+    const id = CURRENT_VERSION + '\n' + msg;
+    try {
+      if (localStorage.getItem(DEPLOY_MSG_KEY) === id) return null;
+      localStorage.setItem(DEPLOY_MSG_KEY, id);
+    } catch (e) { return null; }   // can't remember it: better never than every time
+    return returningBrowser ? msg : null;
+  }
+
   function showNewSplash () {
     const el = document.getElementById('splashText');
     if (!el || !splashes) return;
 
     exitDemonModeIfActive();
 
-    let text;
-    if (Math.random() < DEMON_CHANCE) {
+    let text = takeDeployMessage();
+    if (text) {
+      // shown as is: no demon roll, not part of the no-repeat window
+    } else if (Math.random() < DEMON_CHANCE) {
       text = DEMON_SPLASH;
       enterDemonMode();
     } else {

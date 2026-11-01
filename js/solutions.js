@@ -19,8 +19,9 @@
    downloaded (offline-data/solutions.json) instead of the network.
 
    WHERE THE BUTTON APPEARS
-     Random quiz — only once scores are revealed (checkAll), so a
-       solution can never be read instead of attempting the problem.
+     Random quiz — shown but disabled during the attempt, usable only
+       once scores are revealed (checkAll), so a solution can never be
+       read instead of attempting the problem.
      Solve them all — always, since that mode is explicitly for working
        through problems with help at hand.
 
@@ -269,6 +270,10 @@ function refreshSolutionButtons() {
   document.querySelectorAll('.solution-btn[data-quiz][data-problem]').forEach((btn) => {
     const show = hasPublishedSolution(+btn.dataset.quiz, btn.dataset.problem);
     btn.style.display = show ? '' : 'none';
+    // A Random quiz card before Check answers: the row holds only this
+    // (disabled) button, so it shows exactly when the button does.
+    const locked = btn.closest('.card-check-row.rq-locked');
+    if (locked) locked.style.display = show ? '' : 'none';
   });
 }
 

@@ -4397,7 +4397,7 @@ function closeForumScreen(forceLanding) {
     forumFabHostId = null;
 
     if (forceLanding && typeof exitAppOrChoiceToLanding === 'function') {
-      // Also unwinds solve-all/mistakes state the same way leaving that
+      // Also unwinds solve-all state the same way leaving that
       // screen normally does — not just "hide forum, show landing" — see
       // exitAppOrChoiceToLanding() in quiz-engine.js.
       exitAppOrChoiceToLanding();
@@ -4424,7 +4424,7 @@ function closeForumScreen(forceLanding) {
 // ── Floating button visibility ────────────────────────────────────────────
 // Visible on any screen except the landing screen (which already has the
 // big "💬 Forum" button) and a plain "Random 6" quiz still in progress
-// (appPage visible, neither solve-all nor mistakes mode active, and not yet
+// (appPage visible, solve-all mode not active, and not yet
 // checked) — per Ansar's call. Once that attempt is checked, it's no
 // longer "plain" (there's a result to discuss) and the FAB reappears, same
 // as every other screen — see the `checked` check below and its call sites
@@ -4440,7 +4440,6 @@ function syncForumFabVisibility() {
   const forum    = document.getElementById('forumScreen');
   const appPage  = document.getElementById('appPage');
   const solveAll = document.getElementById('solveAllMode');
-  const mistakes = document.getElementById('mistakesMode');
   if (!landing || !appPage) return;
 
   const onLanding = !landing.classList.contains('hidden');
@@ -4460,11 +4459,10 @@ function syncForumFabVisibility() {
   const inPlainRandom6 =
     appPage.classList.contains('visible') &&
     !(solveAll && solveAll.classList.contains('active')) &&
-    !(mistakes && mistakes.classList.contains('active')) &&
     !(typeof checked !== 'undefined' && checked);
 
   // Once the forum was reached via the FAB (or a per-problem forum button,
-  // which reuses the same open path) from solve-all/mistakes/stats/choice,
+  // which reuses the same open path) from solve-all/stats/choice,
   // forumFabHostId is set — keep the FAB showing instead of hiding it, so
   // it's still there to tap closed (see toggleForumFab). Opened the
   // "ordinary" way instead, from the landing screen's own Forum button,
@@ -4475,7 +4473,7 @@ function syncForumFabVisibility() {
 }
 
 function initForumFabWatcher() {
-  const watchIds = ['landingScreen', 'forumScreen', 'appPage', 'solveAllMode', 'mistakesMode', 'statsScreen', 'reviewScreen', 'choicePage', 'licenseScreen', 'solutionScreen'];
+  const watchIds = ['landingScreen', 'forumScreen', 'appPage', 'solveAllMode', 'statsScreen', 'reviewScreen', 'choicePage', 'licenseScreen', 'solutionScreen'];
   watchIds.forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;

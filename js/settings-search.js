@@ -90,7 +90,7 @@ const SETTINGS_SEARCH_KEYWORDS = {
   revealWrongInstantly: 'wrong answer, correct answer, show answer, reveal answer, see correct answer, instant feedback, immediate feedback, right away, mistakes, solution, answer key, skip step, check answer, feedback',
 
   // ── Sync & Storage
-  syncSettings: 'sync, synchronize, synchronise, syncing, cloud, devices, other devices, phone and laptop, computer, account, nickname, same settings everywhere, transfer settings, online backup, multi device, share settings, signed in, server',
+  syncSettings: 'sync, synchronize, synchronise, syncing, cloud, devices, other devices, phone and laptop, computer, account, nickname, same settings everywhere, transfer settings, online backup, multi device, share settings, signed in, server, flags, flagged problems, sync flags',
   goOffline: 'offline, go offline, offline mode, no internet, no wifi, no connection, without internet, airplane mode, flight, plane, travel, trip, download, download everything, save for later, data saving, mobile data, subway, metro, no signal, 24 hours, back online',
   resetSettingsBtn: 'reset settings, default settings, defaults, restore defaults, factory reset, start over, undo all, clear settings, back to default, original settings, fix settings, broken settings',
   resetCacheBtn: 'cache, clear cache, reset cache, history, attempt history, attempts, progress, delete progress, erase, wipe, start fresh, local data, storage, clear data, entire set progress, delete history, reset stats',

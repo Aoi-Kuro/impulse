@@ -466,8 +466,8 @@ html.settings-reduce-motion *::after {
 
 /* Hide topic while active: scoped to #quizContainer specifically (Random N
    cards only) rather than the bare .problem-topic class, which Solve-All
-   and Mistakes-review cards also use — those two don't have a "scores
-   revealed" moment the way Random N does (checkAll()), so this setting
+   cards also use — those don't have a "scores revealed" moment the way
+   Random N does (checkAll()), so this setting
    only ever applies there. render()/newQuiz() remove '.results-shown' at
    the start of every fresh attempt; checkAll() adds it back the moment
    scores are shown — see their own comments in js/quiz-engine.js. */

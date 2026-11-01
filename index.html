@@ -232,6 +232,8 @@
 <!-- Solution figures (shared with the authoring tool) + the solution screen -->
 <link rel="stylesheet" href="css/figure.css">
 <link rel="stylesheet" href="css/solutions.css">
+<!-- Flags on problem cards (js/problem-flags.js) -->
+<link rel="stylesheet" href="css/problem-flags.css">
 <!-- TeX fonts: dvisvgm writes figure glyphs as private-use codepoints in
      Computer Modern, so without this every label inside a figure is blank. -->
 <link rel="stylesheet" href="vendor/tikzjax/fonts.css">
@@ -663,39 +665,13 @@
   <div id="solveAllContainer"></div>
 </div>
 
-<!-- ── Mistakes quiz mode ── -->
-<div id="mistakesMode">
-  <div class="mistakes-header">
-    <div class="mistakes-title">📋 Wrong Problems — Retry Quiz</div>
-    <button class="btn-exit-solve" onclick="exitMistakes()">← Back to Entire Set</button>
-  </div>
-  <div id="mistakesContainer"></div>
-</div>
-
 </div><!-- /#appPage -->
 
-<!-- ── Mistakes order modal (outside #appPage to avoid transform containing-block
-     issue — #appPage's fadeInPage/fadeOutPage keyframes apply a `transform`,
-     which creates a new containing block for this modal's `position: fixed`,
-     so instead of centering on the viewport it centered on #appPage's own
-     box — which, with a 150-problem quiz rendered inside, is huge and
-     scrolled, so the modal appeared to "float" somewhere down around
-     problems 89-90 instead of the middle of the screen. Same fix already
-     applied to #stickyScore below. ) ── -->
-<div class="modal-backdrop" id="mistakesModal">
-  <div class="modal-box">
-    <button class="modal-close" onclick="closeMistakesModal()">✕</button>
-    <div class="modal-title">Quiz: wrong problems</div>
-    <div class="modal-desc" id="mistakesModalDesc">Practice only the problems you got wrong or had revealed. Choose order.</div>
-    <div class="modal-choices">
-      <button class="modal-choice-btn" onclick="startMistakes('ordered')">1 → N<br><span style="font-size:0.68rem;color:var(--muted);">ordered</span></button>
-      <button class="modal-choice-btn" onclick="startMistakes('unordered')">⇄ Shuffled<br><span style="font-size:0.68rem;color:var(--muted);">random order</span></button>
-    </div>
-  </div>
-</div>
-
 <!-- ── "Leave this attempt?" (confirmLeaveRandomQuiz in js/quiz-engine.js).
-     Outside #appPage for the same containing-block reason as #mistakesModal. ── -->
+     Outside #appPage: #appPage's fadeInPage/fadeOutPage keyframes apply a
+     `transform`, which would make this modal's `position: fixed` center on
+     #appPage's own (huge, scrolled) box instead of the viewport. Same as
+     #stickyScore below. ── -->
 <div class="modal-backdrop" id="leaveQuizModal" onclick="if (event.target === this) resolveLeaveQuiz(false)">
   <div class="modal-box" role="alertdialog" aria-labelledby="leaveQuizTitle">
     <div class="modal-title" id="leaveQuizTitle">Leave this attempt?</div>
@@ -731,7 +707,14 @@
       <span class="sticky-stat-lbl">✗</span>
     </div>
   </div>
-  <button class="sticky-retry-btn" id="stickyRetryBtn" onclick="openMistakesModal()">📋 Quiz: wrong problems</button>
+  <!-- Flagged only (js/problem-flags.js): shown while a problem of this set
+       is flagged, with how many are. -->
+  <button class="sticky-flag-filter-btn" id="stickyFlagFilterBtn" type="button" hidden aria-pressed="false"
+    title="Show only flagged problems" onclick="toggleSolveAllFlagFilter()">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 4.5h17l-6.5 8v6l-4 2v-8Z"/></svg>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path class="problem-flag-cloth" d="M5.5 3.5 19 8.75 5.5 14Z"/><path d="M5.5 21.5V3.5"/></svg>
+    <span id="stickyFlagCount">0</span>
+  </button>
 </div>
 
 <!-- ── Live quiz timer (outside #appPage for the same transform containing-
@@ -1392,6 +1375,8 @@
 <script src="js/figure.js"></script>
 <script src="js/solution-render.js"></script>
 <script src="js/solutions.js"></script>
+<!-- Flag button at the top right of every problem card. -->
+<script src="js/problem-flags.js"></script>
 <!-- Long-press affordance on the site logo for the solutions authors (see
      the file's own header). Nothing is rendered until the hold completes. -->
 <!-- Personal cabinet (👤 → Stats) beside the logo; placed before

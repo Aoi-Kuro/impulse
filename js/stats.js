@@ -257,6 +257,7 @@ function renderAttemptReview(attempt) {
     // 📘 as on the quiz cards: js/solutions.js shows it only when this
     // problem has a published solution — retired (DEL) ones included, since
     // their solutions stay published and open like any other.
+    const flagHtml = typeof problemFlagHtml === 'function' ? problemFlagHtml(a.quiz_num, a.problem_id) : '';
     const forumRowHtml = `
         <div class="card-check-row" id="rv-forum-row-${idx}">
           <button class="forum-problem-btn" id="rv-forum-btn-${idx}" title="Forum thread for ${problemLabel(a.quiz_num, a.problem_id)}"
@@ -276,7 +277,7 @@ function renderAttemptReview(attempt) {
       // instead of silently dropping the row from the review.
       card.classList.add('wrong');
       card.innerHTML = `
-        <div class="card-header"><span class="problem-num">${problemLabel(a.quiz_num, a.problem_id)} · Quiz #${a.quiz_num}</span></div>
+        <div class="card-header"><span class="problem-num">${problemLabel(a.quiz_num, a.problem_id)} · Quiz #${a.quiz_num}</span>${flagHtml}</div>
         <div class="problem-text" style="color:var(--muted)">This problem's original text is no longer available.</div>
         <div class="answer-row">
           <span class="answer-label">Answer =</span>
@@ -304,6 +305,7 @@ function renderAttemptReview(attempt) {
       <div class="card-header">
         <span class="problem-num">${numDisplay}</span>
         <span class="problem-topic">${p.topic}</span>
+        ${flagHtml}
       </div>
       <div class="problem-text">${p.text}</div>
       <div class="answer-row">

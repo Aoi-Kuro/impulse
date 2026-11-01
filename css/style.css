@@ -654,7 +654,7 @@
      body.is-scrolled: it's meant to stay visible for as long as it's
      eligible, not just once the bar has visually distinguished itself.
      Its own JS is what decides *whether* to show it (Random N active
-     AND actually in fullscreen right now — not Solve Them All/Mistakes,
+     AND actually in fullscreen right now — not Solve Them All,
      not windowed — plus not mobile, plus room to fit) — this rule just
      handles the opacity transition once that decision is `.visible`,
      plus the *temporary* fade-out while a tip is up (`.tip-showing`),
@@ -2703,58 +2703,6 @@
   }
   .btn-see-answer:hover { border-color: var(--muted); color: var(--text); }
 
-  /* ── Mistakes quiz button in sticky score ── */
-  .sticky-retry-btn {
-    margin-top: 0.5rem;
-    width: 100%;
-    font-family: var(--mono);
-    font-size: 0.6rem;
-    letter-spacing: 0.06em;
-    border: 1px solid var(--wrong);
-    border-radius: calc(3px * var(--radius-mult));
-    padding: 0.28rem 0.5rem;
-    cursor: pointer;
-    background: rgba(var(--wrong-rgb),0.08);
-    color: var(--wrong);
-    transition: background 0.15s;
-    display: none;
-  }
-  .sticky-retry-btn:hover { background: rgba(var(--wrong-rgb),0.18); }
-  .sticky-retry-btn.visible { display: block; }
-
-  /* ── Mistakes quiz overlay ── */
-  #mistakesMode {
-    display: none;
-  }
-  #mistakesMode.active {
-    display: block;
-  }
-
-  .mistakes-header {
-    max-width: 760px;
-    margin: 0 auto 1.5rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .mistakes-title {
-    font-family: var(--mono);
-    font-size: 0.7rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--wrong);
-    flex: 1;
-  }
-
-  #mistakesContainer {
-    max-width: 760px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 1.4rem;
-  }
   /* ── Landing screen ── */
   #landingScreen {
     display: flex;

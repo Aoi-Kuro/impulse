@@ -185,6 +185,51 @@
     inset-inline-start: 40px;
   }
 
+  /* Flagged problems (js/problem-flags.js): a dot on the line in the
+     flag's colour, ringed in the page background so it stands clear of the
+     line and the highlight. Not clickable itself: js/solve-all-nav.js
+     takes any tap within FLAG_MAGNET_PX of a dot (onRailClick). */
+  .sa-nav-flags {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .sa-nav-flag {
+    position: absolute;
+    inset-inline-start: 21px;            /* centred on the line (24px + 1px) */
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    transform: translateY(-50%);
+    background: var(--accent2);
+    color: var(--accent2);
+    box-shadow: 0 0 0 2px var(--bg), 0 0 6px 1px color-mix(in srgb, currentColor 55%, transparent);
+    transition: transform 0.15s ease;
+  }
+  .sa-nav-flag[data-flag="1"] { background: var(--accent); color: var(--accent); }
+  #saNavRail.flag-near .sa-nav-hitzone,
+  #saNavRail.flag-near .sa-nav-tick { cursor: pointer; }
+  .sa-nav-flag.is-near { transform: translateY(-50%) scale(1.4); }
+  /* The problem's number, on the problems' side of the line (the labels'
+     side is taken by the tick labels). */
+  .sa-nav-flag.is-near::after {
+    content: attr(data-label);
+    position: absolute;
+    top: 50%;
+    inset-inline-end: calc(100% + 6px);
+    transform: translateY(-50%) scale(0.715);  /* undoes the dot's 1.4× */
+    transform-origin: center;
+    padding: 1px 5px;
+    border-radius: calc(4px * var(--radius-mult));
+    background: var(--surface);
+    border: 1px solid currentColor;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    line-height: 1.3;
+    white-space: nowrap;
+    direction: ltr;
+  }
+
   /* Small arrow riding just inside the line, pointing at it, tracking
      scroll position continuously (not snapped to ticks) via its own `top`. */
   .sa-nav-pointer {
@@ -211,6 +256,7 @@
   .sa-nav-highlight,
   .sa-nav-tick-mark,
   .sa-nav-tick-label,
+  .sa-nav-flag,
   .sa-nav-pointer {
     transition: none;
   }

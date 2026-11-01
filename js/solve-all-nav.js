@@ -8,7 +8,11 @@
 // continuously, and a highlighted "you are here" segment between the two
 // tick marks nearest the current position. Clicking anywhere on the track
 // (generous hitboxes, not just the thin visual line) scrolls there;
-// clicking a tick jumps straight to that problem's card.
+// clicking a tick jumps straight to that problem's card. Flagged problems
+// (js/problem-flags.js) get a dot on the line in their colour, read from
+// each card's .problem-flag-btn[data-flag]. The dots are magnetic: a tap
+// within FLAG_MAGNET_PX of one (above or below) goes to the nearest flagged
+// problem, centred on screen, instead of wherever the tap landed.
 //
 // Deliberately self-contained: never imports from or calls into
 // quiz-engine.js, and quiz-engine.js never needs to know this file exists.
@@ -16,6 +20,7 @@
 // children via MutationObserver, so it rebuilds itself automatically
 // whenever Solve-All is opened, closed, or re-rendered (new quiz, Rerender
 // Equations, a filtered pool, ...) no matter which code path triggered it.
+// The flags follow the cards' data-flag attributes the same way.
 
 (function () {
   const MIN_CARDS = 12;        // below this a nav rail isn't worth the clutter
@@ -23,7 +28,10 @@
   const TICK_CANDIDATES = [5, 10, 15, 20, 25, 50, 100, 200, 500, 1000];
   const MAX_TICKS = 16;        // pick the smallest candidate step that keeps tick count at or below this
 
-  let railEl = null, trackEl = null, highlightEl = null, ticksEl = null, pointerEl = null, hitzoneEl = null;
+  let railEl = null, trackEl = null, highlightEl = null, ticksEl = null, flagsEl = null, pointerEl = null, hitzoneEl = null;
+  const FLAG_MAGNET_PX = 14;   // how far (vertically) from a flag dot a tap still counts as on it
+  let flagList = [];           // [{ idx, pct, el }], ascending by idx
+  let nearFlag = null;         // the dot the pointer is within reach of, if any
   let cards = [];      // [{ el, label, top, bottom }], document order, page-relative coordinates
   let tickList = [];   // [{ idx, pct, el }], ascending by idx
   let docTop = 0, docBottom = 0;
@@ -49,26 +57,35 @@
         '<div class="sa-nav-hitzone" id="saNavHitzone"></div>' +
         '<div class="sa-nav-highlight" id="saNavHighlight"></div>' +
         '<div class="sa-nav-ticks" id="saNavTicks"></div>' +
+        '<div class="sa-nav-flags" id="saNavFlags"></div>' +
         '<div class="sa-nav-pointer" id="saNavPointer"><span class="sa-nav-pointer-arrow"></span></div>' +
       '</div>';
     // Appended to <body>, not #appPage — #appPage's fadeInPage/fadeOutPage
     // keyframes apply a transform, which would make this rail's `position:
     // fixed` center on #appPage's own (huge, scrolled) box instead of the
-    // viewport. Same reasoning as #stickyScore / #mistakesModal (see their
+    // viewport. Same reasoning as #stickyScore / #leaveQuizModal (see their
     // comments in index.html).
     document.body.appendChild(railEl);
     trackEl = railEl.querySelector('#saNavTrack');
     highlightEl = railEl.querySelector('#saNavHighlight');
     ticksEl = railEl.querySelector('#saNavTicks');
+    flagsEl = railEl.querySelector('#saNavFlags');
     pointerEl = railEl.querySelector('#saNavPointer');
     hitzoneEl = railEl.querySelector('#saNavHitzone');
     hitzoneEl.addEventListener('click', onTrackClick);
+    railEl.addEventListener('click', onRailClick, true);
+    railEl.addEventListener('pointermove', onRailPointerMove);
+    railEl.addEventListener('pointerleave', onRailPointerMove);
   }
 
   function collectCards() {
     const container = document.getElementById('solveAllContainer');
     if (!container) return [];
-    return Array.from(container.querySelectorAll(':scope > .problem-card')).map((el) => {
+    // Only the cards on show: "flagged only" (js/problem-flags.js) hides
+    // the rest, and a hidden card has no position to mark.
+    return Array.from(container.querySelectorAll(':scope > .problem-card'))
+      .filter((el) => el.getClientRects().length > 0)
+      .map((el) => {
       const labelEl = el.querySelector('.problem-num');
       return { el: el, label: labelEl ? labelEl.textContent.trim() : '', top: 0, bottom: 0 };
     });
@@ -129,6 +146,65 @@
     return list;
   }
 
+  // A dot at the top of each flagged card, like the ticks; redrawn whole on
+  // every flag change (a set has at most a few hundred cards).
+  function renderFlags() {
+    if (!flagsEl) return;
+    flagsEl.innerHTML = '';
+    flagList = [];
+    nearFlag = null;
+    if (!built) return;
+    const range = docBottom - docTop || 1;
+    const frag = document.createDocumentFragment();
+    cards.forEach((c, i) => {
+      const btn = c.el.querySelector('.problem-flag-btn');
+      const colour = btn ? btn.dataset.flag : '0';
+      if (colour !== '1' && colour !== '2') return;
+      const pct = ((c.top - docTop) / range) * 100;
+      const dot = document.createElement('div');
+      dot.className = 'sa-nav-flag';
+      dot.dataset.flag = colour;
+      dot.dataset.label = c.label;
+      dot.style.top = pct.toFixed(3) + '%';
+      frag.appendChild(dot);
+      flagList.push({ idx: i, pct: pct, el: dot });
+    });
+    flagsEl.appendChild(frag);
+  }
+
+  // The flag dot nearest clientY, if one is within FLAG_MAGNET_PX of it.
+  function flagNear(clientY) {
+    if (!flagList.length) return null;
+    const rect = trackEl.getBoundingClientRect();
+    let best = null, bestDist = FLAG_MAGNET_PX + 0.5;
+    for (const f of flagList) {
+      const d = Math.abs(rect.top + (f.pct / 100) * rect.height - clientY);
+      if (d < bestDist) { best = f; bestDist = d; }
+    }
+    return best;
+  }
+
+  // Taken before the ticks and the track see it (capture phase), so a tap
+  // near a dot wins over a tick that happens to be right there too.
+  function onRailClick(e) {
+    if (!built) return;
+    const f = flagNear(e.clientY);
+    if (!f) return;
+    e.stopPropagation();
+    scrollToCardCentered(f.idx);
+  }
+
+  // Mouse only: shows which dot a click would go to — it grows and shows
+  // the problem's number beside it (css/solve-all-nav.css).
+  function onRailPointerMove(e) {
+    const f = built && e.type !== 'pointerleave' && e.pointerType === 'mouse' ? flagNear(e.clientY) : null;
+    if (f === nearFlag) return;
+    if (nearFlag) nearFlag.el.classList.remove('is-near');
+    nearFlag = f;
+    railEl.classList.toggle('flag-near', !!f);
+    if (f) f.el.classList.add('is-near');
+  }
+
   function currentAnchorY() {
     return (window.scrollY || window.pageYOffset) + window.innerHeight * ANCHOR_FRACTION;
   }
@@ -180,6 +256,20 @@
     window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
   }
 
+  // The card in the middle of the screen; one too tall for that starts at
+  // the anchor line instead, like scrollToCard. Measured now, since cards
+  // may have grown (feedback shown) since the rail was built.
+  function scrollToCardCentered(idx) {
+    const c = cards[idx];
+    if (!c) return;
+    const r = c.el.getBoundingClientRect();
+    const scrollY = window.scrollY || window.pageYOffset;
+    const target = r.height < window.innerHeight - 40
+      ? scrollY + r.top + r.height / 2 - window.innerHeight / 2
+      : scrollY + r.top - window.innerHeight * ANCHOR_FRACTION + 4;
+    window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+  }
+
   function onTrackClick(e) {
     if (!built || !cards.length) return;
     const rect = trackEl.getBoundingClientRect();
@@ -208,6 +298,7 @@
     const step = chooseTickStep(cards.length);
     tickList = buildTicks(step);
     built = true;
+    renderFlags();
 
     // Two rAFs (not one) so the browser actually paints the rail's resting
     // opacity:0 state before .is-ready flips it to 1 — otherwise, on a
@@ -258,5 +349,19 @@
       clearTimeout(containerDebounce);
       containerDebounce = setTimeout(rebuild, 180);
     }).observe(containerEl, { childList: true });
+
+    // A flag set, changed or removed on a card (or in another tab). With
+    // "flagged only" on that also shows or hides the card, moving every
+    // position, and so does turning it on or off (the container's own
+    // class; the cards' classes change with every check and don't count).
+    new MutationObserver((records) => {
+      if (!isModeActive()) return;
+      const toggled = records.some((r) => r.target === containerEl);
+      const flagged = records.some((r) => r.attributeName === 'data-flag');
+      if (toggled || (flagged && containerEl.classList.contains('flags-only'))) {
+        clearTimeout(containerDebounce);
+        containerDebounce = setTimeout(rebuild, 60);
+      } else if (flagged && built) renderFlags();
+    }).observe(containerEl, { subtree: true, attributes: true, attributeFilter: ['data-flag', 'class'] });
   }
 })();

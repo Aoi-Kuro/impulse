@@ -190,9 +190,10 @@ impulse/
 │   ├── solution-render.js   Solution text → blocks + MathJax (shared with
 │   │                        the editor)
 │   ├── solutions.js         "See solution" buttons and the Solution screen
+│   ├── problem-flags.js     Flag button on problem cards (C1 / C2)
 │   ├── editor-access.js     Hidden long-press entry to /editor on the logo
 │   ├── quiz-engine.js       Quiz engine: Random N, cumulative, filters,
-│   │                        Solve-All, mistakes retry, live timer,
+│   │                        Solve-All, live timer,
 │   │                        full-screen hint, update checker
 │   ├── logo-tumble.js       Logo cube tumble when the main menu appears
 │   ├── fig-attribution.js   Tap-to-toggle (i) attribution badges on figures
@@ -238,7 +239,8 @@ impulse/
 │   ├── settings.css         Settings screen + Display hide classes
 │   ├── solve-all-nav.css    Solve-All progress rail
 │   ├── figure.css           Solution figures (shared with the editor)
-│   └── solutions.css        "See solution" button + Solution screen
+│   ├── solutions.css        "See solution" button + Solution screen
+│   └── problem-flags.css    Flag button on problem cards + its C1/C2 window
 │
 ├── images/                  Framework images (not course-specific)
 │   ├── gemini-logo.svg      Gemini bot avatar in the forum
@@ -662,22 +664,46 @@ row (a P⇄Q toggle switches cumulative rows between problem and quiz labels), a
 `checkSingleProblem`, `revealAnswer`). Every problem of the quiz (or of all
 quizzes up to it, in cumulative mode) is shown, ordered or shuffled (an order
 picker page appears unless the order is locked in Settings). Each card is
-checked on its own; "See correct answer" reveals an answer and marks it
-*revealed*. Cards are built in batches with a full-screen "Rendering
+checked on its own. "See correct answer" shows the answer under the field and
+marks the card *revealed* (counted as ✗) without locking it: the field and
+"↺ Try again" stay usable, a correct answer then counts as ✓, and the button
+turns into "Hide correct answer" (hiding is per page, not saved). Only a
+correct answer locks a card; `lockedIds` from older builds that locked
+revealed cards are ignored unless the status is `correct`. A wrong try after
+revealing keeps the card *revealed*, since that status outranks wrong in the
+merge. Cards are built in batches with a full-screen "Rendering
 equations…" transition, using the math cache. Progress (status per problem,
 locked cards, typed answers) is saved per quiz and mode, and synced across
 devices once a nickname is claimed. The floating **sticky score** shows solved
-/ correct / partial / wrong counts and a sync dot. "🗑 Reset Progress" clears
+/ correct / partial / wrong counts and a sync dot, plus a filter + flag button
+while any problem of the set is [flagged](#problem-flags): it toggles
+`flags-only` on `#solveAllContainer` (unflagged cards hidden by CSS, the
+current card kept in place), turns itself off when the last flag is removed,
+and resets when Entire Set closes. "🗑 Reset Progress" clears
 the session (locally and on the server); "🔁 Rerender Equations" discards the
 cached typesetting for the current set.
 
-**Mistakes retry** (`startMistakes`): from the sticky score, a quiz made of
-only the wrong/revealed problems can be started, ordered or shuffled.
-
 **Solve-All progress rail** (`js/solve-all-nav.js`, wide screens only, at
-least 12 cards): tick marks every N problems, a "you are here" segment and a
-scroll pointer; clicking jumps. The file is self-contained and watches the DOM
-with a `MutationObserver` instead of being called by the engine.
+least 12 cards on show): tick marks every N problems, a "you are here" segment and a
+scroll pointer; clicking jumps. Flagged problems get a dot in their flag
+colour; a tap within `FLAG_MAGNET_PX` of a dot goes to the nearest flagged
+problem, centred on screen. The file is self-contained and watches the DOM
+with a `MutationObserver` instead of being called by the engine (the cards'
+`data-flag` attributes and the container's class included).
+
+### Problem flags
+
+`js/problem-flags.js` adds a flag button at the top right of every problem
+card's header (Random N, Entire Set, Stats attempt review), after the topic.
+The first tap sets C2 (`--accent2`, `PROBLEM_FLAG_DEFAULT`) and opens a small
+window offering C1 (`--accent`); ignoring it keeps C2. Tapping a flagged
+problem removes the flag. Flags are per problem, not per card, stored as
+`{ "q1_P55": 1 | 2 }` under `<p>-problem-flags`, and every card of the same
+problem (other tabs too) follows. They sync across devices with the settings
+(see [Cross-device sync](#cross-device-sync)): one code per set, `flags.q1` …,
+holding `{ P7: 2, … }`, so only while *Sync settings on this device* is on.
+Per set rather than per problem keeps the server well under its 200 codes;
+two devices changing the same set before either syncs keep the newer one.
 
 **Screen handling.** `goToMainMenu`, `captureScreenScroll` /
 `restoreScreenScroll` and the fade helpers move between screens and restore
@@ -772,7 +798,9 @@ resolves the device to its claimed identity.
   browser update each other through the `storage` event, with no request.
   Device-only: Follow device theme (and the day/night mode while it's on),
   Figure size, battery reduce-motion, Go silent, the Solve-All rail and the
-  whole Sync & Storage tab. Off per device via *Sync settings on this device*.
+  whole Sync & Storage tab. Off per device via *Sync settings on this device*,
+  which also stops [problem flags](#problem-flags) from syncing: they ride
+  along as the codes `flags.q1` … (one set each), with no server change.
 - **Remote switches** ([Remote settings](#remote-settings-site-versionjson)):
   `sync_paused` stops all three kinds of sync (the dots show "Sync is paused";
   work stays in the browser, deleting an attempt and resetting Solve-All
@@ -864,8 +892,9 @@ thread on tap.
   `status=published`. A full row is fetched the first time a solution is
   opened and kept in memory until the index shows it was unpublished or saved
   again. While offline mode runs, both come from the offline download.
-- **"📘 See solution"** appears in Random N only after the score is revealed
-  (so a solution cannot replace the attempt), always in Solve-All, and on every
+- **"📘 See solution"** is shown but disabled in Random N until the score is
+  revealed (so a solution cannot replace the attempt), and only on problems
+  with a published solution; usable from the start in Solve-All, and on every
   card of an attempt review (Stats), retired `DEL` problems included: their
   solutions stay published and open like any other.
 - The **Solution screen** replaces the current screen (like the forum) and
@@ -1976,6 +2005,8 @@ Course-scoped keys start with `STORAGE_PREFIX` (shown as `<p>`).
 | localStorage | `<p>_forum_device_id`, `<p>_forum_device_secret`, `<p>_forum_device_token`, `<p>_forum_identity_token` | Device identity and tokens. |
 | localStorage | `<p>_forum_nickname`, `<p>_forum_pin`, `<p>_forum_display_name`, `<p>_forum_avatar_cache`, `<p>_forum_last_seen_id`, `<p>_forum_pin_*` | Forum identity, avatars, unread tracking. |
 | localStorage | `<p>_splash_mandatory_shown`, `<p>-bug-nudge-shown` | Splash and nudge bookkeeping. |
+| localStorage | `<p>_deploy_msg_seen` | Version and text of the last `DEPLOY_MESSAGE` handled (shown or skipped). |
+| localStorage | `<p>-problem-flags` | Problem flags: `{ "q1_P55": 1 \| 2 }` (1 = C1, 2 = C2). |
 | localStorage | `<p>-fig-anim-speed` | Animated figures' speed: `0.5`, `1` or `2`. |
 | sessionStorage | `<p>_splash_seen` | Splash lines shown recently in this tab (not repeated). |
 | localStorage | `<p>-editor-key`, `-editor-drafts`, `-editor-history`, `-editor-last`, `-editor-sidebar`, `-editor-split`, `-editor-wrap`, `-editor-server-mock` | Editor state (the last one only with `store-mock.js`). |
@@ -2155,6 +2186,18 @@ one even without a user-facing change.
 A release that changes only the editor bumps `editor` in `site-version.json`
 instead, and nothing else: the site ignores that number, so students are not
 asked to reload.
+
+**Deploy message.** `DEPLOY_MESSAGE` at the top of `js/data/changelog.js` is
+a one-time note for a deploy: when it isn't `''`, it replaces the main-menu
+splash once, the first time the main screen shows after a browser gets the
+deploy, and never again (`takeDeployMessage` in `js/splash.js`). Only
+browsers that used the site before see it: a first visit marks it as handled
+without showing it. "Before" means the browser already holds the device id
+every visit stores (`<prefix>_forum_device_id`), so cleared site data, a
+private window or a new browser count as first visits. It is remembered per
+version *and* text (`<prefix>_deploy_msg_seen`), so a redeploy without a
+version bump shows a changed message once too. Set or clear it on every
+deploy, so an old message doesn't go out again with the next one.
 
 The running site polls `site-version.json` and shows the update banner when
 `version` differs from `CURRENT_VERSION`; the editor's version label turns red

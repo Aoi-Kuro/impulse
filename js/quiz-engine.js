@@ -744,25 +744,27 @@ function render() {
       <div class="card-header">
         <span class="problem-num">${numDisplay}</span>
         <span class="problem-topic">${p.topic}</span>
+        ${typeof problemFlagHtml === 'function' ? problemFlagHtml(p._quizNum || selectedQuizNum, p.id) : ''}
       </div>
       <div class="problem-text">${p.text}</div>
       <div class="answer-row">
         ${answerInputHtml(`ans-${i}`)}
       </div>
       <div class="feedback" id="fb-${i}"></div>
-      <div class="card-check-row" id="forum-row-${i}" style="display:none;">
+      <div class="card-check-row rq-locked" id="forum-row-${i}" style="display:none;">
         <button class="forum-problem-btn" id="rq-forum-btn-${i}" title="Forum thread for ${pLabel}"
           onclick="openForumForProblem(${p._quizNum || selectedQuizNum}, '${p.id}')">
           💬 <span id="rq-forum-total-${i}"></span>
           <span class="forum-problem-btn-badge" id="rq-forum-badge-${i}" style="display:none;"></span>
           <span class="forum-problem-btn-at" id="rq-forum-at-${i}" style="display:none;">@</span>
         </button>
-        <!-- Sits in the row that checkAll() reveals, so in Random quiz a
-             solution is only ever reachable after scores are shown.
-             js/solutions.js hides it unless this problem has a published
-             solution. -->
+        <!-- While the row is .rq-locked (until checkAll() shows scores) the
+             forum button is hidden and this one is shown but disabled, so
+             in Random quiz a solution is only ever reachable after scores
+             are shown. js/solutions.js hides it unless this problem has a
+             published solution, and the locked row with it. -->
         <button class="solution-btn" data-quiz="${p._quizNum || selectedQuizNum}" data-problem="${p.id}" style="display:none;"
-          title="Worked solution for ${pLabel}"
+          disabled title="Available after Check answers"
           onclick="openSolution(${p._quizNum || selectedQuizNum}, '${p.id}')">📘 See solution</button>
       </div>
     `;
@@ -810,7 +812,15 @@ function checkAll() {
     else                  card.classList.add("wrong");
 
     const forumRow = document.getElementById("forum-row-" + i);
-    if (forumRow) forumRow.style.display = "";
+    if (forumRow) {
+      forumRow.classList.remove("rq-locked");
+      forumRow.style.display = "";
+      const solBtn = forumRow.querySelector(".solution-btn");
+      if (solBtn) {
+        solBtn.disabled = false;
+        solBtn.title = "Worked solution for " + problemLabel(p._quizNum || selectedQuizNum, p.id);
+      }
+    }
 
     fb.classList.add("show", pts === 1 ? "correct-fb" : pts === 0.9 ? "partial-fb" : "wrong-fb");
     fb.innerHTML = answerFeedbackHtml(res, p, true);
@@ -1018,6 +1028,10 @@ function openFullStatsFromQuiz() {
 let solveAllProblems = [];
 let solveAllChecked = new Map(); // index -> 'correct' | 'partial' | 'wrong' | 'revealed'
 let solveAllLocked  = new Set();
+// Revealed cards whose answer was hidden again ("Hide correct answer").
+// Only how the card looks on this page: not saved or synced, so a reload
+// shows the answer again.
+let solveAllAnswerHidden = new Set();
 let solveAllAnswers = {};        // problemId -> { ans, unit } — persisted typed answers
 
 // Problem ids (P1, P2, ...) are only unique *within* a quiz, not across
@@ -1098,14 +1112,15 @@ function applySolveAllMerge(serverSnapshot) {
   Object.keys(merged.checkedById).forEach(id => {
     if (!(id in merged.answersById)) delete solveAllAnswers[id];
   });
-  const lockedIdSet = new Set(merged.lockedIds);
-
   solveAllProblems.forEach((p, idx) => {
     const newStatus = merged.checkedById[p.id];
     if (!newStatus || newStatus === solveAllChecked.get(idx)) return;
 
     solveAllChecked.set(idx, newStatus);
-    if (lockedIdSet.has(p.id)) solveAllLocked.add(idx);
+    // Only a solved card is locked. lockedIds can still list problems an
+    // older build locked when their answer was revealed; those stay open.
+    if (newStatus === 'correct') solveAllLocked.add(idx);
+    else solveAllLocked.delete(idx);
 
     // Only touch the DOM if this card has actually been rendered — if not,
     // renderSolveAll's own batch loop will read solveAllChecked at draw
@@ -1114,7 +1129,7 @@ function applySolveAllMerge(serverSnapshot) {
     if (!card) return;
     resetCardVisuals(idx);
     restoreSolveAllCard(idx, p, newStatus, solveAllAnswers[p.id]);
-    if (newStatus === 'correct' || newStatus === 'revealed') {
+    if (newStatus === 'correct') {
       document.getElementById('sa-btnrow-' + idx)?.querySelectorAll('.btn-retry, .btn-see-answer').forEach(el => el.remove());
     }
   });
@@ -1203,6 +1218,7 @@ function applySolveAllReset() {
   });
   solveAllChecked = new Map();
   solveAllLocked  = new Set();
+  solveAllAnswerHidden = new Set();
   solveAllAnswers = {};
   updateStickyScore();
   saveSolveAllProgress();
@@ -1283,6 +1299,7 @@ function _startSolveAllCore(order) {
   // Apply saved progress by problem ID (order-independent)
   solveAllChecked = new Map();
   solveAllLocked  = new Set();
+  solveAllAnswerHidden = new Set();
   solveAllAnswers = saved && saved.answersById ? { ...saved.answersById } : {};
   if (saved) {
     // Build ID-based maps from whatever format was saved
@@ -1303,7 +1320,8 @@ function _startSolveAllCore(order) {
 
     solveAllProblems.forEach((p, idx) => {
       if (checkedById[p.id]) solveAllChecked.set(idx, checkedById[p.id]);
-      if (lockedIdSet.has(p.id)) solveAllLocked.add(idx);
+      // Revealed problems used to be locked too; now only solved ones are.
+      if (lockedIdSet.has(p.id) && checkedById[p.id] === 'correct') solveAllLocked.add(idx);
     });
     // Before any card is drawn; saved (and pushed by the sync below) with
     // the rest of the progress.
@@ -1357,6 +1375,7 @@ function _exitSolveAllScreenDom() {
 
   solveAllChecked = new Map();
   solveAllLocked  = new Set();
+  solveAllAnswerHidden = new Set();
   solveAllProblems = [];
   solveAllAnswers = {};
   updateStickyScore();
@@ -1428,7 +1447,7 @@ function resetSolveAll() {
 }
 
 // solveAllChecked: index -> 'correct' | 'partial' | 'wrong' | 'revealed'
-// solveAllLocked:  Set of indices permanently locked (answer was revealed)
+// solveAllLocked:  Set of indices locked for good (solved correctly)
 
 function renderSolveAll() {
   const container = document.getElementById('solveAllContainer');
@@ -1601,6 +1620,7 @@ function buildSolveAllCards(container, batchSize = 12) {
             <div class="card-header">
               <span class="problem-num">${problemLabel(p._quizNum || selectedQuizNum, p.id)}</span>
               <span class="problem-topic">${p.topic}</span>
+              ${typeof problemFlagHtml === 'function' ? problemFlagHtml(p._quizNum || selectedQuizNum, p.id) : ''}
             </div>
             <div class="problem-text">${cached !== null ? cached.html : p.text}</div>
             <div class="answer-row">
@@ -1704,12 +1724,7 @@ function restoreSolveAllCard(i, p, status, savedAnswer) {
     fb.classList.add('partial-fb');
     fb.innerHTML = `✓ Value correct, but unit needs fixing <span class="pts-badge pts-partial">+0.9 pt</span>`;
     btn.textContent = '↺ Try again'; btn.disabled = false;
-    if (!btnRow.querySelector('.btn-see-answer')) {
-      const seeBtn = document.createElement('button');
-      seeBtn.className = 'btn-see-answer'; seeBtn.textContent = 'See correct answer';
-      seeBtn.onclick = () => revealAnswer(i);
-      btnRow.insertBefore(seeBtn, btn);
-    }
+    syncSeeAnswerButton(i);
 
   } else if (status === 'wrong') {
     card.classList.add('wrong');
@@ -1719,21 +1734,18 @@ function restoreSolveAllCard(i, p, status, savedAnswer) {
     fb.classList.add('wrong-fb');
     fb.innerHTML = `✗ Wrong answer <span class="pts-badge pts-zero">+0 pt</span>`;
     btn.textContent = '↺ Try again'; btn.disabled = false;
-    if (!btnRow.querySelector('.btn-see-answer')) {
-      const seeBtn = document.createElement('button');
-      seeBtn.className = 'btn-see-answer'; seeBtn.textContent = 'See correct answer';
-      seeBtn.onclick = () => revealAnswer(i);
-      btnRow.insertBefore(seeBtn, btn);
-    }
+    syncSeeAnswerButton(i);
 
   } else if (status === 'revealed') {
+    // Answer seen but not solved yet: still open to try again (revealAnswer).
     card.classList.add('wrong');
-    ansEl.value = expectedAnswerText(p);
-    ansEl.disabled = true;
+    ansEl.value = saved;
+    ansEl.disabled = false;
     markAnswerInput(ansEl, 0);
     fb.classList.add('wrong-fb');
-    fb.innerHTML = `👁 Answer revealed — no points awarded <span class="pts-badge pts-zero">+0 pt</span>`;
-    btn.textContent = '✗ Revealed'; btn.classList.add('checked'); btn.disabled = true;
+    fb.innerHTML = solveAllAnswerHidden.has(i) ? hiddenAnswerFeedbackHtml() : revealedFeedbackHtml(p);
+    btn.textContent = '↺ Try again'; btn.classList.remove('checked'); btn.disabled = false;
+    syncSeeAnswerButton(i);
   }
 }
 
@@ -1762,8 +1774,9 @@ function hintSolutionButton(row) {
 }
 
 function checkSingleProblem(i) {
-  // Permanently locked (answer was revealed)
+  // Solved already: locked for good
   if (solveAllLocked.has(i)) return;
+  const wasRevealed = solveAllChecked.get(i) === 'revealed';
 
   const p      = solveAllProblems[i];
   const card   = document.getElementById('sa-card-' + i);
@@ -1808,20 +1821,26 @@ function checkSingleProblem(i) {
   } else {
     // ── Wrong or partial: allow retry ──────────────────────────────────────
     const resultType = pts === 0.9 ? 'partial' : 'wrong';
-    solveAllChecked.set(i, resultType);
+    // Once its answer has been seen a problem stays 'revealed' until it is
+    // solved: that status outranks wrong and partial in the cross-device
+    // merge (_saStatusRank, js/solve-all-sync.js), so going back to them
+    // would only be undone by the next sync.
+    solveAllChecked.set(i, wasRevealed ? 'revealed' : resultType);
     if (resultType === 'wrong') hintSolutionButton(btnRow);
 
     // Settings > Study > "Reveal wrong answer instantly" — a genuinely
     // wrong answer (not partial-credit unit slip-ups, which still get a
     // real shot at just fixing the unit) skips straight to revealAnswer(i)
     // instead of the manual "See correct answer" step below.
-    if (resultType === 'wrong' && typeof getSetting === 'function' && getSetting('study', 'revealWrongInstantly') === true) {
+    if (!wasRevealed && resultType === 'wrong' && typeof getSetting === 'function' && getSetting('study', 'revealWrongInstantly') === true) {
       revealAnswer(i);
       return;
     }
 
     fb.classList.add(pts === 0.9 ? 'partial-fb' : 'wrong-fb');
-    fb.innerHTML = answerFeedbackHtml(res, p, false);
+    // The answer is no secret any more once revealed: a wrong one shows
+    // it, unless it was hidden again.
+    fb.innerHTML = answerFeedbackHtml(res, p, wasRevealed && !solveAllAnswerHidden.has(i));
 
     // Update check button label but keep it active for retry
     btn.textContent = '↺ Try again';
@@ -1830,14 +1849,7 @@ function checkSingleProblem(i) {
     // Re-enable the field for retry
     ansEl.disabled = false;
 
-    // Add "See correct answer" button if not already there
-    if (!btnRow.querySelector('.btn-see-answer')) {
-      const seeBtn = document.createElement('button');
-      seeBtn.className = 'btn-see-answer';
-      seeBtn.textContent = 'See correct answer';
-      seeBtn.onclick = () => revealAnswer(i);
-      btnRow.insertBefore(seeBtn, btn);
-    }
+    syncSeeAnswerButton(i);
   }
 
   updateStickyScore();
@@ -1845,6 +1857,45 @@ function checkSingleProblem(i) {
   if (typeof broadcastSolveAllChange === 'function') broadcastSolveAllChange();
 }
 
+// The feedback line of a card whose answer was revealed, and of one whose
+// answer was hidden again.
+function revealedFeedbackHtml(p) {
+  return `👁 Correct answer ≈ <strong>${fmt(p.answer)}</strong> ${fmtUnit(p.units)} <span class="pts-badge pts-zero">+0 pt</span>`;
+}
+function hiddenAnswerFeedbackHtml() {
+  return `👁 Correct answer hidden <span class="pts-badge pts-zero">+0 pt</span>`;
+}
+
+// The card's answer button, added if missing: "See correct answer", or
+// "Hide correct answer" while a revealed answer is on show.
+function syncSeeAnswerButton(i) {
+  const btnRow = document.getElementById('sa-btnrow-' + i);
+  const btn    = document.getElementById('sa-check-btn-' + i);
+  if (!btnRow || !btn) return;
+  let seeBtn = btnRow.querySelector('.btn-see-answer');
+  if (!seeBtn) {
+    seeBtn = document.createElement('button');
+    seeBtn.className = 'btn-see-answer';
+    btnRow.insertBefore(seeBtn, btn);
+  }
+  const shown = solveAllChecked.get(i) === 'revealed' && !solveAllAnswerHidden.has(i);
+  seeBtn.textContent = shown ? 'Hide correct answer' : 'See correct answer';
+  seeBtn.onclick = () => (shown ? hideRevealedAnswer(i) : revealAnswer(i));
+}
+
+// "Hide correct answer": takes the answer off the card again. The card
+// still counts as revealed; "See correct answer" brings it back.
+function hideRevealedAnswer(i) {
+  const fb = document.getElementById('sa-fb-' + i);
+  solveAllAnswerHidden.add(i);
+  if (fb) fb.innerHTML = hiddenAnswerFeedbackHtml();
+  syncSeeAnswerButton(i);
+}
+
+// "See correct answer": shows the answer under the field without locking
+// the card — the worked solution is open from the start in this mode
+// anyway. The card counts as ✗ ('revealed') until it is answered
+// correctly, which then counts as ✓ like any other correct answer.
 function revealAnswer(i) {
   const p      = solveAllProblems[i];
   const card   = document.getElementById('sa-card-' + i);
@@ -1853,31 +1904,26 @@ function revealAnswer(i) {
   const btn    = document.getElementById('sa-check-btn-' + i);
   const btnRow = document.getElementById('sa-btnrow-' + i);
 
-  // Lock permanently
-  solveAllLocked.add(i);
   solveAllChecked.set(i, 'revealed');
+  solveAllAnswerHidden.delete(i);
 
-  // Show the answer in the field
-  ansEl.value    = expectedAnswerText(p);
-  ansEl.disabled = true;
-
-  // Style as revealed (use wrong colour to mark it wasn't solved)
+  // Wrong colour: it isn't solved. What the student typed stays in the field.
   card.classList.remove('correct', 'partial', 'wrong');
   card.classList.add('wrong');
   markAnswerInput(ansEl, 0);
+  ansEl.disabled = false;
 
-  // Feedback
   fb.classList.remove('correct-fb', 'partial-fb', 'wrong-fb');
   fb.classList.add('show', 'wrong-fb');
-  fb.innerHTML = `👁 Answer revealed — no points awarded <span class="pts-badge pts-zero">+0 pt</span>`;
+  fb.innerHTML = revealedFeedbackHtml(p);
 
-  // Lock check button
-  btn.textContent = '✗ Revealed';
-  btn.classList.add('checked');
-  btn.disabled = true;
+  btn.textContent = '↺ Try again';
+  btn.classList.remove('checked');
+  btn.disabled = false;
 
-  // Remove see-answer button
-  btnRow.querySelectorAll('.btn-retry, .btn-see-answer').forEach(el => el.remove());
+  // Now "Hide correct answer"
+  btnRow.querySelectorAll('.btn-retry').forEach(el => el.remove());
+  syncSeeAnswerButton(i);
 
   updateStickyScore();
   saveSolveAllProgress();
@@ -1898,207 +1944,6 @@ function updateStickyScore() {
   document.getElementById('stickyCorrect').textContent = nCorrect;
   document.getElementById('stickyPartial').textContent = nPartial;
   document.getElementById('stickyWrong').textContent   = nWrong;
-
-  // Show retry-mistakes button only when there are mistakes
-  const retryBtn = document.getElementById('stickyRetryBtn');
-  retryBtn.classList.toggle('visible', nWrong > 0);
-  if (nWrong > 0) retryBtn.textContent = `📋 Quiz: wrong problems (${nWrong})`;
-}
-
-// ─── Mistakes quiz mode ───────────────────────────────────────────────────────
-let mistakesProblems  = [];
-let mistakesChecked   = new Map();
-let mistakesLocked    = new Set();
-
-function getMistakeProblems() {
-  // Collect problems that are wrong or revealed from the solve-all session
-  const bad = [];
-  for (const [idx, status] of solveAllChecked.entries()) {
-    if (status === 'wrong' || status === 'revealed' || status === 'partial') {
-      bad.push(solveAllProblems[idx]);
-    }
-  }
-  return bad;
-}
-
-function openMistakesModal() {
-  const bad = getMistakeProblems();
-  document.getElementById('mistakesModalDesc').textContent =
-    `You have ${bad.length} problem${bad.length !== 1 ? 's' : ''} to retry. Choose order.`;
-  document.getElementById('mistakesModal').classList.add('open');
-}
-
-function closeMistakesModal() {
-  document.getElementById('mistakesModal').classList.remove('open');
-}
-
-function startMistakes(order) {
-  closeMistakesModal();
-
-  mistakesProblems = getMistakeProblems();
-  if (order === 'unordered') {
-    for (let i = mistakesProblems.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [mistakesProblems[i], mistakesProblems[j]] = [mistakesProblems[j], mistakesProblems[i]];
-    }
-  }
-  mistakesChecked = new Map();
-  mistakesLocked  = new Set();
-
-  // Hide solve-all mode, keep sticky score hidden
-  document.getElementById('solveAllMode').style.display = 'none';
-  document.getElementById('stickyScore').classList.remove('visible');
-
-  // Show mistakes mode
-  document.getElementById('mistakesMode').classList.add('active');
-
-  renderMistakes();
-}
-
-function exitMistakes() {
-  document.getElementById('mistakesMode').classList.remove('active');
-  document.getElementById('mistakesMode').querySelector('#mistakesContainer').innerHTML = '';
-
-  // Restore solve-all mode
-  document.getElementById('solveAllMode').style.display = '';
-  document.getElementById('stickyScore').classList.add('visible');
-
-  mistakesProblems = [];
-  mistakesChecked  = new Map();
-  mistakesLocked   = new Set();
-}
-
-function renderMistakes() {
-  const container = document.getElementById('mistakesContainer');
-  container.innerHTML = '';
-
-  mistakesProblems.forEach((p, i) => {
-    const card = document.createElement('div');
-    card.className = 'problem-card';
-    card.id = 'mk-card-' + i;
-
-    card.innerHTML = `
-      <div class="card-header">
-        <span class="problem-num">${problemLabel(p._quizNum || selectedQuizNum, p.id)}</span>
-        <span class="problem-topic">${p.topic}</span>
-      </div>
-      <div class="problem-text">${p.text}</div>
-      <div class="answer-row">
-        <span class="answer-label">Answer =</span>
-        ${answerInputHtml(`mk-ans-${i}`)}
-      </div>
-      <div class="feedback" id="mk-fb-${i}"></div>
-      <div class="card-check-row" id="mk-btnrow-${i}">
-        <button class="check-problem-btn" id="mk-check-btn-${i}" onclick="checkMistakeProblem(${i})">Check</button>
-      </div>
-    `;
-
-    container.appendChild(card);
-
-    const ansInput = card.querySelector(`#mk-ans-${i}`);
-    attachAnswerPreview(ansInput);
-    ansInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); checkMistakeProblem(i); }
-    });
-  });
-  renderMathIn(container);
-}
-
-function checkMistakeProblem(i) {
-  if (mistakesLocked.has(i)) return;
-
-  const p      = mistakesProblems[i];
-  const card   = document.getElementById('mk-card-' + i);
-  const ansEl  = document.getElementById('mk-ans-' + i);
-  const fb     = document.getElementById('mk-fb-' + i);
-  const btn    = document.getElementById('mk-check-btn-' + i);
-  const btnRow = document.getElementById('mk-btnrow-' + i);
-
-  const res = gradeAnswer(ansEl.value, p);
-  const pts = res.pts;
-
-  card.classList.remove('correct', 'partial', 'wrong');
-  fb.classList.remove('correct-fb', 'partial-fb', 'wrong-fb');
-
-  ansEl.disabled = true;
-  markAnswerInput(ansEl, pts);
-
-  if      (pts === 1)   card.classList.add('correct');
-  else if (pts === 0.9) card.classList.add('partial');
-  else                  card.classList.add('wrong');
-
-  fb.classList.add('show');
-
-  if (pts === 1) {
-    fb.classList.add('correct-fb');
-    fb.innerHTML = `✓ Correct <span class="pts-badge pts-full">+1 pt</span>`;
-
-    mistakesChecked.set(i, 'correct');
-    mistakesLocked.add(i);
-
-    btn.textContent = '✓ Correct';
-    btn.classList.add('checked');
-    btn.disabled = true;
-    btnRow.querySelectorAll('.btn-see-answer').forEach(el => el.remove());
-
-  } else {
-    const resultType = pts === 0.9 ? 'partial' : 'wrong';
-    mistakesChecked.set(i, resultType);
-
-    // Settings > Study > "Reveal wrong answer instantly" — same rule as
-    // checkSingleProblem's Solve-All counterpart above: only a genuinely
-    // wrong answer skips straight to the reveal, partial credit still gets
-    // a real shot at fixing just the unit.
-    if (resultType === 'wrong' && typeof getSetting === 'function' && getSetting('study', 'revealWrongInstantly') === true) {
-      revealMistakeAnswer(i);
-      return;
-    }
-
-    fb.classList.add(pts === 0.9 ? 'partial-fb' : 'wrong-fb');
-    fb.innerHTML = answerFeedbackHtml(res, p, false);
-
-    btn.textContent = '↺ Try again';
-    btn.classList.remove('checked');
-    btn.disabled = false;
-    ansEl.disabled = false;
-
-    if (!btnRow.querySelector('.btn-see-answer')) {
-      const seeBtn = document.createElement('button');
-      seeBtn.className = 'btn-see-answer';
-      seeBtn.textContent = 'See correct answer';
-      seeBtn.onclick = () => revealMistakeAnswer(i);
-      btnRow.insertBefore(seeBtn, btn);
-    }
-  }
-}
-
-function revealMistakeAnswer(i) {
-  const p      = mistakesProblems[i];
-  const card   = document.getElementById('mk-card-' + i);
-  const ansEl  = document.getElementById('mk-ans-' + i);
-  const fb     = document.getElementById('mk-fb-' + i);
-  const btn    = document.getElementById('mk-check-btn-' + i);
-  const btnRow = document.getElementById('mk-btnrow-' + i);
-
-  mistakesLocked.add(i);
-  mistakesChecked.set(i, 'revealed');
-
-  ansEl.value    = expectedAnswerText(p);
-  ansEl.disabled = true;
-
-  card.classList.remove('correct', 'partial', 'wrong');
-  card.classList.add('wrong');
-  markAnswerInput(ansEl, 0);
-
-  fb.classList.remove('correct-fb', 'partial-fb', 'wrong-fb');
-  fb.classList.add('show', 'wrong-fb');
-  fb.innerHTML = `👁 Answer revealed — no points awarded <span class="pts-badge pts-zero">+0 pt</span>`;
-
-  btn.textContent = '✗ Revealed';
-  btn.classList.add('checked');
-  btn.disabled = true;
-
-  btnRow.querySelectorAll('.btn-see-answer').forEach(el => el.remove());
 }
 
 // ─── Theme toggle ─────────────────────────────────────────────────────────────
@@ -2334,8 +2179,8 @@ function startSelected() {
   const landing = document.getElementById('landingScreen');
   fadeOutScreen(landing, 300, () => {
     if (selectedMode === 'solveall') {
-      // appPage may still be visible from a previous mode (Random 6,
-      // Mistakes) or a previous solve-all session — same reasoning as
+      // appPage may still be visible from a previous mode (Random 6)
+      // or a previous solve-all session — same reasoning as
       // resetSolveAll()/handleRemoteSolveAllReset() above. #choicePage is
       // position:fixed now (see its CSS), so this is defense in depth
       // rather than the only thing preventing the picker from landing
@@ -2394,7 +2239,6 @@ function _randomAttemptAtRisk() {
   const appPage = document.getElementById('appPage');
   if (!appPage || !appPage.classList.contains('visible') || appPage.classList.contains('fading-out')) return false;
   if (document.getElementById('solveAllMode').classList.contains('active')) return false;
-  if (document.getElementById('mistakesMode').classList.contains('active')) return false;
   if (Date.now() - _attemptStartedAt < 30 * 1000) return false;
   return [...document.querySelectorAll('#quizContainer .answer-input')].some(el => el.value.trim() !== '');
 }
@@ -2438,7 +2282,7 @@ function _goToMainMenuNow() {
   // screen, so if either was open, closing it *was* going to the main menu —
   // nothing else could be active underneath it. That's no longer quite true
   // for the Forum: the floating Forum button (forum.js) can now open it from
-  // mid-quiz (Solve-all/Mistakes) or Stats too, hiding that screen instead of
+  // mid-quiz (Solve-all) or Stats too, hiding that screen instead of
   // landing. Tapping the main-menu logo while the Forum is open should still
   // always land you back on the landing screen either way — a distinct, more
   // explicit "take me all the way home" than the Forum's own ✕ button,
@@ -2483,12 +2327,12 @@ function _goToMainMenuNow() {
 }
 
 // Hides whichever of appPage/choicePage is currently showing (exiting
-// solve-all/mistakes mode first if needed) and fades the landing screen back
+// solve-all mode first if needed) and fades the landing screen back
 // in. Pulled out of goToMainMenu() as its own function so forum.js can reuse
 // it too: closing the Forum via the main-menu logo (rather than its own ✕
 // button) after it was opened mid-quiz by the floating Forum button needs
 // this exact same cleanup — not just "hide forum, reveal landing" — or
-// solve-all/mistakes state would be left stale for next time.
+// solve-all state would be left stale for next time.
 function exitAppOrChoiceToLanding() {
   const appPage   = document.getElementById('appPage');
   const choice    = document.getElementById('choicePage');
@@ -2538,11 +2382,8 @@ function exitAppOrChoiceToLanding() {
   const fromChoice = !choice.classList.contains('hidden');
 
   function showLanding() {
-    // Exit mistakes/solve-all mode only once appPage is hidden/faded,
-    // so the underlying quiz-mode UI never flashes into view mid-fade.
-    if (document.getElementById('mistakesMode').classList.contains('active')) {
-      exitMistakes();
-    }
+    // Exit solve-all mode only once appPage is hidden/faded, so the
+    // underlying quiz-mode UI never flashes into view mid-fade.
     if (document.getElementById('solveAllMode').classList.contains('active')) {
       exitSolveAll();
     }
@@ -2555,7 +2396,7 @@ function exitAppOrChoiceToLanding() {
     // ticking in the background.
     if (typeof stopLiveQuizTimer === 'function') stopLiveQuizTimer();
     // stopLiveQuizTimer() above only re-checks a pending update when
-    // _quizTimerActive was true — which it never is for Solve-All/Mistakes
+    // _quizTimerActive was true — which it never is for Solve-All
     // (only a Random-6/cumulative attempt sets it), so leaving those modes
     // silently skipped the "update anyway outside quiz mode" check
     // entirely. This is the actual "leaving a quiz" moment for every mode,
@@ -2624,7 +2465,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '13.2.5';
+const CURRENT_VERSION = '13.3.0';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.
