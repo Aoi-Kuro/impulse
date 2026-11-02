@@ -37,9 +37,14 @@
 // with them instead of the defaults until its first check comes back.
 
 // name:          [default, min, max] in seconds. minify.py reads this table.
+// The *_live intervals apply while that sync's Realtime channel is connected;
+// the plain ones while it is down or "off". A live interval is checked on the
+// plain one's ticks, so it is never shorter than the plain one in practice.
 const SITE_POLL = {
   attempts:    [45, 15, 3600],       // attempts sync fallback (js/attempts-sync.js)
+  attempts_live:  [300, 45, 3600],   // attempts sync fallback while Realtime is connected (js/attempts-sync.js)
   solve_all:   [60, 15, 3600],       // Solve-All sync fallback (js/solve-all-sync.js)
+  solve_all_live: [300, 60, 3600],   // Solve-All sync fallback while Realtime is connected (js/solve-all-sync.js)
   settings:    [900, 60, 86400],     // settings sync fallback (js/settings-sync.js)
   stats:       [45, 15, 3600],       // Forum & Site panel refresh (js/stats.js)
   forum:       [90, 15, 3600],       // forum fallback check (js/forum.js)

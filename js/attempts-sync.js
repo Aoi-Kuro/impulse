@@ -132,6 +132,7 @@ function _updateAttemptsSyncDot(syncing) {
 let _attemptsIdentityId = null;
 let _attemptsRealtimeChannel = null;
 let _attemptsRealtimeEverConnected = false;
+let _attemptsRealtimeLive = false; // channel SUBSCRIBED right now: the fallback poll slows to "poll.attempts_live"
 let _attemptsBroadcastDebounce = null;
 
 function _onAttemptsBroadcast() {
@@ -157,32 +158,37 @@ function _ensureAttemptsRealtime(identityId) {
   _attemptsIdentityId = identityId;
   const client = (typeof getForumClient === 'function') ? getForumClient() : null;
   if (!client) return;
-  _attemptsRealtimeChannel = client
+  const channel = client
     .channel('attempts:' + identityId)
-    .on('broadcast', { event: 'changed' }, _onAttemptsBroadcast)
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        // Reconnected after actually dropping (not the first connect,
-        // already covered by this sync's own immediate call) — something
-        // could have changed while we were gone, so catch up now rather
-        // than wait for the next ping or the slow fallback timer. This
-        // also naturally settles the dot to a fresh ok/error result,
-        // rather than leaving it on whatever it showed before the drop.
-        if (_attemptsRealtimeEverConnected) syncAttempts();
-        _attemptsRealtimeEverConnected = true;
-        return;
-      }
-      // CHANNEL_ERROR / TIMED_OUT / CLOSED after having been up — the
-      // socket dropped for a reason that might have nothing to do with an
-      // actual sync attempt failing (server restart, brief network blip),
-      // so without this the dot would just sit on stale "green" until
-      // something else happens to fail or the 3-minute fallback tick
-      // fires. Surface it immediately instead.
-      if (_attemptsRealtimeEverConnected) {
-        _lastSyncFailed = true;
-        _updateAttemptsSyncDot(false);
-      }
-    });
+    .on('broadcast', { event: 'changed' }, _onAttemptsBroadcast);
+  _attemptsRealtimeChannel = channel;
+  channel.subscribe((status) => {
+    // A channel already replaced by _teardownAttemptsRealtime reports its
+    // own CLOSED late; it must not mark the current one as down.
+    if (channel !== _attemptsRealtimeChannel) return;
+    _attemptsRealtimeLive = status === 'SUBSCRIBED';
+    if (status === 'SUBSCRIBED') {
+      // Reconnected after actually dropping (not the first connect,
+      // already covered by this sync's own immediate call) — something
+      // could have changed while we were gone, so catch up now rather
+      // than wait for the next ping or the slow fallback timer. This
+      // also naturally settles the dot to a fresh ok/error result,
+      // rather than leaving it on whatever it showed before the drop.
+      if (_attemptsRealtimeEverConnected) syncAttempts();
+      _attemptsRealtimeEverConnected = true;
+      return;
+    }
+    // CHANNEL_ERROR / TIMED_OUT / CLOSED after having been up — the
+    // socket dropped for a reason that might have nothing to do with an
+    // actual sync attempt failing (server restart, brief network blip),
+    // so without this the dot would just sit on stale "green" until
+    // something else happens to fail or the 3-minute fallback tick
+    // fires. Surface it immediately instead.
+    if (_attemptsRealtimeEverConnected) {
+      _lastSyncFailed = true;
+      _updateAttemptsSyncDot(false);
+    }
+  });
 }
 
 function _teardownAttemptsRealtime() {
@@ -192,6 +198,7 @@ function _teardownAttemptsRealtime() {
   }
   _attemptsRealtimeChannel = null;
   _attemptsRealtimeEverConnected = false;
+  _attemptsRealtimeLive = false;
   _attemptsIdentityId = null;
 }
 
@@ -423,6 +430,12 @@ async function syncAttempts() {
 // Interval: site-version.json "poll.attempts" (js/site-config.js), 45 s by
 // default to match the stats panel's own fallback poll — it was 180s, which
 // is what left attempts stuck for ~90s on average after reconnecting.
+// While the Realtime channel is connected it slows to "poll.attempts_live",
+// 5 min by default: a connected channel catches up by itself on reconnect
+// and the tab catches up on return (visibilitychange below), so all that's
+// left to cover is a ping lost while the channel looked healthy. At 45 s
+// every visible tab was ~35 of the ~60 edge calls a minute at peak
+// (Supabase logs, 2026-11-01 18:52).
 let _attemptsSyncPollTimer = null;
 
 function startAttemptsSyncPolling() {
@@ -434,7 +447,8 @@ function startAttemptsSyncPolling() {
     // the screen is closed, so this never affects the "keep syncing
     // regardless" background behavior away from the stats screen.
     if (typeof isStatsIdle === 'function' && isStatsIdle()) return;
-    if (!sitePollDue('attempts', _attemptsLastSyncAt)) return; // synced since for another reason
+    const interval = _attemptsRealtimeLive ? 'attempts_live' : 'attempts';
+    if (!sitePollDue(interval, _attemptsLastSyncAt)) return; // synced since for another reason
     syncAttempts();
   });
 }

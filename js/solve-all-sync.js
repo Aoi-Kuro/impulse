@@ -14,7 +14,8 @@
 //     another device (see _ensureSaRealtime below) — this is what replaced
 //     the old blind 15s-while-open poll.
 //   - A slow fallback tick ("poll.solve_all") as a safety net in case a
-//     ping is ever missed.
+//     ping is ever missed; slower still ("poll.solve_all_live") while the
+//     Realtime channel is connected, when a lost ping is all it covers.
 //   - Immediately again when the tab regains focus after being away longer
 //     than that interval (visibilitychange, bottom of this file) —
 //     background tabs get their timers throttled hard by the browser, so
@@ -45,7 +46,9 @@
 const SA_SYNC_POLL_MS = 15000; // kept as the reset-guard duration below (resetSolveAllProgressOnServer) — the (much slower, now Realtime-backed) periodic tick is site-version.json's "poll.solve_all"
 // The fallback tick's interval is "poll.solve_all" in site-version.json
 // (js/site-config.js), 60 s by default: a safety net only now, since
-// Realtime (see _ensureSaRealtime) handles the normal case.
+// Realtime (see _ensureSaRealtime) handles the normal case. While the
+// channel is connected it waits "poll.solve_all_live" instead, 5 min by
+// default (same reasoning as js/attempts-sync.js's fallback poll).
 let _saSyncPollTimer = null;
 let _saSyncActive = null;        // { quizNum, cumulative } while a session is open
 let _saLastRoundTripAt = 0;      // when _saSyncRoundTrip() last went to the server, whatever triggered it
@@ -153,6 +156,7 @@ function _saSnapshotSignature(snap) {
 let _saRealtimeChannel = null;
 let _saRealtimeKey = null; // 'identityId:quizNum_c|s' — which session the current channel is for
 let _saRealtimeEverConnected = false;
+let _saRealtimeLive = false; // channel SUBSCRIBED right now: the fallback tick slows to "poll.solve_all_live"
 let _saBroadcastDebounce = null;
 
 function _saRealtimeTopicKey(identityId, quizNum, cumulative) {
@@ -196,6 +200,7 @@ function _ensureSaRealtime(identityId, quizNum, cumulative) {
     // Closed by _teardownSaRealtime (session ended, another session or
     // Realtime turned off), not a dropped socket: nothing to show.
     if (channel !== _saRealtimeChannel) return;
+    _saRealtimeLive = status === 'SUBSCRIBED';
     if (status === 'SUBSCRIBED') {
       // Reconnected after actually dropping — something could have
       // changed while we were gone, so catch up now rather than wait on
@@ -226,6 +231,7 @@ function _teardownSaRealtime() {
   _saRealtimeChannel = null;
   _saRealtimeKey = null;
   _saRealtimeEverConnected = false;
+  _saRealtimeLive = false;
 }
 
 // Returns null on network/server failure, or { found, data } — data is null
@@ -434,7 +440,8 @@ async function syncSolveAllOnOpen(quizNum, cumulative) {
   stopSitePoll(_saSyncPollTimer);
   _saSyncPollTimer = startSitePoll('solve_all', () => {
     if (document.hidden || !_saSyncActive) return;
-    if (!sitePollDue('solve_all', _saLastRoundTripAt)) return; // a ping or tab return already did it
+    const interval = _saRealtimeLive ? 'solve_all_live' : 'solve_all';
+    if (!sitePollDue(interval, _saLastRoundTripAt)) return; // a ping or tab return already did it
     _saSyncRoundTrip(_saSyncActive.quizNum, _saSyncActive.cumulative, false);
   });
 }
