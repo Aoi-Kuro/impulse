@@ -72,6 +72,7 @@ body.sb-closed .ed-sidebar { margin-left: calc(var(--sb-w) * -1); }
   color: var(--muted); cursor: pointer; padding: 0;
 }
 .ed-filterbtn:hover { color: var(--accent); }
+.ed-sb-tools { display: inline-flex; gap: .2rem; align-items: center; }
 .ed-filterbtn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
 .ed-list.only-touched .ed-item:not(.has),
 .ed-list.only-touched .ed-group.empty { display: none; }
@@ -83,7 +84,10 @@ body.sb-closed .ed-sidebar { margin-left: calc(var(--sb-w) * -1); }
 }
 .ed-item:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .ed-item.active { background: var(--accent-dim); border-left-color: var(--accent); }
-.ed-item .pid { color: var(--muted); font-size: .66rem; }
+/* A fixed column (monospace; the longest id is 5 characters, P106i), so the
+   dot before it sits at the same place on every row instead of moving with
+   the id's length. A longer id still fits, it just pushes the dot left. */
+.ed-item .pid { color: var(--muted); font-size: .66rem; flex: none; min-width: 5ch; text-align: left; }
 .ed-item.retired { opacity: .55; }
 .ed-note { padding: 1rem .9rem; color: var(--muted); font-size: .8rem; }
 .ed-sb-foot { display: flex; align-items: center; gap: .9rem; padding: .5rem .9rem; border-top: 1px solid var(--border); }
@@ -101,6 +105,34 @@ body.sb-closed .ed-sidebar { margin-left: calc(var(--sb-w) * -1); }
   font-family: var(--mono);
 }
 .ed-probkey { font-size: .9rem; font-weight: 600; color: var(--accent); }
+
+/* The problem's solutions, one per author (editor.js, renderVersions). */
+.ed-versions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; flex: none;
+  padding: .45rem 1rem; border-bottom: 1px solid var(--border); font-family: var(--mono);
+}
+.ed-versions[hidden] { display: none; }
+.ed-versions-label { font-size: .64rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: .2rem; }
+.ed-version {
+  cursor: pointer; background: none; color: var(--muted); border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult)); padding: .2rem .6rem;
+  font-family: var(--mono); font-size: .68rem; transition: color .15s, border-color .15s;
+}
+.ed-version:hover { color: var(--accent); border-color: var(--accent); }
+.ed-version[aria-pressed="true"] {
+  color: var(--accent); border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+}
+.ed-version-new { border-style: dashed; }
+
+/* Sidebar "Reviews": one line per waiting submission. */
+.ed-review-item {
+  cursor: pointer; text-align: left; background: none; color: var(--text);
+  border: 0; border-top: 1px solid var(--border); padding: .4rem 0;
+  font-family: var(--mono); font-size: .7rem;
+}
+.ed-review-item:first-child { border-top: 0; }
+.ed-review-item:hover { color: var(--accent); }
 
 /* movable split */
 .ed-split { --split: 50%; flex: 1; min-height: 0; display: flex; flex-direction: row; }
@@ -348,6 +380,7 @@ body.state-closed .ed-state { display: none; }
 .ed-state-rows .ed-state-row { display: contents; }
 .ed-state-row { display: flex; align-items: baseline; gap: .5rem; font-family: var(--mono); font-size: .72rem; color: var(--muted); }
 .ed-state-row b { color: var(--text); font-weight: 600; }
+.ed-state-row[hidden] { display: none; }
 .ed-state-actions { display: flex; flex-wrap: wrap; gap: .45rem; }
 .ed-abtn {
   cursor: pointer; background: var(--bg); color: var(--text); border: 1px solid var(--border);
@@ -368,6 +401,8 @@ body.state-closed .ed-state { display: none; }
   border: 1px solid color-mix(in srgb, var(--partial) 50%, var(--bg)); border-radius: calc(6px * var(--radius-mult));
 }
 .ed-state-note[hidden] { display: none; }
+/* The reviewer's note when rejecting (editor.js, askRejectNote). */
+.ed-note-input { display: block; width: 100%; box-sizing: border-box; margin-top: .5rem; resize: vertical; font-family: var(--sans, inherit); }
 .ed-state-note .ed-state-actions { margin-top: .5rem; }
 .ed-state-note > div:first-child { white-space: pre-line; }
 
@@ -599,6 +634,16 @@ body.state-closed .ed-state { display: none; }
 .ed-segbtn + .ed-segbtn { border-left: 1px solid var(--border); }
 .ed-segbtn:hover { color: var(--text); }
 .ed-segbtn[aria-pressed="true"] { color: var(--accent); background: var(--accent-dim); }
+.ed-segbtn:disabled { cursor: default; }
+.ed-segbtn:disabled:hover { color: var(--muted); }
+.ed-segbtn[aria-pressed="true"]:disabled:hover { color: var(--accent); }
+
+/* A version this editor can't change (editor.js, applyFieldLock): the
+   fields are read-only. No caret and an arrow pointer, so it doesn't look
+   typeable; the text can still be selected and copied. */
+body.ed-locked :is(#edTikz, #edSvg, #edSvgBox, #edSol, #edCaps input, .ed-lc input.ed-input) {
+  caret-color: transparent; cursor: default;
+}
 .ed-figsrc { display: flex; flex-direction: column; gap: .4rem; min-width: 0; }
 .ed-figsrc[hidden] { display: none; }
 .ed-svgbox { display: flex; align-items: center; gap: .5rem; }

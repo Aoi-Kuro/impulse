@@ -316,18 +316,44 @@ html.solution-preview #solutionScreen.visible { animation: none; }
    their places and the reveal moves nothing. !important: it also holds
    back the list's own ease-in animation. */
 #solutionScreen .solution-problem,
+#solutionScreen .solution-versions,
 #solutionScreen .solution-stale,
 #solutionScreen .solution-figwrap,
 #solutionScreen .solution-main,
 #solutionScreen .solution-pager,
 #solutionScreen .solution-list { transition: opacity .18s ease; }
 #solutionScreen.sol-problem-pending .solution-problem,
+#solutionScreen.sol-problem-pending .solution-versions,
 #solutionScreen.sol-body-pending .solution-stale,
 #solutionScreen.sol-body-pending .solution-figwrap,
 #solutionScreen.sol-body-pending .solution-main,
 #solutionScreen.sol-body-pending .solution-pager,
 #solutionScreen.sol-body-pending .solution-list { opacity: 0 !important; transition: none; pointer-events: none; }
 .solution-loading[hidden], .solution-figwrap[hidden], .solution-stale[hidden], .solution-problem[hidden], .solution-main[hidden] { display: none; }
+
+/* Several solutions of one problem: a box like the Solution list's, its
+   buttons like the list's set buttons, the open one marked the same way.
+   It fades in with the problem, not with the solution, so it stays put
+   while another tab is built. */
+.solution-versions {
+  padding: .9rem 1rem 1rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+}
+.solution-versions[hidden] { display: none; }
+.solution-versions .solution-list-title { margin-bottom: .8rem; }
+.solution-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: .3rem; }
+.solution-tab {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.solution-tab[aria-selected="true"] {
+  border-color: var(--accent); color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+}
+.solution-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (max-width: 560px) {
+  .solution-versions { padding: .8rem .75rem .9rem; }
+}
 
 .solution-stale {
   padding: .6rem .75rem; font-size: .83rem; line-height: 1.45;

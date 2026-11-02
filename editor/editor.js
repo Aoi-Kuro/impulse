@@ -29,9 +29,24 @@ function setThemeMode(light) {
   'use strict';
 
   let editorName = null;          // set once the server confirms the key
+  // Access level (migration 013): 0 observer, 1 proposer (publishing goes
+  // to review), 2 author, 3 reviewer, 4 full. The server enforces it; the
+  // editor only uses it to offer the actions that will be accepted.
+  let editorLevel = 4;
+  let editorId = null;
+  let levelKnown = false;         // the server confirmed it (shown in the top bar)
+  const LEVEL_NAMES = ['observer', 'proposer', 'author', 'reviewer', 'full'];
+  function setMe(me) {
+    editorName = (me && me.name) || null;
+    editorLevel = me && Number.isInteger(me.level) ? me.level : 4;
+    editorId = (me && me.id) ?? null;
+    levelKnown = true;
+    renderVersionLabel();
+  }
   const P  = STORAGE_PREFIX;
   const LS = { key: P + '-editor-key', sb: P + '-editor-sidebar', split: P + '-editor-split', last: P + '-editor-last',
-               drafts: P + '-editor-drafts', history: P + '-editor-history', wrap: P + '-editor-wrap' };
+               drafts: P + '-editor-drafts', history: P + '-editor-history', wrap: P + '-editor-wrap',
+               versions: P + '-editor-versions', mine: P + '-editor-mine-only' };
   const MAX_STEPS = 12;
   const $ = (id) => document.getElementById(id);
   const mqNarrow = window.matchMedia('(max-width: 720px)');
@@ -124,8 +139,7 @@ function setThemeMode(light) {
     keyErr.textContent = '';
     localStorage.setItem(LS.key, k);              // store.js reads it from here
     try {
-      const me = await SolutionStore.whoami();
-      editorName = (me && me.name) || null;
+      setMe(await SolutionStore.whoami());
     } catch (e) {
       localStorage.removeItem(LS.key);
       showGate(e && e.auth
@@ -288,7 +302,8 @@ function setThemeMode(light) {
     box.textContent = '';
   }
 
-  function checkRow(parent, p, why, stale) {
+  // id: open that version of the problem (one of several), not the usual one.
+  function checkRow(parent, p, why, stale, id) {
     const b = document.createElement('button');
     b.className = 'ed-check-row' + (stale ? ' stale' : '');
     const name = document.createElement('span');
@@ -297,7 +312,10 @@ function setThemeMode(light) {
     w.className = 'why';
     w.textContent = why;
     b.append(name, w);
-    b.addEventListener('click', () => { select(p.key); if (mqNarrow.matches) setSidebar(false, false); });
+    b.addEventListener('click', () => {
+      if (id != null) openVersion(p.key, id); else select(p.key);
+      if (mqNarrow.matches) setSidebar(false, false);
+    });
     parent.appendChild(b);
   }
 
@@ -335,9 +353,18 @@ function setThemeMode(light) {
     progress.textContent = 'Reading the database…';
     box.appendChild(progress);
 
-    let rows;
+    // rows: the one solution per problem this editor works on (its own,
+    // else the default); allRows: every version, for the link previews,
+    // which reviewers and full editors keep up for everyone.
+    let rows, allRows;
     try {
-      rows = await SolutionStore.exportAll();
+      allRows = (await SolutionStore.exportRows()).rows;
+      rows = {};
+      const rank = (r) => (r.owner_id != null && r.owner_id === editorId ? 2 : r.is_default ? 1 : 0);
+      allRows.forEach((r) => {
+        const had = rows[r.problem_key];
+        if (!had || rank(r) > rank(had) || (rank(r) === rank(had) && Date.parse(r.updated_at) > Date.parse(had.updated_at))) rows[r.problem_key] = r;
+      });
     } catch (e) {
       box.textContent = '';
       const err = document.createElement('div');
@@ -348,15 +375,15 @@ function setThemeMode(light) {
       return;
     }
 
-    // Same entries SolutionStore.index() would have given.
+    // Same entries SolutionStore.index() would have given: one per problem,
+    // the solution this editor works on there. (Other people's versions
+    // are theirs to check; the versions strip is refreshed alongside.)
     serverIndex = {};
-    Object.keys(rows).forEach((k) => {
-      const r = rows[k];
-      serverIndex[k] = {
-        status: r.status, updated_at: r.updated_at, author: r.author, saved_by: r.saved_by,
-        share: r.share ? { for: r.share.for, design: r.share.design } : null,
-      };
-    });
+    Object.keys(rows).forEach((k) => { serverIndex[k] = entryOf(rows[k]); });
+    SolutionStore.index().then((idx) => {
+      setServerRows(idx.rows);
+      if (cur) renderVersions();
+    }).catch(() => {});
 
     const keys = Object.keys(serverIndex);
     const stale = [], published = [], drafted = [], orphan = [], unsaved = [], oldFigs = [], noCard = [];
@@ -382,12 +409,23 @@ function setThemeMode(light) {
         stale.push({ p, status: row.status });
       }
       if (figureBuildState(row) === 'older') oldFigs.push({ p, status: row.status });
-      if (row.status === 'published' && !shareCardCurrent(serverIndex[key])) noCard.push(p);
-      if (key === (cur && cur.key)) {           // keep the open problem in step
+      if (row.status === 'published' && !shareCardCurrent(serverIndex[key]) && canMakeCard(row)) noCard.push({ p, row });
+      if (key === (cur && cur.key) && (!curRow || curRow.id === row.id)) {   // keep the open problem in step
         curRow = row;
         curStale = row.problem_hash ? stale.some((s) => s.p.key === key) : null;
         refreshState();
       }
+    }
+
+    // Every other published version's link preview, for reviewers and full
+    // editors: missing, drawn from an older version or design, or showing
+    // the wrong name since the default or the credit changed.
+    if (editorLevel >= 3) {
+      allRows.forEach((r) => {
+        const p = byKey.get(r.problem_key);
+        if (!p || r.status !== 'published' || rows[r.problem_key] === r) return;
+        if (!shareCardCurrent(entryOf(r))) noCard.push({ p, row: r });
+      });
     }
 
     // Local-only work: typed in this browser, never saved anywhere.
@@ -451,7 +489,9 @@ function setThemeMode(light) {
       g.className = 'ed-check-group';
       g.textContent = 'Link preview missing or out of date';
       box.appendChild(g);
-      noCard.forEach((p) => checkRow(box, p, serverIndex[p.key].share ? 'out of date' : 'none', true));
+      // Someone else's version names whose it is, and opens on that version.
+      noCard.forEach(({ p, row }) => checkRow(box, p, (row.share ? 'out of date' : 'none')
+        + (isOwnRow(row) ? '' : ` · @${row.author || 'someone'}`), true, row.id));
       const mb = document.createElement('button');
       mb.className = 'ed-abtn ed-check-rebuild';
       mb.textContent = `Make ${noCard.length} link preview${noCard.length === 1 ? '' : 's'}`;
@@ -535,12 +575,12 @@ function setThemeMode(light) {
     // listed by the next Check all).
     let share = null;
     if (row.status === 'published') {
-      try { share = await drawShareCard(p, { figure, solution: row.solution }); } catch (e) { /* see above */ }
+      try { share = await drawShareCard(p, { figure, solution: row.solution }, cardByFor(row)); } catch (e) { /* see above */ }
     }
     const saved = await SolutionStore.save(p.key, {
       solution: row.solution, figure, status: row.status, problem_hash: row.problem_hash, author: row.author, share,
-    }, row.updated_at);
-    serverIndex[p.key] = { status: saved.status, updated_at: saved.updated_at, share: shareOf(saved) };
+    }, row.updated_at, { id: row.id });
+    noteRow(saved);
     if (cur && cur.key === p.key) { curRow = saved; refreshState(); }
     return 'rebuilt';
   }
@@ -616,15 +656,25 @@ function setThemeMode(light) {
 
   // `for` and updated_at are compared as instants: the server writes `for`
   // as 2026-…Z while Postgres returns updated_at as 2026-…+00:00.
+  //
+  // Whose name a solution's card shows: nobody on its problem's default,
+  // the credited author on any other version ("Solution by @name" under
+  // the brand). A card drawn before the default or the credit changed no
+  // longer fits, so it counts as out of date. Cards from before bylines
+  // have no `by`, which is right for a default.
+  const cardByFor = (row) => (row && !row.is_default && row.author) || null;
   const shareCardCurrent = (entry) => !!(entry && entry.share && entry.share.for
-    && Date.parse(entry.share.for) === Date.parse(entry.updated_at) && entry.share.design === ShareCard.DESIGN);
-  const shareOf = (row) => (row && row.share ? { for: row.share.for, design: row.share.design } : null);
+    && Date.parse(entry.share.for) === Date.parse(entry.updated_at) && entry.share.design === ShareCard.DESIGN
+    && (entry.share.by || null) === cardByFor(entry));
+  const shareOf = (row) => (row && row.share ? { for: row.share.for, design: row.share.design, by: row.share.by || null } : null);
+  // May draw this solution's card (solutions-admin's share-card rule).
+  const canMakeCard = (row) => isOwnRow(row) ? editorLevel >= 2 : editorLevel >= 3;
 
   // The picture and link text for problem `p` with `content` ({ figure,
   // solution }, saved or about to be): { image, title, description,
-  // design }. One at a time: every card is typeset by the same MathJax,
-  // in the same off-screen spot.
-  function drawShareCard(p, content) {
+  // design, by }. by: whose name it shows (cardByFor). One at a time:
+  // every card is typeset by the same MathJax, in the same off-screen spot.
+  function drawShareCard(p, content, by) {
     const job = cardQueue.then(async () => {
       const host = document.createElement('div');
       host.className = 'ed-card-host';
@@ -633,11 +683,11 @@ function setThemeMode(light) {
         const label = `Q${p.quiz} ${p.pos ? 'P' + p.pos : p.id}`;
         const card = await ShareCard.build(host, {
           brand: BRAND_NAME, course: COURSE_CODE_DISPLAY, label, condition: p.text,
-          steps: (content.figure && content.figure.steps) || [], solution: content.solution,
+          steps: (content.figure && content.figure.steps) || [], solution: content.solution, by,
         });
         const image = await ShareCard.toJpeg(card);
-        return Object.assign({ image, design: ShareCard.DESIGN },
-          ShareCard.linkText({ app: APP_NAME, label, condition: p.text }));
+        return Object.assign({ image, design: ShareCard.DESIGN, by: by || null },
+          ShareCard.linkText({ app: APP_NAME, label, condition: p.text, by }));
       } finally {
         host.remove();
       }
@@ -648,35 +698,81 @@ function setThemeMode(light) {
 
   // Draws and stores the picture for `row`, a row already published.
   async function makeShareCard(p, row) {
-    const card = await drawShareCard(p, row);
-    const share = await SolutionStore.shareCard(p.key, Object.assign({ for: row.updated_at }, card));
-    if (serverIndex[p.key]) serverIndex[p.key].share = shareOf({ share });
-    if (cur && cur.key === p.key && curRow && curRow.updated_at === row.updated_at) curRow.share = share;
+    return storeShareCard(p, row, await drawShareCard(p, row, cardByFor(row)));
+  }
+  // Uploads a drawn card for `row` and records it here.
+  async function storeShareCard(p, row, card) {
+    const share = await SolutionStore.shareCard(p.key, Object.assign({ for: row.updated_at }, card), row.id);
+    const e = (serverRows[p.key] || []).find((x) => x.id === row.id);
+    if (e) e.share = shareOf({ share });
+    if (serverIndex[p.key] && serverIndex[p.key].id === row.id) serverIndex[p.key].share = shareOf({ share });
+    if (cur && cur.key === p.key && curRow && curRow.id === row.id && curRow.updated_at === row.updated_at) curRow.share = share;
     return share;
+  }
+
+  /* After the default moved (Make default, or an unpublish or delete that
+     promoted another version): the cards that now show the wrong name are
+     redrawn straight away — the old default gains "Solution by @name",
+     the new one loses it. rows: the problem's full rows as they are now.
+     Ones this editor may not redraw (someone else's, below level 3) wait
+     for a reviewer's Check all. */
+  async function refreshCards(key, rows) {
+    const p = byKey.get(key);
+    if (!p || SolutionStore.isMock) return;
+    const due = rows.filter((r) => r.status === 'published' && r.share && !shareCardCurrent(entryOf(r)) && canMakeCard(r));
+    // Drawn one after another (the queue), each uploading as soon as it is
+    // drawn, alongside the next one's drawing.
+    await Promise.all(due.map((r) => makeShareCard(p, r).catch((e) =>
+      toast(`Q${p.quiz} · ${p.id}: a link preview could not be redrawn (${(e && e.message) || e}). Check all can make it later.`, 'err'))));
   }
 
   // "Make N link previews" in the Check report. Reads each row again, so
   // the picture is drawn from what is stored now.
+  //
+  // A pipeline, since only the drawing has to wait its turn: a card is
+  // laid out in the page and typeset by its MathJax, which no worker can
+  // do, so cards are drawn one at a time (drawShareCard's queue). Around
+  // that, the next row is read while a card is drawn, and finished cards
+  // upload in the background, CARD_UPLOADS at once, so the whole run takes
+  // about as long as the drawing alone.
+  const CARD_UPLOADS = 3;
   async function makeShareCards(list, btn, note) {
     if (rebuilding || checking) return;
     setRebuilding(true);
     btn.disabled = true;
-    let made = 0;
+    let made = 0, drawn = 0, stop = false;
     const failed = [];
+    const fail = (p, e) => {
+      failed.push(`Q${p.quiz} · ${p.id}: ${(e && e.message) || e}`);
+      if (e && (e.auth || e.offline)) stop = true;   // every later one would fail the same way
+    };
+    const show = () => { btn.textContent = `Making ${Math.min(drawn + 1, list.length)} / ${list.length}… (${made} done)`; };
+    // That version as stored now (read again, so the picture is drawn from
+    // it and with its current name). Never rejects: an error comes back
+    // as { e }, so a read started ahead can't go unhandled.
+    const read = (i) => SolutionStore.get(list[i].p.key, list[i].row.id).then((row) => ({ row }), (e) => ({ e }));
+    const uploads = new Set();
     try {
-      for (let i = 0; i < list.length; i++) {
-        const p = list[i];
-        btn.textContent = `Making ${i + 1} / ${list.length}…`;
-        try {
-          const row = await SolutionStore.get(p.key);
-          if (!row || row.status !== 'published') continue;
-          await makeShareCard(p, row);
-          made++;
-        } catch (e) {
-          failed.push(`Q${p.quiz} · ${p.id}: ${(e && e.message) || e}`);
-          if (e && (e.auth || e.offline)) break;     // every later one would fail the same way
-        }
+      let next = list.length ? read(0) : null;
+      for (let i = 0; i < list.length && !stop; i++) {
+        const { p } = list[i];
+        const got = await next;
+        next = i + 1 < list.length ? read(i + 1) : null;   // read ahead while this one is drawn
+        show();
+        if (got.e) { fail(p, got.e); continue; }
+        const row = got.row;
+        if (!row || row.status !== 'published') { drawn++; continue; }
+        let card;
+        try { card = await drawShareCard(p, row, cardByFor(row)); }
+        catch (e) { fail(p, e); drawn++; continue; }
+        drawn++;
+        const up = storeShareCard(p, row, card)
+          .then(() => { made++; show(); }, (e) => fail(p, e))
+          .finally(() => uploads.delete(up));
+        uploads.add(up);
+        if (uploads.size >= CARD_UPLOADS) await Promise.race(uploads);
       }
+      await Promise.all(uploads);
     } finally {
       setRebuilding(false);
     }
@@ -1021,9 +1117,139 @@ function setThemeMode(light) {
   const anyFigSrc = (d) => !!(d && ((d.tikz || '').trim() || (d.svgSrc || '').trim()));
   const hasContent = (d) => !!(d && (anyFigSrc(d) || d.solution.trim() || (d.captions || []).some((c) => c && c.trim())));
 
-  // What the server has: problem_key -> { status, updated_at }. Filled at boot
-  // by SolutionStore.index(), kept in step with every save/remove.
+  // What the server has: problem_key -> { status, updated_at } of the
+  // solution this editor works on for that problem (its own, else the
+  // default). Filled at boot by SolutionStore.index(), kept in step with
+  // every save/remove.
   let serverIndex = {};
+
+  /* Every solution of every problem (migration 013: one per author), as
+     index entries: problem_key -> [entry], for the versions strip above
+     the fields. */
+  let serverRows = {};
+
+  /* Which version each problem's window holds, and the unsaved text of
+     the others, so the version tabs can be swapped freely without losing
+     anything. Kept in this browser across reloads:
+       shown  problem_key -> row id in the window (drafts[key]), or 'new'
+              for "My version" (your own, not saved yet); absent = the
+              server's pick, until it has loaded (your own, else the default).
+       stash  "problem_key~id" -> the draft of a version you switched away
+              from with unsaved changes; given back when you switch to it.
+     Saved with the reload in mind: drafts[key] must always be known to
+     belong to one version, or a reload could open another version with
+     this text in it, and a save would put it there. */
+  let versionState = { shown: {}, stash: {} };
+  try {
+    const v = JSON.parse(localStorage.getItem(LS.versions) || 'null');
+    if (v && v.shown && v.stash) versionState = v;
+  } catch (e) { /* unreadable: start clean */ }
+  const persistVersions = () => {
+    try { localStorage.setItem(LS.versions, JSON.stringify(versionState)); } catch (e) { /* full: memory only */ }
+  };
+  const chosenVersion = {
+    get: (key) => versionState.shown[key],
+    set: (key, v) => { if (v === undefined || v === null) delete versionState.shown[key]; else versionState.shown[key] = v; persistVersions(); },
+    delete: (key) => { delete versionState.shown[key]; persistVersions(); },
+  };
+  const stashKey = (key, v) => `${key}~${v}`;
+  const hasStash = (key, v) => !!versionState.stash[stashKey(key, v)];
+  // Puts the window's unsaved changes aside for the version they belong to
+  // (none: forgets an older copy, the stored version is what comes back).
+  function stashWindow(key) {
+    const v = curRow ? curRow.id : chosenVersion.get(key);
+    if (v === undefined || v === null) return;
+    if (isDirty(key)) versionState.stash[stashKey(key, v)] = drafts[key];
+    else delete versionState.stash[stashKey(key, v)];
+    persistVersions();
+  }
+  // The kept changes of version v, taken out of the stash; null when none.
+  function takeStash(key, v) {
+    const d = versionState.stash[stashKey(key, v)] || null;
+    if (d) { delete versionState.stash[stashKey(key, v)]; persistVersions(); }
+    return d;
+  }
+  const entryOf = (row) => ({
+    id: row.id, problem_key: row.problem_key, status: row.status, is_default: !!row.is_default,
+    owner_id: row.owner_id ?? null, owner: row.owner || null, author: row.author || null,
+    saved_by: row.saved_by || null, created_at: row.created_at, updated_at: row.updated_at,
+    share: shareOf(row),
+    review: row.review ? { state: row.review.state, note: row.review.note || null, edit: !!row.review.edit,
+      submitted_at: row.review.submitted_at || null, reviewed_by: row.review.reviewed_by || null } : null,
+  });
+  function setServerRows(rows) {
+    serverRows = {};
+    (rows || []).forEach((r) => { (serverRows[r.problem_key] ||= []).push(r); });
+  }
+  // The default first, then oldest first (the site's tab order).
+  const versionOrder = (a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0)
+    || Date.parse(a.created_at) - Date.parse(b.created_at) || (a.id || 0) - (b.id || 0);
+  // The sidebar dot of a problem stands for the solution this editor works
+  // on there, as the server's own pick: your own, else the default, else
+  // the most recently saved. Other people's versions don't colour it.
+  function pickEntry(key) {
+    const list = serverRows[key] || [];
+    const pick = list.find((x) => x.owner_id != null && x.owner_id === editorId) || list.find((x) => x.is_default)
+      || list.slice().sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
+    if (pick) serverIndex[key] = pick; else delete serverIndex[key];
+  }
+  // A row was saved (or its credit/default changed): its entry, and the
+  // problem's dot, follow.
+  function noteRow(row) {
+    if (!row || !row.problem_key) return;
+    const key = row.problem_key;
+    const list = (serverRows[key] ||= []);
+    const e = entryOf(row);
+    const i = list.findIndex((x) => x.id === e.id);
+    if (i >= 0) list[i] = e; else list.push(e);
+    // Only one default: a row that became it means the others aren't.
+    if (e.is_default) list.forEach((x) => { if (x.id !== e.id) x.is_default = false; });
+    list.sort(versionOrder);
+    pickEntry(key);
+  }
+  // A row is gone: the problem's dot falls back to what is left.
+  function dropRow(key, id) {
+    const list = (serverRows[key] || []).filter((x) => x.id !== id);
+    if (list.length) serverRows[key] = list; else delete serverRows[key];
+    pickEntry(key);
+  }
+  // Reads every version of one problem again: an unpublish or delete can
+  // move the default to another solution (migration 013's triggers),
+  // which no single saved row tells.
+  async function refreshVersions(key) {
+    try {
+      const rows = await SolutionStore.list(key);
+      if (SolutionStore.isMock) return;
+      serverRows[key] = rows.map(entryOf).sort(versionOrder);
+      if (!rows.length) delete serverRows[key];
+      pickEntry(key);
+      if (curRow && cur && cur.key === key) {
+        const now = rows.find((r) => r.id === curRow.id);
+        if (now) curRow.is_default = !!now.is_default;
+      }
+      markItem(key);
+      if (cur && cur.key === key) { refreshState(); renderVersions(); }
+      refreshCards(key, rows);
+    } catch (e) { /* the strip just stays as it was */ }
+  }
+  const isOwnRow = (row) => !row || (row.owner_id != null && row.owner_id === editorId);
+  // What the server will accept for the solution open now (solutions-admin.ts).
+  const canEditRow = (row) => isOwnRow(row) ? editorLevel >= 1 : editorLevel >= 3;
+  // The window shows a version this editor can't change (someone else's
+  // below level 3, or anything at level 0): its fields are read-only, so
+  // nothing can be typed that could never be saved. Text can still be
+  // selected and copied.
+  const fieldsLocked = () => !!cur && !canEditRow(curRow);
+  function applyFieldLock() {
+    const lock = fieldsLocked();
+    [tikzEl, svgEl, svgBoxEl, solEl].forEach((el) => { el.readOnly = lock; });
+    scaleEl.disabled = lock;
+    document.querySelectorAll('#edCaps input, .ed-lc input.ed-input').forEach((el) => { el.readOnly = lock; });
+    document.querySelectorAll('.ed-segbtn').forEach((b) => { b.disabled = lock; });
+    document.body.classList.toggle('ed-locked', lock);
+  }
+  // Which row a call about the open problem means.
+  const curTarget = () => ({ id: curRow ? curRow.id : undefined, isNew: !curRow && !!cur && chosenVersion.get(cur.key) === 'new' });
   // The full row for the problem on screen (null = nothing stored yet), plus
   // the compiled SVGs of the figure currently in the preview.
   let curRow = null;
@@ -1061,6 +1287,34 @@ function setThemeMode(light) {
     $('edFilter').setAttribute('aria-pressed', String(onlyTouched));
     $('edList').classList.toggle('only-touched', onlyTouched);
   });
+
+  /* "Mine": the dots, the filter above and Alt+N count only YOUR
+     solutions (and what you typed in your own version), so a problem that
+     has only someone else's still counts as open work — for writing
+     alternatives. Off, a dot stands for the version you work on there:
+     yours, else the default. Kept in this browser. */
+  let mineOnly = localStorage.getItem(LS.mine) === '1';
+  // The entry a problem's dot stands for: yours only, or the usual pick.
+  const dotEntry = (key) => (mineOnly
+    ? (serverRows[key] || []).find((e) => e.owner_id != null && e.owner_id === editorId) || null
+    : serverIndex[key] || null);
+  // Whether the window's text (drafts[key]) belongs to your own version.
+  function windowIsMine(key) {
+    const v = chosenVersion.get(key);
+    if (v === 'new') return true;
+    const e = v === undefined ? serverIndex[key] : (serverRows[key] || []).find((x) => x.id === v);
+    return !e || isOwnRow(e);
+  }
+  const localCounts = (key) => !mineOnly || windowIsMine(key);
+  function setMineOnly(on) {
+    mineOnly = on;
+    localStorage.setItem(LS.mine, on ? '1' : '0');
+    $('edMine').setAttribute('aria-pressed', String(on));
+    renderList();
+    if (cur) markItem(cur.key);
+  }
+  $('edMine').setAttribute('aria-pressed', String(mineOnly));
+  $('edMine').addEventListener('click', () => setMineOnly(!mineOnly));
   // A quiz header is "empty" when none of its problems has a dot. Re-run
   // whenever a dot can appear or vanish (list render, markItem).
   function markEmptyGroups() {
@@ -1105,9 +1359,10 @@ function setThemeMode(light) {
       const dot = document.createElement('i'); dot.className = 'dot';
       // Tooltip follows the colour: green = published, amber = saved draft,
       // grey = typed here only. (It used to say "Has a draft" on all three.)
-      const st = serverIndex[p.key];
-      dot.title = st ? (st.status === 'published' ? 'Published' : 'Saved as draft')
-                     : 'Unsaved — only in this browser';
+      const st = dotEntry(p.key);
+      const whose = mineOnly ? 'Yours: ' : '';
+      dot.title = st ? whose + (st.status === 'published' ? 'Published' : st.status === 'review' ? 'Waiting for review' : 'Saved as draft')
+                     : whose + 'Unsaved — only in this browser';
       const r = document.createElement('span'); r.className = 'pid'; r.textContent = p.id;
       btn.append(l, dot, r);
       btn.addEventListener('click', () => { select(p.key); if (mqNarrow.matches) setSidebar(false, false); });
@@ -1118,12 +1373,13 @@ function setThemeMode(light) {
   }
   // "has" = there is something to show a dot for; colour = server status;
   // "dirty" = the window differs from what the server has.
+  // With "Mine" on, only your own solution and your own version's text count.
   function itemClasses(key) {
-    const srv = serverIndex[key];
-    const local = drafts[key];
-    let c = (srv || hasContent(local)) ? ' has' : '';
+    const srv = dotEntry(key);
+    const local = localCounts(key) && hasContent(drafts[key]);
+    let c = (srv || local) ? ' has' : '';
     if (srv) c += srv.status === 'published' ? ' st-pub' : ' st-draft';
-    if (isDirty(key)) c += ' dirty';
+    if (isDirty(key) && localCounts(key)) c += ' dirty';
     return c;
   }
   function markItem(key) {
@@ -1315,7 +1571,8 @@ function setThemeMode(light) {
       inp.className = 'ed-input'; inp.type = 'text'; inp.spellcheck = false;
       inp.placeholder = 'optional · $…$ allowed';
       inp.value = d.captions[i] || '';
-      inp.addEventListener('input', () => { d.captions[i] = inp.value; persistDrafts(); markItem(); refreshState(); renderCaption(); });
+      inp.readOnly = fieldsLocked();
+      inp.addEventListener('input', () => { if (fieldsLocked()) { inp.value = d.captions[i] || ''; return; } d.captions[i] = inp.value; persistDrafts(); markItem(); refreshState(); renderCaption(); });
       row.append(tag, inp);
       capsEl.appendChild(row);
     }
@@ -1637,7 +1894,7 @@ function setThemeMode(light) {
     persistDrafts(); markItem(); refreshState(); applyScale();
   }
   scaleEl.addEventListener('input', () => {
-    if (!cur) return;
+    if (!cur || fieldsLocked()) return;
     const v = parseFloat(scaleEl.value);
     if (!isFinite(v) || v <= 0) return;           // mid-typing ("0.", "")
     setDraftScale(v, false);
@@ -1887,6 +2144,7 @@ function setThemeMode(light) {
   // which saves the draft and rebuilds the figure.
   function svgSetSource(text) {
     if (svgEl.value === text) return;
+    if (fieldsLocked()) { toast('This version is read-only for you.', 'err'); return; }
     const back = document.activeElement;
     let ok = false;
     try {
@@ -2070,7 +2328,9 @@ function setThemeMode(light) {
         if (!view || !view.isConnected) return;
         if (inp.value.trim()) renderSolutionInto(view, figureCaptionText(inp.value, i === n - 1)); else view.textContent = '';
       };
+      inp.readOnly = fieldsLocked();
       inp.addEventListener('input', () => {
+        if (fieldsLocked()) { inp.value = d.captions[i] || ''; return; }
         d.captions[i] = inp.value;
         persistDrafts(); markItem(); refreshState(); histMaybeAuto();
         const main = capsEl.querySelectorAll('input')[i];
@@ -2264,7 +2524,7 @@ function setThemeMode(light) {
     scheduleCompile();
   }
   tikzEl.addEventListener('input', () => {
-    if (!cur) return;
+    if (!cur || fieldsLocked()) return;
     const t = tikzText();
     if (t === draft().tikz) return;      // folding / unfolding: same text
     draft().tikz = t;
@@ -2272,11 +2532,13 @@ function setThemeMode(light) {
   });
   svgEl.addEventListener('input', () => {
     if (!cur) return;
+    if (fieldsLocked()) { svgEl.value = draft().svgSrc || ''; return; }
     draft().svgSrc = svgEl.value;
     figSourceChanged();
   });
   svgBoxEl.addEventListener('input', () => {
     if (!cur) return;
+    if (fieldsLocked()) { svgBoxEl.value = draft().svgBox || ''; return; }
     draft().svgBox = svgBoxEl.value;
     figSourceChanged();
   });
@@ -2291,7 +2553,7 @@ function setThemeMode(light) {
     $('edSvgPart').hidden = kind !== 'svg';
   }
   function setFigKind(kind) {
-    if (!cur) return;
+    if (!cur || fieldsLocked()) return;
     const d = draft();
     if (figKind(d) === kind) return;
     d.kind = kind;
@@ -2305,6 +2567,7 @@ function setThemeMode(light) {
   document.querySelectorAll('.ed-segbtn').forEach((b) => b.addEventListener('click', () => setFigKind(b.dataset.kind)));
   solEl.addEventListener('input', () => {
     if (!cur) return;
+    if (fieldsLocked()) { solEl.value = draft().solution; return; }
     draft().solution = solEl.value; persistDrafts(); markItem(); refreshState(); histMaybeAuto();
     clearTimeout(solTimer); solTimer = setTimeout(renderSolPreview, 200);
   });
@@ -2372,7 +2635,9 @@ function setThemeMode(light) {
     return p.solution === row.solution &&
            figSources(drafts[key]) === figSources(row.figure ? draftFromRow(row) : null) &&
            figScaleOf(p.figure) === figScaleOf(row.figure) &&
-           JSON.stringify(p.figure.steps.map((s) => s.caption)) === JSON.stringify((row.figure ? row.figure.steps : []).map((s) => s.caption));
+           // A stored figure may lack `steps` altogether (a row saved
+           // outside the editor with figure: {}), which means none.
+           JSON.stringify(p.figure.steps.map((s) => s.caption)) === JSON.stringify(((row.figure && row.figure.steps) || []).map((s) => s.caption));
   };
   function isDirty(key) {
     if (key !== (cur && cur.key)) return false;      // only the open problem is compared
@@ -2568,6 +2833,8 @@ function setThemeMode(light) {
      another editor's draft. Null when no confirmation is needed. */
   function overwriteWarning(status) {
     if (!curRow || !isDirty(cur.key)) return null;
+    // A level 1 editor's publish only submits it: nothing readers see changes.
+    if (status === 'published' && editorLevel === 1 && isOwnRow(curRow)) return null;
     const by = savedBy(curRow);
     const mineRow = !by || by === editorName;
     const who = !by ? 'an unknown editor' : by === editorName ? 'you' : '@' + by;
@@ -2652,8 +2919,11 @@ function setThemeMode(light) {
     });
   }
 
-  // Publish after asking who wrote it; false when cancelled or failed.
+  // Publish after asking who wrote it; false when cancelled or failed. Only
+  // full editors choose the credit (the server ignores it from anyone
+  // else), so the others publish straight away.
   async function publishPicked() {
+    if (editorLevel < 4) return doSave('published');
     const who = await pickAuthor();
     if (who === null) { setMsg('Publishing cancelled.', ''); return false; }
     return doSave('published', undefined, who || undefined);
@@ -2686,16 +2956,20 @@ function setThemeMode(light) {
   function refreshState() {
     const key = cur && cur.key;
     if (!key) return;
+    applyFieldLock();
     const status = curRow ? curRow.status : null;
     const dirty = isDirty(key);
     const missingSvg = payloadOf(key).figure.steps.some((s) => !s.svg);
 
-    stPill.className = 'ed-pill ' + (status === 'published' ? 'pub' : status === 'draft' ? 'draft' : dirty ? 'dirty' : 'none');
-    stPill.textContent = status === 'published' ? 'published' : status === 'draft' ? 'draft' : dirty ? 'unsaved' : 'empty';
+    stPill.className = 'ed-pill ' + (status === 'published' ? 'pub' : status === 'draft' || status === 'review' ? 'draft' : dirty ? 'dirty' : 'none');
+    stPill.textContent = status === 'published' ? 'published' : status === 'draft' ? 'draft' : status === 'review' ? 'in review' : dirty ? 'unsaved' : 'empty';
 
-    $('edStCurrent').textContent = status === 'published' ? `Published (${savedFigLabel(curRow, true)})`
+    $('edStCurrent').textContent = (status === 'published' ? `Published (${savedFigLabel(curRow, true)})`
       : status === 'draft' ? `Draft (${savedFigLabel(curRow, false)})`
-      : 'Nothing saved for this problem yet';
+      : status === 'review' ? `Waiting for review (${savedFigLabel(curRow, false)})`
+      : chosenVersion.get(key) === 'new' ? 'Your own version, not saved yet'
+      : 'Nothing saved for this problem yet')
+      + (curRow && (serverRows[key] || []).length > 1 ? (curRow.is_default ? ' · the default' : ' · not the default') : '');
     $('edStSync').textContent = dirty ? (curRow ? 'Unsaved changes in this window' : 'Not saved yet')
       : curRow ? 'Matches the database' : 'Empty';
     $('edStWhen').textContent = curRow ? fmtWhen(curRow.updated_at) : '—';
@@ -2712,19 +2986,50 @@ function setThemeMode(light) {
     $('edStBuildBtn').hidden = build !== 'older';
     $('edStBuildBtn').disabled = rebuilding || checking;
 
+    // Review of this solution (migration 013), for its author and reviewers.
+    const review = curRow && curRow.review;
+    $('edStReviewRow').hidden = !review;
+    $('edStReview').textContent = reviewText(review);
+    $('edStReview').className = review && review.state === 'rejected' ? 'ed-stale' : '';
+
     const empty = !hasContent(drafts[key]);
     const saving = savingKeys.has(key);
-    $('edBtnPublish').disabled = empty || missingSvg || saving;
+    // What this editor may do with the solution open (solutions-admin.ts
+    // checks it again): their own from level 1, anyone's from level 3, and
+    // only level 4 publishes, unpublishes or deletes someone else's.
+    const own = isOwnRow(curRow);
+    const canEdit = canEditRow(curRow);
+    const full = editorLevel >= 4;
+    const proposer = own && editorLevel === 1;
+    const othersAt3 = !own && editorLevel === 3;
+    $('edBtnPublish').disabled = empty || missingSvg || saving || !canEdit
+      || (othersAt3 && status !== 'published')                                 // can't publish someone's draft
+      || (status === 'published' && !dirty && !full);                         // "Change credit…" is level 4's
     // Published and unchanged: nothing to publish, but the credit can still change.
-    $('edBtnPublish').textContent = status === 'published' ? (dirty ? 'Publish changes' : 'Change credit…') : 'Publish';
-    $('edBtnSave').disabled = empty || !dirty || saving;
-    $('edBtnUnpublish').disabled = status !== 'published' || saving;
+    $('edBtnPublish').textContent = status === 'published'
+      ? (dirty ? (proposer ? 'Submit changes for review' : 'Publish changes') : 'Change credit…')
+      : proposer ? 'Submit for review' : 'Publish';
+    // Level 3 on someone's published solution: a save keeps it published, so
+    // "Save draft" would be misleading — Publish changes does that save.
+    $('edBtnSave').disabled = empty || !dirty || saving || !canEdit || (othersAt3 && status === 'published');
+    $('edBtnUnpublish').disabled = status !== 'published' || saving || !(own ? editorLevel >= 1 : full);
     $('edBtnReload').disabled = !curRow;
-    $('edBtnClear').disabled = !curRow && empty;
+    // Something stored you may delete (any tab), or an unsaved window to empty.
+    $('edBtnClear').disabled = !(clearChoices(key).length || (!curRow && !empty));
+    $('edBtnDefault').hidden = !(full && curRow && status === 'published' && !curRow.is_default);
+    const reviewer = editorLevel >= 3 && review && review.state === 'waiting';
+    $('edBtnApprove').hidden = $('edBtnReject').hidden = !reviewer;
+    $('edBtnLoadEdit').hidden = !(review && review.edit && (own || editorLevel >= 3));
     if (missingSvg && !empty) setMsg(figKind(drafts[key]) === 'svg'
       ? 'The figure has nothing to show yet, so it can’t be published.'
       : 'Waiting for the figure to compile before it can be published.', '');
     else if (stMsg.className.indexOf('ok') === -1 && stMsg.className.indexOf('err') === -1) setMsg('');
+    // Says why the buttons are off, unless something more urgent is showing.
+    if (!canEdit && (curRow || editorLevel === 0) && !stMsg.textContent) {
+      setMsg(editorLevel === 0 ? 'Your access is read-only.'
+        : `This is @${curRow.owner || curRow.author || 'someone'}'s solution: you can read it, not change it.`
+          + (editorLevel >= 1 && !(serverRows[key] || []).some((e) => isOwnRow(e)) ? ' “+ My version” above starts your own.' : ''), '');
+    }
   }
 
   // expected: the stored version this save may replace (default: the one
@@ -2747,6 +3052,7 @@ function setThemeMode(light) {
     if (savingKeys.has(key)) return false;
     const content = payloadOf(key);
     const exp = expected !== undefined ? expected : (curRow ? curRow.updated_at : null);
+    const target = curTarget();
     const here = () => !!cur && cur.key === key;
     const name = `Q${p.quiz} · ${p.id}`;
     const tell = (text, cls) => { if (here()) setMsg(text, cls); else if (cls) toast(`${name}: ${text}`, cls); };
@@ -2761,21 +3067,39 @@ function setThemeMode(light) {
     try {
       const problem_hash = await problemHashOf(p);
       let share = null, cardError = null;
-      if (status === 'published') {
+      // A level 1 editor's publish only submits it, and its preview is the
+      // reviewer's to draw (solutions-admin wouldn't store it): no card.
+      if (status === 'published' && !canMakeCard(curRow)) {
+        tell('Submitting…', '');
+      } else if (status === 'published') {
         tell('Publishing… drawing the link preview', '');
-        try { share = await drawShareCard(p, content); } catch (e) { cardError = (e && e.message) || String(e); }
+        // Whose name the card shows, as it will be once saved: nobody if
+        // this is (or, as the first published one, becomes) the default;
+        // otherwise who it is credited to — the one picked (level 4), else
+        // the row's credit, else you. If that guess is off (someone
+        // published meanwhile), the next refreshCards / Check all fixes it.
+        const othersPublished = (serverRows[key] || []).some((e) => e.status === 'published' && (!curRow || e.id !== curRow.id));
+        const willBeDefault = (curRow && curRow.is_default) || !othersPublished;
+        const credit = (editorLevel >= 4 && author) || (curRow && curRow.author) || editorName;
+        try { share = await drawShareCard(p, content, willBeDefault ? null : credit); } catch (e) { cardError = (e && e.message) || String(e); }
         tell('Publishing…', '');
       } else {
         tell('Saving…', '');
       }
-      const row = await SolutionStore.save(key, Object.assign({}, content, { status, problem_hash, author, share }), exp);
-      serverIndex[key] = { status: row.status, updated_at: row.updated_at, share: shareOf(row) };
-      histSnapshot(key, status === 'published' ? 'Published' : 'Saved as draft');
+      const row = await SolutionStore.save(key, Object.assign({}, content, { status, problem_hash, author, share }), exp, target);
+      noteRow(row);
+      histSnapshot(key, row.submitted ? 'Submitted for review' : status === 'published' ? 'Published' : 'Saved as draft');
       savingKeys.delete(key);
-      if (here()) { curRow = row; curStale = false; }
+      // A submitted edit leaves the stored row as it was: the window keeps
+      // the edit (it shows as unsaved changes until it is approved).
+      if (here()) { curRow = row; curStale = false; chosenVersion.set(key, row.id); }
       markItem(key);
-      if (here()) refreshState();
-      if (status !== 'published') tell('Draft saved.', 'ok');
+      if (here()) { refreshState(); renderVersions(); }
+      refreshVersions(key);
+      if (row.submitted) tell(row.status === 'published'
+        ? 'Submitted for review. Readers keep seeing the published version until a reviewer approves your changes.'
+        : 'Submitted for review. It goes on the site once a reviewer approves it.', 'ok');
+      else if (status !== 'published') tell('Draft saved.', 'ok');
       else if (shareCardCurrent(row)) tell('Published, with its link preview.', 'ok');
       else tell('Published, but without a link preview: ' + (cardError || row.shareError
         || 'the server did not store it (is solutions-admin up to date?)') + '. Check all can make it later.', 'err');
@@ -2789,14 +3113,22 @@ function setThemeMode(light) {
           : 'not saved: ' + ((e && e.message) || e), 'err');
         return false;
       }
-      if (e && e.conflict) {
+      if (e && e.exists && e.current) {
+        // "My version" on a problem where you already have one (another
+        // tab made it): that one is yours to edit; the window keeps its text.
+        chosenVersion.set(key, e.current.id);
+        curRow = e.current;
+        noteRow(e.current);
+        refreshState(); renderVersions();
+        setMsg('You already have a solution on this problem, so this window now edits that one. Save again to replace it with what is here.', 'err');
+      } else if (e && e.conflict) {
         const them = e.current || null;
         const who = them && savedBy(them) ? '@' + savedBy(them) : 'Someone else';
         setMsg('', 'err');
         setStateOpen(true);
         askConfirm(`${who} saved this problem${them ? ` (${fmtWhen(them.updated_at)})` : ''} while you were editing it. Loading their version erases what is in your window; overwriting replaces theirs with yours.`,
           'Load theirs', () => doReload(), {
-            compare: () => them || SolutionStore.get(key),
+            compare: () => them || SolutionStore.get(key, target.id),
             more: [{ label: 'Overwrite with mine', run: () => doSave(status, them ? them.updated_at : null, author) }],
           });
       } else if (e && e.auth) {
@@ -2823,18 +3155,31 @@ function setThemeMode(light) {
     };
   }
 
+  // The open problem's row as stored now: the version in this window (by
+  // id), else the server's pick. A version deleted meanwhile reads as null.
+  async function fetchCurRow(key) {
+    const id = curRow ? curRow.id : (typeof chosenVersion.get(key) === 'number' ? chosenVersion.get(key) : undefined);
+    if (!id && chosenVersion.get(key) === 'new') return null;
+    try {
+      return await SolutionStore.get(key, id);
+    } catch (e) {
+      if (e && e.gone) { dropRow(key, id); chosenVersion.delete(key); return null; }
+      throw e;
+    }
+  }
+
   async function doReload() {
     const key = cur.key;
     setMsg('Loading…', '');
     try {
-      const row = await SolutionStore.get(key);
+      const row = await fetchCurRow(key);
       if (cur.key !== key) return;
       curRow = row;
       curStale = row && row.problem_hash ? (row.problem_hash !== await problemHashOf(cur)) : null;
       if (row) {
         histSnapshot(key, 'Before loading from the database');
         drafts[key] = draftFromRow(row);
-        serverIndex[key] = { status: row.status, updated_at: row.updated_at, share: shareOf(row) };
+        noteRow(row);
       } else {
         delete serverIndex[key];
       }
@@ -2842,6 +3187,7 @@ function setThemeMode(light) {
       loadIntoFields();
       markItem(key);
       refreshState();
+      renderVersions();
       setMsg(row ? 'Loaded from the database.' : 'Nothing is stored for this problem.', 'ok');
     } catch (e) {
       setMsg('Could not load: ' + (e && e.message ? e.message : e), 'err');
@@ -2857,15 +3203,16 @@ function setThemeMode(light) {
     const before = curRow;
     setMsg('Checking…', '');
     try {
-      const row = await SolutionStore.get(key);
+      const row = await fetchCurRow(key);
       if (cur.key !== key) return;
       curRow = row;
       curStale = row && row.problem_hash ? (row.problem_hash !== await problemHashOf(cur)) : null;
       if (cur.key !== key) return;
-      if (row) serverIndex[key] = { status: row.status, updated_at: row.updated_at, share: shareOf(row) };
+      if (row) noteRow(row);
       else delete serverIndex[key];
       markItem(key);
       refreshState();
+      renderVersions();
       const by = row && savedBy(row) ? ` by @${savedBy(row)}` : '';
       setMsg(!row ? (before ? 'Checked: it was deleted from the database.' : 'Checked: nothing is stored for this problem.')
         : before && before.updated_at === row.updated_at ? 'Checked: nothing changed in the database.'
@@ -2895,10 +3242,12 @@ function setThemeMode(light) {
     if (name && name === curRow.author) { setMsg(`Already credited to @${name}.`, 'ok'); return; }
     setMsg('Saving…', '');
     try {
-      const row = await SolutionStore.setCredit(key, who || null, curRow.updated_at);
+      const row = await SolutionStore.setCredit(key, who || null, curRow.updated_at, curRow.id);
+      noteRow(row);
+      // A version other than the default names its author on its card.
+      refreshCards(key, [row]);
       if (cur.key !== key) return;
       curRow = row;
-      serverIndex[key] = { status: row.status, updated_at: row.updated_at, share: shareOf(row) };
       markItem(key);
       refreshState();
       setMsg(name ? `Credit changed to @${name}.` : 'Credit changed.', 'ok');
@@ -2909,7 +3258,7 @@ function setThemeMode(light) {
         setMsg('', 'err');
         setStateOpen(true);
         askConfirm(`${by} changed this solution${them ? ` (${fmtWhen(them.updated_at)})` : ''} after you opened it, so the credit was not changed. Load their version, check it, then change the credit.`,
-          'Load theirs', () => doReload(), { compare: () => them || SolutionStore.get(key) });
+          'Load theirs', () => doReload(), { compare: () => them || SolutionStore.get(key, curRow && curRow.id) });
       } else if (e && e.auth) {
         setMsg('Your access key was not accepted. Tap your @name at the top to sign out and enter it again.', 'err');
       } else {
@@ -2924,36 +3273,93 @@ function setThemeMode(light) {
   });
   $('edBtnReload').addEventListener('click', () => {
     askConfirm('This loads the latest version from the database and erases everything in this window for this problem.',
-      'Load and erase', () => doReload(), { compare: () => SolutionStore.get(cur.key) });
+      'Load and erase', () => doReload(), { compare: () => SolutionStore.get(cur.key, curRow && curRow.id) });
   });
+  /* "Clear this problem…": which of the problem's stored solutions to
+     delete, whichever tab is open. Your own is always offered (even at
+     level 0: it is yours to take down); full editors are offered everyone
+     else's too, one button each. A solution goes from the database with
+     its link preview, its pending review and the changes kept for it in
+     this browser. With nothing stored that you may delete, it only empties
+     the window (an unsaved "My version"). */
+  const whose = (e) => (isOwnRow(e) ? 'your' : `@${e.owner || e.author || 'someone'}'s`);
+  function clearChoices(key) {
+    const list = serverRows[key] || [];
+    const mine = list.filter((e) => isOwnRow(e));
+    const others = editorLevel >= 4 ? list.filter((e) => !isOwnRow(e)) : [];
+    return [...mine, ...others];
+  }
+
+  async function deleteVersion(key, e) {
+    setMsg('Deleting…', '');
+    try {
+      await SolutionStore.remove(key, e.id);
+    } catch (err) {
+      setMsg('Could not delete: ' + ((err && err.message) || err), 'err');
+      return;
+    }
+    const open = !!(cur && cur.key === key && curRow && curRow.id === e.id);
+    dropRow(key, e.id);
+    takeStash(key, e.id);
+    versionRowCache.delete(e.id);
+    if (open) {
+      // The window held it: it opens what is left, the usual way (your
+      // own, else the default), or empty when nothing is.
+      histSnapshot(key, 'Before delete');
+      delete drafts[key];
+      persistDrafts();
+      chosenVersion.delete(key);
+      curRow = null; curStale = null; curSvgs = []; curSvgKey = '';
+      await select(key, false);
+    } else {
+      markItem(key);
+      if (cur && cur.key === key) { refreshState(); renderVersions(); }
+    }
+    if (cur && cur.key === key) setMsg(`Deleted ${whose(e)} solution.`, 'ok');
+    // The default may have moved to another version (and its card with it).
+    refreshVersions(key);
+  }
+
+  function emptyWindow(key) {
+    histSnapshot(key, 'Before emptying');
+    delete drafts[key];
+    takeStash(key, 'new');
+    chosenVersion.delete(key);
+    persistDrafts();
+    curRow = null; curStale = null; curSvgs = []; curSvgKey = '';
+    select(key, false).then(() => setMsg('Emptied. Nothing was stored for it.', 'ok'));
+  }
+
   $('edBtnClear').addEventListener('click', () => {
-    askConfirm('This deletes the stored solution for this problem and empties the fields. It cannot be undone.',
-      'Delete', async () => {
-        const key = cur.key;
-        setMsg('Deleting…', '');
-        try {
-          await SolutionStore.remove(key);
-          histSnapshot(key, 'Before delete');
-          delete serverIndex[key];
-          delete drafts[key];
-          persistDrafts();
-          curRow = null; curStale = null; curSvgs = []; curSvgKey = '';
-          loadIntoFields();
-          markItem(key);
-          refreshState();
-          setMsg('Deleted.', 'ok');
-        } catch (e) { setMsg('Could not delete: ' + (e && e.message ? e.message : e), 'err'); }
-      });
+    if (!cur) return;
+    const key = cur.key;
+    const choices = clearChoices(key);
+    if (!choices.length) {
+      if (!curRow && hasContent(drafts[key])) {
+        askConfirm('Nothing is stored for this version, so this only empties the fields (they stay in History).', 'Empty', () => emptyWindow(key));
+      }
+      return;
+    }
+    const acts = choices.map((e) => ({
+      label: isOwnRow(e) ? 'Delete mine' : `Delete ${whose(e)}`,
+      run: () => deleteVersion(key, e),
+    }));
+    const one = choices.length === 1;
+    const what = 'its text, figure, link preview and any pending review';
+    askConfirm(one
+      ? `This deletes ${whose(choices[0])} solution to this problem from the database: ${what}. It cannot be undone.`
+      : `Which solution should be deleted? It goes from the database with ${what}. It cannot be undone.`,
+      acts[0].label, acts[0].run, { more: acts.slice(1) });
   });
   $('edBtnExport').addEventListener('click', async () => {
-    const all = await SolutionStore.exportAll();
+    const all = await SolutionStore.exportRows();
     const blob = new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${STORAGE_PREFIX}-solutions-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    setMsg(`Exported ${Object.keys(all).length} solution(s).`, 'ok');
+    setMsg(`Exported ${all.rows.length} solution(s).`, 'ok');
   });
 
   // Puts the current draft into the fields and refreshes both previews.
@@ -2979,6 +3385,7 @@ function setThemeMode(light) {
     curSvgs = []; curSvgKey = '';
     if (figSrc(d).trim()) { renderViewer(); scheduleCompile(); }
     else { clearTimeout(compileTimer); compileGen++; clearStage('No figure'); setStatus('', ''); renderViewer(); }
+    applyFieldLock();
   }
 
   // reveal: expand the problem's quiz in the sidebar. Off only for the
@@ -2999,12 +3406,13 @@ function setThemeMode(light) {
     hideNote(); setMsg(savingKeys.has(key) ? 'Still saving…' : '');
     loadIntoFields();
     refreshState();
+    renderVersions();
     localStorage.setItem(LS.last, key);
 
     // The row itself is only fetched for the problem being opened.
-    if (serverIndex[key]) {
+    if (serverIndex[key] || typeof chosenVersion.get(key) === 'number') {
       try {
-        const row = await SolutionStore.get(key);
+        const row = await fetchCurRow(key);
         if (cur.key !== key) return;
         curRow = row;
         curStale = row && row.problem_hash ? (row.problem_hash !== await problemHashOf(cur)) : null;
@@ -3014,18 +3422,288 @@ function setThemeMode(light) {
         // from the row instead of showing it as empty. Checked after the
         // fetch, so anything typed while it was loading is never replaced.
         if (row && !hasContent(drafts[key])) {
-          drafts[key] = draftFromRow(row);
+          drafts[key] = takeStash(key, row.id) || draftFromRow(row);
           persistDrafts();
           loadIntoFields();
           markItem(key);
         }
+        // From now on the window is known to hold this version.
+        if (row && chosenVersion.get(key) === undefined) chosenVersion.set(key, row.id);
+        if (row) noteRow(row);
         refreshState();
+        renderVersions();
       } catch (e) {
         setMsg(e && e.auth ? 'Your access key was not accepted. Tap your @name at the top to sign out and enter it again.'
                            : 'Could not read this problem from the database.', 'err');
       }
     }
   }
+
+  /* ───────────────────────── versions of one problem ─────────────────────────
+     A problem may have one solution per author (migration 013); the site
+     shows them as tabs, the default first. The strip above the fields
+     lists them — the one in this window highlighted — and, when you have
+     none there yet, "+ My version" to write your own next to theirs. Shown
+     only when there is a choice to make. */
+  function renderVersions() {
+    const box = $('edVersions');
+    if (!box || !cur) return;
+    const key = cur.key;
+    const list = (serverRows[key] || []).slice().sort(versionOrder);
+    const choice = chosenVersion.get(key);
+    const mineThere = list.some((e) => isOwnRow(e));
+    const offerNew = editorLevel >= 1 && !mineThere && list.length > 0 && !SolutionStore.isMock;
+    box.textContent = '';
+    box.hidden = !(list.length > 1 || offerNew || choice === 'new');
+    if (box.hidden) return;
+    box.append(mk('span', 'ed-versions-label', 'Versions'));
+    const shown = curRow ? curRow.id : choice === 'new' ? 'new' : null;
+    // • = unsaved changes kept for that version (the one open shows its
+    // own state in the pill above).
+    const kept = (v) => v !== shown && hasStash(key, v);
+    list.forEach((e) => {
+      const who = e.owner || e.author || 'unknown';
+      const st = e.status === 'published' ? '' : e.status === 'review' ? ' · in review' : ' · draft';
+      const b = mkBtn('ed-version' + (e.is_default ? ' is-default' : ''),
+        `${isOwnRow(e) ? 'You' : '@' + who}${e.is_default ? ' ★' : ''}${st}${kept(e.id) ? ' •' : ''}`, () => switchVersion(e.id));
+      b.title = (e.is_default ? 'The default: readers see this one first. ' : '') + `By @${who}`
+        + (e.author && e.author !== who ? `, credited to @${e.author}` : '')
+        + (kept(e.id) ? ' · has unsaved changes, kept here' : '');
+      b.setAttribute('aria-pressed', String(shown === e.id));
+      box.append(b);
+    });
+    if (offerNew || choice === 'new') {
+      const b = mkBtn('ed-version ed-version-new', '+ My version' + (kept('new') ? ' •' : ''), () => switchVersion('new'));
+      b.title = 'Write your own solution to this problem; readers see it as another tab next to the others'
+        + (kept('new') ? ' · has unsaved changes, kept here' : '');
+      b.setAttribute('aria-pressed', String(shown === 'new'));
+      box.append(b);
+    }
+  }
+
+  // Opens version `id` of problem `key` from elsewhere (Reviews, Check
+  // all). Another problem's window keeps what it holds for its own version,
+  // as a tab switch would, before this one is opened there.
+  function openVersion(key, id) {
+    if (cur && cur.key === key) { switchVersion(id); return; }
+    const was = chosenVersion.get(key) ?? (serverIndex[key] && serverIndex[key].id);
+    if (was !== undefined && was !== null && was !== id && hasContent(drafts[key])) {
+      versionState.stash[stashKey(key, was)] = drafts[key];
+      delete drafts[key];
+      persistDrafts(); persistVersions();
+    }
+    chosenVersion.set(key, id);
+    select(key);
+  }
+
+  // Rows of other versions already read, so switching back is instant.
+  // Used only while the index still says the row hasn't changed.
+  const versionRowCache = new Map();
+  let switchToken = 0;
+
+  // Opens another version of the open problem in this window (or 'new':
+  // your own, empty until you write it). Nothing is asked and nothing is
+  // lost: unsaved changes in the window are kept for the version they
+  // belong to (stashWindow) and come back when you switch to it again.
+  async function switchVersion(target) {
+    if (!cur) return;
+    const key = cur.key;
+    if (target === (curRow ? curRow.id : chosenVersion.get(key))) return;
+    const token = ++switchToken;
+
+    let row = null;
+    if (target !== 'new') {
+      const entry = (serverRows[key] || []).find((e) => e.id === target);
+      const cached = versionRowCache.get(target);
+      if (cached && entry && cached.updated_at === entry.updated_at) {
+        row = cached;
+      } else {
+        setMsg('Loading…', '');
+        try {
+          row = await SolutionStore.get(key, target);
+        } catch (e) {
+          if (token !== switchToken) return;
+          if (e && e.gone) { dropRow(key, target); takeStash(key, target); renderVersions(); }
+          setMsg('Could not load that version: ' + ((e && e.message) || e), 'err');
+          return;
+        }
+        // Read while something else was opened meanwhile: drop it.
+        if (token !== switchToken || !cur || cur.key !== key) return;
+        if (!row) { dropRow(key, target); renderVersions(); setMsg('That version no longer exists.', 'err'); return; }
+      }
+    }
+
+    // Only now, with the other version in hand, does the window change.
+    if (curRow) versionRowCache.set(curRow.id, curRow);
+    stashWindow(key);
+    chosenVersion.set(key, target);
+    curRow = row;
+    curStale = null;
+    drafts[key] = takeStash(key, target) || (row ? draftFromRow(row) : emptyDraft());
+    if (row) { noteRow(row); versionRowCache.set(row.id, row); }
+    persistDrafts();
+    loadIntoFields();
+    markItem(key);
+    refreshState();
+    renderVersions();
+    setMsg(target === 'new' && !hasContent(drafts[key])
+      ? 'Your own version. Write it and publish: readers will see it as another tab next to the others.' : '', target === 'new' ? 'ok' : '');
+    if (row && row.problem_hash) {
+      const stale = row.problem_hash !== await problemHashOf(cur);
+      if (token === switchToken && curRow === row) { curStale = stale; refreshState(); }
+    }
+  }
+
+  // "Make default" (full editors): readers see this solution first.
+  $('edBtnDefault').addEventListener('click', async () => {
+    if (!cur || !curRow) return;
+    const key = cur.key, id = curRow.id;
+    setMsg('Saving…', '');
+    try {
+      const rows = await SolutionStore.setDefault(id);
+      rows.forEach((r) => noteRow(r));
+      // The new default loses its "Solution by @name", the old one gains it.
+      refreshCards(key, rows);
+      if (!cur || cur.key !== key) return;
+      const mine = rows.find((r) => r.id === id);
+      if (mine) curRow = mine;
+      markItem(key);
+      refreshState();
+      renderVersions();
+      setMsg('This is now the default: readers see it first.', 'ok');
+    } catch (e) {
+      setMsg('Could not change the default: ' + ((e && e.message) || e), 'err');
+    }
+  });
+
+  /* ───────────────────────── reviews ─────────────────────────
+     Level 1 editors' publishes and edits wait for a reviewer (level 3+).
+     The state panel shows a solution's review; reviewers approve or
+     reject it there, and "Reviews" in the sidebar lists everything
+     waiting. A pending edit isn't in the stored row, so "Load submitted
+     edit" puts it into the window to read (and, for its author, to keep
+     working on). */
+  function reviewText(r) {
+    if (!r) return '';
+    if (r.state === 'rejected') return `rejected${r.reviewed_by ? ' by @' + r.reviewed_by : ''}${r.note ? ': ' + r.note : ''}`;
+    return r.edit ? 'changes waiting for review (readers still see the published version)' : 'waiting for review';
+  }
+
+  async function refreshReviewCount() {
+    try {
+      const list = await SolutionStore.reviews();
+      const n = list.filter((r) => r.review && r.review.state === 'waiting').length;
+      $('edReviews').textContent = n ? `Reviews (${n})` : 'Reviews';
+      return list;
+    } catch (e) { return []; }
+  }
+
+  $('edReviews').addEventListener('click', async () => {
+    const anchor = $('edReviews');
+    const pop = openFloat(anchor, (p) => {
+      floatHead(p, 'Waiting for review');
+      const list = mk('div', 'ed-editors');
+      list.append(mk('div', 'ed-cp-sub', 'Loading…'));
+      p.append(list);
+    }, placeEditors);
+    if (!pop) return;
+    const items = await refreshReviewCount();
+    if (floatPop !== pop) return;
+    const list = pop.querySelector('.ed-editors');
+    list.textContent = '';
+    const waiting = items.filter((r) => r.review && r.review.state === 'waiting');
+    if (!waiting.length) list.append(mk('div', 'ed-cp-sub', 'Nothing is waiting.'));
+    waiting.forEach((r) => {
+      const p = byKey.get(r.problem_key);
+      const label = p ? `Q${p.quiz} · ${p.pos ? '#' + p.pos : p.id}` : r.problem_key;
+      const row = mkBtn('ed-review-item', `${label} · @${r.owner || '?'} · ${r.review.edit ? 'changes' : 'new solution'}`, () => {
+        closeFloat();
+        setStateOpen(true);
+        openVersion(r.problem_key, r.id);
+      });
+      list.append(row);
+    });
+  });
+
+  // Reject: the note for the author, asked in the state panel like the
+  // other confirmations. Ctrl+Enter rejects, Esc cancels.
+  function askRejectNote(onYes) {
+    stNote.hidden = false;
+    stNote.textContent = '';
+    const p = mk('div', null, 'Why is it rejected? The author sees this note (optional).');
+    const ta = mk('textarea', 'ed-input ed-note-input');
+    ta.rows = 3; ta.maxLength = 2000; ta.spellcheck = true;
+    ta.placeholder = 'e.g. the units in eq. (2) are missing';
+    const row = mk('div', 'ed-state-actions');
+    const go = () => { const v = ta.value.trim(); hideNote(); onYes(v); };
+    row.append(mkBtn('ed-abtn danger', 'Reject', go), mkBtn('ed-abtn', 'Cancel', hideNote));
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); go(); }
+      else if (e.key === 'Escape') { e.preventDefault(); hideNote(); }
+    });
+    stNote.append(p, ta, row);
+    setStateOpen(true);
+    ta.focus();
+  }
+
+  async function decideReview(approve, note = null) {
+    if (!cur || !curRow) return;
+    const key = cur.key, id = curRow.id;
+    if (!approve && note === null) { askRejectNote((v) => decideReview(false, v)); return; }
+    setMsg(approve ? 'Approving…' : 'Rejecting…', '');
+    // What this reviewer read: if the author resubmitted or saved since,
+    // the server decides nothing and sends the new version back.
+    const seen = { submitted_at: curRow.review && curRow.review.submitted_at, updated_at: curRow.updated_at };
+    const p = cur;
+    try {
+      const row = approve ? await SolutionStore.approve(id, seen) : await SolutionStore.reject(id, note, seen);
+      noteRow(row);
+      if (!cur || cur.key !== key) return;
+      curRow = row;
+      // An approved edit is now the stored text: show what readers see.
+      if (approve) { histSnapshot(key, 'Before loading the approved version'); drafts[key] = draftFromRow(row); persistDrafts(); loadIntoFields(); }
+      markItem(key);
+      refreshState();
+      renderVersions();
+      refreshReviewCount();
+      setMsg(approve ? 'Approved: it is on the site now.' : 'Rejected. The author sees your note.', 'ok');
+      // Its author may not draw link previews below level 2, so the
+      // reviewer's editor draws the approved version's one now.
+      if (approve && row.status === 'published') {
+        makeShareCard(p, row).catch(() => toast('Approved, but its link preview could not be made. Check all can make it later.', 'err'));
+      }
+    } catch (e) {
+      if (e && e.changed && e.current) {
+        if (cur && cur.key === key) { curRow = e.current; noteRow(e.current); refreshState(); renderVersions(); }
+        setMsg('Nothing was decided: the author changed it after you opened it. Read the new version (Load submitted edit for changes), then decide.', 'err');
+        return;
+      }
+      setMsg('Could not ' + (approve ? 'approve' : 'reject') + ': ' + ((e && e.message) || e), 'err');
+    }
+  }
+  $('edBtnApprove').addEventListener('click', () => decideReview(true));
+  $('edBtnReject').addEventListener('click', () => decideReview(false));
+
+  $('edBtnLoadEdit').addEventListener('click', async () => {
+    if (!cur || !curRow) return;
+    const key = cur.key;
+    try {
+      const row = await SolutionStore.get(key, curRow.id);
+      const r = row && row.review;
+      if (!cur || cur.key !== key || !r || typeof r.solution !== 'string') { setMsg('There is no submitted edit to load.', 'err'); return; }
+      // The decision will be about this submission, the newest one.
+      curRow = row;
+      histSnapshot(key, 'Before loading the submitted edit');
+      drafts[key] = draftFromRow({ solution: r.solution, figure: r.figure });
+      persistDrafts();
+      loadIntoFields();
+      markItem(key);
+      refreshState();
+      setMsg('The submitted edit is in the window. It is not saved; readers still see the published version.', 'ok');
+    } catch (e) {
+      setMsg('Could not load the edit: ' + ((e && e.message) || e), 'err');
+    }
+  });
 
   /* ───────────────────────── toast ─────────────────────────
      Feedback for actions taken while the state panel is closed (Ctrl+S,
@@ -3507,7 +4185,7 @@ function setThemeMode(light) {
       if (on) on.scrollIntoView({ block: 'nearest' });
     }
     function accept(i) {
-      if (!pop) return;
+      if (!pop || ta.readOnly) { close(); return; }
       const s = pop.items[i == null ? pop.index : i];
       const { start, end } = pop;
       close();
@@ -3536,6 +4214,7 @@ function setThemeMode(light) {
     // whole line and keeps them selected. Goes through execCommand like
     // insert() so Ctrl+Z undoes it in one step.
     function indent(out) {
+      if (ta.readOnly) return;
       const v = ta.value, s = ta.selectionStart, e = ta.selectionEnd;
       const multi = v.slice(s, e).includes('\n');
       inserting = true;
@@ -3611,6 +4290,9 @@ function setThemeMode(light) {
       else close();
     });
     ta.addEventListener('keydown', (e) => {
+      // Read-only (a version you can't change): no snippets, Tab or Enter
+      // handling; the browser's own keys still select and copy.
+      if (ta.readOnly) return;
       if ((e.ctrlKey || e.metaKey) && e.key === ' ') { e.preventDefault(); update(true); return; }
       // Alt+arrows / Alt+N switch problems (keyboard navigation): leave the
       // list and any tab stops to that instead of moving inside them.
@@ -3708,7 +4390,7 @@ function setThemeMode(light) {
       : `% ${k}: ${v}`)).join('\n') + '\n' + text;
   };
   [tikzEl, svgEl].forEach((ta) => ta.addEventListener('paste', (e) => {
-    if (!cur || ta.disabled || !e.clipboardData) return;
+    if (!cur || ta.disabled || ta.readOnly || !e.clipboardData) return;
     const head = readFigHead(e.clipboardData.getData('text/plain'));
     if (!head) return;
     e.preventDefault();
@@ -3780,7 +4462,8 @@ function setThemeMode(light) {
 
 
   /* ───────────────────────── site version ─────────────────────────
-     Pale "site v12.1.0 · editor v1.0.0" in the top bar. site-version.json
+     Pale "13.3.0 · 1.0.1 · L4" in the top bar: site, editor, and this key's
+     access level (see setMe). site-version.json
      holds two numbers: "version", the main site's (the one CURRENT_VERSION in
      js/quiz-engine.js is compared with), and "editor", bumped for a release
      that changes only the editor — so editors can get an update without
@@ -3812,14 +4495,23 @@ function setThemeMode(light) {
       return site ? { site, editor: pick(d.editor) } : null;
     } catch (e) { return null; }
   }
+  let versionsNow = null;                // the latest read, for redrawing the label
   async function checkSiteVersion() {
     const v = await fetchSiteVersions();
     if (!v) return editorOutdated;                    // offline / server hiccup: keep what is shown
-    const el = $('edVer');
     if (!versionsAtLoad) versionsAtLoad = v;
+    versionsNow = v;
+    return renderVersionLabel();
+  }
+  // "13.3.0 · 1.0.1 · L4": the site's version, the editor's, and this key's
+  // access level (once the server has confirmed it). A number that moved on
+  // since this window loaded turns red, "(outdated)!", and tapping reloads.
+  function renderVersionLabel() {
+    const el = $('edVer');
+    if (!versionsAtLoad || !versionsNow) return editorOutdated;
     const parts = [
-      { name: 'site', loaded: versionsAtLoad.site, now: v.site },
-      { name: 'editor', loaded: versionsAtLoad.editor, now: v.editor },
+      { name: 'Site', loaded: versionsAtLoad.site, now: versionsNow.site },
+      { name: 'Editor', loaded: versionsAtLoad.editor, now: versionsNow.editor },
     ].filter((p) => p.loaded || p.now);
     parts.forEach((p) => { p.outdated = p.now !== p.loaded; });
     const outdated = parts.some((p) => p.outdated);
@@ -3831,11 +4523,20 @@ function setThemeMode(light) {
       if (i) el.append(' · ');
       const span = document.createElement('span');
       span.className = 'ed-ver-part' + (p.outdated ? ' outdated' : '');
-      span.textContent = `${p.name} v${p.loaded || '?'}` + (p.outdated ? ' (outdated)!' : '');
+      span.textContent = (p.loaded || '?') + (p.outdated ? ' (outdated)!' : '');
       el.append(span);
     });
-    const out = parts.filter((p) => p.outdated).map((p) => `${p.name} ${p.now || '(none)'}`);
-    el.title = outdated ? `New ${out.join(' and ')} ${out.length > 1 ? 'are' : 'is'} out. Tap to reload; drafts are kept.` : 'Site and editor versions';
+    if (levelKnown) {
+      el.append(' · ');
+      const lv = document.createElement('span');
+      lv.className = 'ed-ver-part ed-ver-level';
+      lv.textContent = 'L' + editorLevel;
+      el.append(lv);
+    }
+    const what = parts.map((p) => `${p.name.toLowerCase()} ${p.loaded || '?'}`).join(', ')
+      + (levelKnown ? `, access level ${editorLevel} (${LEVEL_NAMES[editorLevel] || '?'})` : '');
+    const out = parts.filter((p) => p.outdated).map((p) => `${p.name.toLowerCase()} ${p.now || '(none)'}`);
+    el.title = outdated ? `New ${out.join(' and ')} ${out.length > 1 ? 'are' : 'is'} out. Tap to reload; drafts are kept.` : what.charAt(0).toUpperCase() + what.slice(1);
     el.disabled = !outdated;
     return outdated;
   }
@@ -3930,7 +4631,7 @@ function setThemeMode(light) {
                     around; retired problems are skipped.
      Work from inside the text boxes too (e.code, so a Mac's Option+N
      doesn't type "˜"), and never fire while the key gate is up. */
-  const untouched = (p) => !serverIndex[p.key] && !hasContent(drafts[p.key]);
+  const untouched = (p) => !dotEntry(p.key) && !(localCounts(p.key) && hasContent(drafts[p.key]));
   function stepProblem(dir) {
     const pool = onlyTouched ? problems.filter((p) => !untouched(p) || p === cur) : problems;
     const i = pool.indexOf(cur);
@@ -3962,8 +4663,7 @@ function setThemeMode(light) {
       // Reload path: the key is already stored, so confirm it still works
       // before showing the editor at all.
       try {
-        const me = await SolutionStore.whoami();
-        editorName = (me && me.name) || null;
+        setMe(await SolutionStore.whoami());
       } catch (e) {
         booted = false;
         if (e && e.auth) localStorage.removeItem(LS.key);   // revoked / wrong key
@@ -3983,7 +4683,14 @@ function setThemeMode(light) {
     const face = document.createElement('span'); face.className = 'ed-face'; face.id = 'edFace'; face.hidden = true;
     $('edWho').append(lbl, who, face);
     showSiteIdenticon();
-    try { serverIndex = await SolutionStore.index(); } catch (e) { serverIndex = {}; }
+    try {
+      const idx = await SolutionStore.index();
+      serverIndex = idx.index;
+      setServerRows(idx.rows);
+    } catch (e) { serverIndex = {}; setServerRows([]); }
+    // The review queue, for reviewers (level 3+).
+    $('edReviews').hidden = editorLevel < 3 || SolutionStore.isMock;
+    if (!$('edReviews').hidden) refreshReviewCount();
     // For the "Who wrote this solution?" list, so publishing never waits on it.
     SolutionStore.editors().then((l) => { editorsCache = editorsCache || l; }).catch(() => {});
     if (SolutionStore.isMock) {

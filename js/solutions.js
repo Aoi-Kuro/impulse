@@ -8,13 +8,19 @@
    a plain PostgREST GET with the publishable key. Drafts are invisible
    here — not hidden by this code, but unreachable by the policy.
 
+   A problem may have several published solutions, one per author
+   (migration 013): the default opens first, the others are tabs above it
+   ("Default | By @name | …", renderSolutionTabs).
+
    Two kinds of request:
-     1. the index — which problem_keys have a published solution and when
-        each was last saved (no bodies). Fetched at most once every 30
-        minutes per browser: the copy is kept in localStorage, so every tab
-        and reload in between reads it instead of the network;
-     2. one row call the first time a given solution is opened, cached in
-        memory until the index shows it was unpublished or saved again.
+     1. the index — which problem_keys have a published solution, and each
+        solution's id and when it was last saved (no bodies). Fetched at
+        most once every 30 minutes per browser: the copy is kept in
+        localStorage, so every tab and reload in between reads it instead
+        of the network;
+     2. one call for all of a problem's solutions the first time it is
+        opened, cached in memory until the index shows one of them was
+        unpublished, saved again, or joined by another.
    While Go offline's 24h window runs, both are answered from the copy it
    downloaded (offline-data/solutions.json) instead of the network.
 
@@ -41,7 +47,10 @@ const SOLUTIONS_INDEX_CACHE_KEY = STORAGE_PREFIX + '-solutions-index';
 // (js/site-config.js, 30 min by default), shared by all tabs.
 const SOLUTIONS_INDEX_CHECK_MS = 5 * 60 * 1000;     // how often a visible tab looks whether that copy has expired (no request)
 // Columns of one published row — also what Go offline downloads (js/offline-mode.js).
-const SOLUTIONS_ROW_COLUMNS = 'problem_key,solution,figure,author,author_link,problem_hash,updated_at';
+const SOLUTIONS_ROW_COLUMNS = 'id,problem_key,is_default,solution,figure,author,author_link,problem_hash,created_at,updated_at';
+// A problem's solutions in tab order: the default first, then oldest first
+// (as solutions-admin's tabOrder).
+const SOLUTIONS_ORDER = 'is_default.desc,created_at.asc,id.asc';
 
 // ── Full offline mode (js/offline-mode.js) ──
 // While the 24h window runs, every request to Supabase is refused by
@@ -74,12 +83,12 @@ async function loadOfflineSolutionRows() {
   return solutionsOfflineRows;
 }
 
-/** Index rows ({ problem_key, updated_at }) from the network or, while
+/** Index rows ({ id, problem_key, updated_at }) from the network or, while
     offline mode is active, from the download. null on a server error. */
 async function solutionsIndexRows() {
   if (solutionsOfflineActive()) return loadOfflineSolutionRows();
   solutionsOfflineRows = null;
-  const r = await fetch(`${SOLUTIONS_REST}?select=problem_key,updated_at&status=eq.published`, {
+  const r = await fetch(`${SOLUTIONS_REST}?select=id,problem_key,updated_at&status=eq.published`, {
     headers: solutionsRestHeaders(),
     cache: 'no-store',
   });
@@ -106,40 +115,58 @@ async function fetchSolutionAuthorRows() {
 }
 
 let solutionsIndex = null;          // Set of problem_key with a published solution
-let solutionsIndexStamps = null;    // problem_key -> updated_at, from the same index
+let solutionsIndexStamps = null;    // problem_key -> solutionsStampOf its rows, from the same index
 let solutionsIndexPromise = null;   // in-flight load, so parallel callers share one request
 const solutionsRowCache = new Map();
 
 /* Opened solutions are also kept across page loads, in Cache Storage (a
    row with its figures can be far bigger than localStorage allows), under
-   this course's own prefix. A stored row is used without a request while
-   the index lists it with the same updated_at (the index itself is at
-   most poll.solutions old), or, before the index has loaded (a shared link
-   on a fresh page), while it was fetched less than poll.solutions ago.
-   sw.js's activate step clears it with the other caches on each new
-   version, which is fine: it only costs one fetch per solution. */
-const SOLUTION_ROWS_CACHE = 'flux-solution-rows-v1';
+   this course's own prefix: one entry per problem, holding all its
+   solutions. A stored entry is used without a request while the index
+   lists the same solutions saved at the same times (the index itself is
+   at most poll.solutions old), or, before the index has loaded (a shared
+   link on a fresh page), while it was fetched less than poll.solutions
+   ago. sw.js's activate step clears it with the other caches on each new
+   version, which is fine: it only costs one fetch per problem. v2: an
+   entry holds a list of rows since migration 013, not one row. */
+const SOLUTION_ROWS_CACHE = 'flux-solution-rows-v2';
 const solutionRowUrl = (key) => new URL(`__solution-rows/${STORAGE_PREFIX}/${encodeURIComponent(key)}`, location.href).href;
 
-async function readStoredSolutionRow(key) {
+// Which solutions a problem has and when each was saved, as one string: it
+// changes when one is saved again, unpublished, or another is published.
+// An index cached by a build from before migration 013 has no ids, so it
+// never matches and the rows are simply fetched again.
+function solutionsStampOf(rows) {
+  return rows.map((r) => `${r.id ?? ''}@${r.updated_at}`).sort().join(' ');
+}
+
+// Tab order (SOLUTIONS_ORDER), for rows that didn't come from a query that
+// sorted them: the offline download.
+function sortSolutionRows(rows) {
+  const t = (r) => Date.parse(r.created_at || r.updated_at) || 0;
+  return rows.slice().sort((a, b) =>
+    (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || t(a) - t(b) || (a.id || 0) - (b.id || 0));
+}
+
+async function readStoredSolutionRows(key) {
   try {
     if (typeof caches === 'undefined') return null;
     const res = await (await caches.open(SOLUTION_ROWS_CACHE)).match(solutionRowUrl(key));
     if (!res) return null;
-    const { row, at } = await res.json();
-    if (!row) return null;
+    const { rows, at } = await res.json();
+    if (!Array.isArray(rows) || !rows.length) return null;
     const fresh = solutionsIndexStamps
-      ? solutionsIndexStamps.get(key) === row.updated_at
+      ? solutionsIndexStamps.get(key) === solutionsStampOf(rows)
       : Date.now() - at < sitePollMs('solutions');
-    return fresh ? row : null;
+    return fresh ? rows : null;
   } catch (e) { return null; }   // unreadable: just fetch it
 }
 
-// Keeps `row` for the next page load; null (no longer published) drops it.
-function storeSolutionRow(key, row) {
+// Keeps `rows` for the next page load; null (no longer published) drops them.
+function storeSolutionRows(key, rows) {
   if (typeof caches === 'undefined') return;
-  caches.open(SOLUTION_ROWS_CACHE).then((c) => (row
-    ? c.put(solutionRowUrl(key), new Response(JSON.stringify({ row, at: Date.now() }), { headers: { 'Content-Type': 'application/json' } }))
+  caches.open(SOLUTION_ROWS_CACHE).then((c) => (rows
+    ? c.put(solutionRowUrl(key), new Response(JSON.stringify({ rows, at: Date.now() }), { headers: { 'Content-Type': 'application/json' } }))
     : c.delete(solutionRowUrl(key)))).catch(() => { /* quota / private mode: memory only */ });
 }
 
@@ -152,16 +179,22 @@ function solutionsRestHeaders() {
   };
 }
 
-/** Makes `rows` ({ problem_key, updated_at }) the current index. */
+/** Makes `rows` ({ id, problem_key, updated_at }) the current index. */
 function applySolutionsIndexRows(rows) {
-  const fresh = new Set(rows.map((r) => r.problem_key));
-  const stamps = new Map(rows.map((r) => [r.problem_key, r.updated_at]));
+  const byKey = new Map();
+  rows.forEach((r) => {
+    if (!byKey.has(r.problem_key)) byKey.set(r.problem_key, []);
+    byKey.get(r.problem_key).push(r);
+  });
+  const fresh = new Set(byKey.keys());
+  const stamps = new Map([...byKey].map(([key, list]) => [key, solutionsStampOf(list)]));
 
-  // A solution opened earlier stays in memory, so drop it when it is no
-  // longer published (or it would still open), or when it was saved
-  // again since (or the student would keep reading the old text).
-  solutionsRowCache.forEach((row, key) => {
-    if (!fresh.has(key) || !row || row.updated_at !== stamps.get(key)) solutionsRowCache.delete(key);
+  // Solutions opened earlier stay in memory, so drop a problem's when one
+  // is no longer published (or it would still open), was saved again since
+  // (or the student would keep reading the old text), or another was
+  // published next to them (or its tab would be missing).
+  solutionsRowCache.forEach((list, key) => {
+    if (!fresh.has(key) || !list || solutionsStampOf(list) !== stamps.get(key)) solutionsRowCache.delete(key);
   });
 
   solutionsIndex = fresh;
@@ -192,7 +225,7 @@ function fetchSolutionsIndex() {
         try {
           localStorage.setItem(SOLUTIONS_INDEX_CACHE_KEY, JSON.stringify({
             at: Date.now(),
-            rows: rows.map((r) => ({ problem_key: r.problem_key, updated_at: r.updated_at })),
+            rows: rows.map((r) => ({ id: r.id, problem_key: r.problem_key, updated_at: r.updated_at })),
           }));
         } catch (e) { /* private mode / quota */ }
       }
@@ -215,7 +248,7 @@ function fetchSolutionsIndex() {
 
    So a solution published or unpublished in the editor can take up to 30
    minutes to gain or lose its button in a tab that is already open. An
-   unpublished one still cannot be read in that time: fetchSolution() only
+   unpublished one still cannot be read in that time: fetchSolutions() only
    asks for published rows, so its button opens "This solution is no
    longer published." The page used to refetch on every load and every tab
    switch to close that gap, which was most of this project's
@@ -233,32 +266,34 @@ function hasPublishedSolution(quizNum, problemId) {
   return !!solutionsIndex && solutionsIndex.has(solutionKeyFor(quizNum, problemId));
 }
 
-/** One published row, or null. Kept in memory for the page's life and in
-    Cache Storage across loads (readStoredSolutionRow); the background
-    index refresh above drops the memory copy once it is unpublished or
-    edited, and a stored copy no longer matching the index is fetched
-    again. While offline mode is active the row comes from the download
-    instead: the network request would only be refused by sw.js. */
-async function fetchSolution(problemKey) {
+/** A problem's published solutions in tab order (the default first), or
+    null when it has none. Kept in memory for the page's life and in Cache
+    Storage across loads (readStoredSolutionRows); the background index
+    refresh above drops the memory copy once one of them is unpublished or
+    edited or another is published, and a stored copy no longer matching
+    the index is fetched again. While offline mode is active the rows come
+    from the download instead: the network request would only be refused
+    by sw.js. */
+async function fetchSolutions(problemKey) {
   if (solutionsRowCache.has(problemKey)) return solutionsRowCache.get(problemKey);
   if (solutionsOfflineActive()) {
-    const rows = await loadOfflineSolutionRows();
-    return rows.find((r) => r && r.problem_key === problemKey) || null;
+    const rows = (await loadOfflineSolutionRows()).filter((r) => r && r.problem_key === problemKey);
+    return rows.length ? sortSolutionRows(rows) : null;
   }
-  const stored = await readStoredSolutionRow(problemKey);
+  const stored = await readStoredSolutionRows(problemKey);
   if (stored) {
     solutionsRowCache.set(problemKey, stored);
     return stored;
   }
   const url = `${SOLUTIONS_REST}?select=${SOLUTIONS_ROW_COLUMNS}`
-            + `&problem_key=eq.${encodeURIComponent(problemKey)}&status=eq.published&limit=1`;
+            + `&problem_key=eq.${encodeURIComponent(problemKey)}&status=eq.published&order=${SOLUTIONS_ORDER}`;
   const res = await fetch(url, { headers: solutionsRestHeaders() });
   if (!res.ok) throw new Error('Could not load the solution.');
   const rows = await res.json();
-  const row = (rows && rows[0]) || null;
-  solutionsRowCache.set(problemKey, row);
-  storeSolutionRow(problemKey, row);
-  return row;
+  const list = Array.isArray(rows) && rows.length ? rows : null;
+  solutionsRowCache.set(problemKey, list);
+  storeSolutionRows(problemKey, list);
+  return list;
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────
@@ -532,12 +567,17 @@ function solutionSettled(promise) {
   ]);
 }
 
-// Bumped on every openSolution() call. Each call checks it after every
-// await, so tapping Previous/Next quickly never lets a slower, older
-// response paint over the solution that was asked for last.
+// Bumped on every openSolution() call and tab switch. Each checks it after
+// every await, so tapping Previous/Next (or the tabs) quickly never lets a
+// slower, older response paint over the solution that was asked for last.
 let solutionOpenToken = 0;
 // What is on screen, for the Share button and the Previous/Next buttons.
-let solutionCurrent = null;   // { quizNum, problemId }
+// solutionId: the tab showing, null for the first (the default), so a
+// share link to the default stays the plain /s/<problem_key>.
+let solutionCurrent = null;   // { quizNum, problemId, solutionId }
+// The open problem's published solutions, in tab order, and which is on screen.
+let solutionRows = null;
+let solutionShownId = null;
 // True while showing the editor's "Full preview" (see openSolutionFromURL):
 // the row comes from the editor, not the database.
 let solutionPreviewMode = false;
@@ -574,27 +614,41 @@ function openSolutionBrowser(quizNum) {
     const el = document.getElementById(id);
     if (el && window.MathJax && MathJax.typesetClear) { try { MathJax.typesetClear([el]); } catch (e) {} }
   });
-  solutionCurrent = { quizNum, problemId: null };
+  solutionCurrent = { quizNum, problemId: null, solutionId: null };
+  solutionRows = null;
   setSolutionPreviewMode(false);
   screen.classList.remove('sol-problem-pending', 'sol-body-pending');
   resetSolutionFigTools();
   document.getElementById('solutionTitle').textContent = '📘 Solutions';
   document.getElementById('solutionShareBtn').hidden = true;     // nothing to share
-  ['solutionProblem', 'solutionLoading', 'solutionStale', 'solutionFigureWrap', 'solutionMain', 'solutionPager', 'solutionList']
+  ['solutionProblem', 'solutionTabs', 'solutionLoading', 'solutionStale', 'solutionFigureWrap', 'solutionMain', 'solutionPager', 'solutionList']
     .forEach((id) => { document.getElementById(id).hidden = true; });
   showSolutionScreen(screen);
   showSolutionList(false);
 }
 
+// Stops the figure on screen and releases its typeset math, before the
+// same elements are reused for another solution.
+function releaseSolutionContent() {
+  stopSolutionAutoplay();
+  solutionViewer = null;
+  ['solutionBody', 'solutionCaption'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && window.MathJax && MathJax.typesetClear) { try { MathJax.typesetClear([el]); } catch (e) {} }
+  });
+}
+
 // previewRow: a row built by the editor's Full preview — shown instead of
-// fetching the published one.
-async function openSolution(quizNum, problemId, previewRow) {
+// fetching the published ones. solutionId: open that tab instead of the
+// default (a shared link to it); unknown ids fall back to the default.
+async function openSolution(quizNum, problemId, previewRow, solutionId) {
   const key = solutionKeyFor(quizNum, problemId);
   const screen = solutionScreenEl();
   if (!screen) return;
   const token = ++solutionOpenToken;
   const stale = () => token !== solutionOpenToken || !solutionOpen;
-  solutionCurrent = { quizNum, problemId };
+  solutionCurrent = { quizNum, problemId, solutionId: null };
+  solutionRows = null;
   setSolutionPreviewMode(!!previewRow);
   // Invisible until built (see "Building without jumps" above).
   screen.classList.add('sol-problem-pending', 'sol-body-pending');
@@ -603,16 +657,8 @@ async function openSolution(quizNum, problemId, previewRow) {
   };
 
   // Switching from one solution to another (Previous/Next) while the
-  // screen stays open: stop the old figure's autoplay and release the old
-  // typeset math before reusing the same elements.
-  if (solutionOpen) {
-    stopSolutionAutoplay();
-    solutionViewer = null;
-    ['solutionBody', 'solutionCaption'].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el && window.MathJax && MathJax.typesetClear) { try { MathJax.typesetClear([el]); } catch (e) {} }
-    });
-  }
+  // screen stays open.
+  if (solutionOpen) releaseSolutionContent();
 
   const label = problemLabel(quizNum, problemId);
 
@@ -641,16 +687,10 @@ async function openSolution(quizNum, problemId, previewRow) {
     if (token === solutionOpenToken) screen.classList.remove('sol-problem-pending');
   });
 
-  resetSolutionFigTools();
-
   // Blank the rest while loading.
+  blankSolutionContent();
   const body = document.getElementById('solutionBody');
-  body.textContent = '';
-  document.getElementById('solutionFigureWrap').hidden = true;
-  document.getElementById('solutionMain').hidden = true;
-  document.getElementById('solutionStale').hidden = true;
-  const credit = document.getElementById('solutionCredit');
-  credit.hidden = true;
+  document.getElementById('solutionTabs').hidden = true;
   document.getElementById('solutionList').hidden = true;   // picked from it, or a new solution
   renderSolutionPager(quizNum, problemId);
   if (!previewRow && solutionListByDefault()) showSolutionList(false);
@@ -659,9 +699,9 @@ async function openSolution(quizNum, problemId, previewRow) {
 
   showSolutionScreen(screen);
 
-  let row;
+  let rows;
   try {
-    row = previewRow || await fetchSolution(key);
+    rows = previewRow ? [previewRow] : await fetchSolutions(key);
   } catch (e) {
     if (stale()) return;
     loading.hidden = true;
@@ -673,7 +713,7 @@ async function openSolution(quizNum, problemId, previewRow) {
   }
   if (stale()) return;                             // closed, or another solution asked for
 
-  if (!row) {
+  if (!rows) {
     loading.hidden = true;
     document.getElementById('solutionMain').hidden = false;
     body.textContent = 'This solution is no longer published.';
@@ -681,6 +721,120 @@ async function openSolution(quizNum, problemId, previewRow) {
     if (solutionPreviewMode) notifyPreviewParent('solution-preview-ready');
     return;
   }
+
+  solutionRows = rows;
+  const row = (solutionId && rows.find((r) => r.id === solutionId)) || rows[0];
+  renderSolutionTabs();
+  await paintSolutionRow(row, p, probReady, stale, reveal);
+  if (stale()) return;
+
+  // Editor Full preview: the overlay keeps this page invisible until now,
+  // so none of the start-up screens flicker past; two frames for the
+  // layout to settle.
+  if (solutionPreviewMode) {
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (!stale()) notifyPreviewParent('solution-preview-ready'); }));
+  }
+
+  // The published list may not have arrived yet (a shared link opened on a
+  // fresh page load): fill the Previous/Next buttons in once it has.
+  if (!solutionsIndex && !solutionPreviewMode) {
+    await loadSolutionsIndex();
+    if (!stale()) renderSolutionPager(quizNum, problemId);
+  }
+}
+
+// Empties the figure, solution and credit (kept in place, hidden).
+function blankSolutionContent() {
+  resetSolutionFigTools();
+  document.getElementById('solutionBody').textContent = '';
+  document.getElementById('solutionFigureWrap').hidden = true;
+  document.getElementById('solutionMain').hidden = true;
+  document.getElementById('solutionStale').hidden = true;
+  document.getElementById('solutionCredit').hidden = true;
+}
+
+/* ── Tabs: several solutions of one problem ───────────────────────────
+   "Default | By @name | …" above the figure, only when the problem has
+   more than one published solution (never in the editor's preview). A
+   tab swaps the figure, solution and credit in place; the problem, the
+   list and the pager stay as they are. */
+function renderSolutionTabs() {
+  const box = document.getElementById('solutionTabs');
+  const tabs = document.getElementById('solutionTabList');
+  if (!box || !tabs) return;
+  tabs.textContent = '';
+  const rows = solutionRows || [];
+  box.hidden = rows.length < 2 || solutionPreviewMode;
+  if (box.hidden) return;
+  rows.forEach((r, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'solution-close-btn solution-list-set solution-tab';
+    b.setAttribute('role', 'tab');
+    b.dataset.id = String(r.id);
+    const by = r.author ? '@' + String(r.author).replace(/^@/, '') : '';
+    b.textContent = i === 0 ? 'Default' : by ? 'By ' + by : `Solution ${i + 1}`;
+    b.title = by ? `Solution by ${by}` : '';
+    b.onclick = () => showSolutionTab(r.id);
+    tabs.appendChild(b);
+  });
+}
+
+// Marks the tab of the solution on screen.
+function markSolutionTab(id) {
+  document.querySelectorAll('#solutionTabs .solution-tab').forEach((b) => {
+    const on = b.dataset.id === String(id);
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+}
+
+// Left/Right (and Home/End) move between the tabs, as in any tab list.
+document.addEventListener('keydown', (e) => {
+  const tab = e.target && e.target.closest && e.target.closest('#solutionTabs .solution-tab');
+  if (!tab) return;
+  const all = [...document.querySelectorAll('#solutionTabs .solution-tab')];
+  const i = all.indexOf(tab);
+  const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: all.length - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  const next = all[(to + all.length) % all.length];
+  next.focus();
+  next.click();
+});
+
+function showSolutionTab(id) {
+  if (!solutionRows || !solutionCurrent || solutionPreviewMode) return;
+  const row = solutionRows.find((r) => r.id === id);
+  const screen = solutionScreenEl();
+  if (!row || !screen || solutionShownId === id) return;
+  const token = ++solutionOpenToken;
+  const stale = () => token !== solutionOpenToken || !solutionOpen;
+  // Held at its height while the new one is built, so the page doesn't
+  // jump up and back down under the student's finger.
+  const wrap = screen.querySelector('.solution-wrap');
+  if (wrap) wrap.style.minHeight = wrap.offsetHeight + 'px';
+  screen.classList.add('sol-body-pending');
+  releaseSolutionContent();
+  blankSolutionContent();
+  const p = getQuizProblem(solutionCurrent.quizNum, solutionCurrent.problemId);
+  paintSolutionRow(row, p, Promise.resolve(), stale, () => {
+    if (token !== solutionOpenToken) return;
+    screen.classList.remove('sol-body-pending');
+    if (wrap) wrap.style.minHeight = '';
+  });
+}
+
+// Builds the figure, solution and credit of `row` (one of solutionRows),
+// then reveals them once everything is typeset (with `ready`, what else
+// has to be ready first). stale/reveal: as in openSolution.
+async function paintSolutionRow(row, p, ready, stale, reveal) {
+  const body = document.getElementById('solutionBody');
+  const credit = document.getElementById('solutionCredit');
+  const loading = document.getElementById('solutionLoading');
+  solutionShownId = row.id ?? null;
+  solutionCurrent.solutionId = solutionRows && row !== solutionRows[0] ? row.id : null;
+  markSolutionTab(row.id);
 
   let capMath = Promise.resolve();
 
@@ -760,26 +914,12 @@ async function openSolution(quizNum, problemId, previewRow) {
       })
     : null;
 
-  await solutionSettled(Promise.all([probReady, bodyMath, capMath, staleCheck]));
+  await solutionSettled(Promise.all([ready, bodyMath, capMath, staleCheck]));
   if (stale()) return;
   loading.hidden = true;
   reveal();
   // Only now, so its first step change is seen.
   if (solutionViewer) startSolutionAutoplay();
-
-  // Editor Full preview: the overlay keeps this page invisible until now,
-  // so none of the start-up screens flicker past; two frames for the
-  // layout to settle.
-  if (solutionPreviewMode) {
-    requestAnimationFrame(() => requestAnimationFrame(() => { if (!stale()) notifyPreviewParent('solution-preview-ready'); }));
-  }
-
-  // The published list may not have arrived yet (a shared link opened on a
-  // fresh page load): fill the Previous/Next buttons in once it has.
-  if (!solutionsIndex && !solutionPreviewMode) {
-    await loadSolutionsIndex();
-    if (!stale()) renderSolutionPager(quizNum, problemId);
-  }
 }
 
 /** "12 Oct 2026" for a stored timestamp, or '' if there is none. */
@@ -1011,12 +1151,15 @@ function closeSolutionList() {
    preview (its picture, from the editor) and then sends on to
    ?solution=q4_P16, read back by openSolutionFromURL below. A local copy
    of the site has no edge function, so there the link is ?solution=
-   itself. Falls back to the share sheet, then to a prompt the link can be
-   copied from by hand. */
+   itself. A tab other than the default adds its row id: /s/q4_P16~187
+   (~ can't be part of a problem id, so the key stays unambiguous).
+   Falls back to the share sheet, then to a prompt the link can be copied
+   from by hand. */
 let solutionShareTimer = null;
 async function shareSolutionLink() {
   if (!solutionCurrent) return;
-  const key = solutionKeyFor(solutionCurrent.quizNum, solutionCurrent.problemId);
+  const key = solutionKeyFor(solutionCurrent.quizNum, solutionCurrent.problemId)
+    + (solutionCurrent.solutionId ? '~' + solutionCurrent.solutionId : '');
   const base = new URL(window.location.pathname.replace(/[^/]*$/, ''), window.location.origin);
   const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
   const url = local ? new URL('?solution=' + encodeURIComponent(key), base) : new URL('s/' + encodeURIComponent(key), base);
@@ -1065,10 +1208,11 @@ function setSolutionPreviewMode(on) {
   if (close) close.title = close.ariaLabel = on ? 'Close preview' : 'Close';
 }
 
-// A shared link (?solution=q4_P16) opens that solution once the page has
-// loaded, then the parameter is dropped from the address bar so a reload
-// does not reopen it. The problem id is matched ignoring case. Unknown
-// keys, disabled quizzes and problems that no longer exist are ignored.
+// A shared link (?solution=q4_P16, or q4_P16~187 for one of its tabs)
+// opens that solution once the page has loaded, then the parameter is
+// dropped from the address bar so a reload does not reopen it. The problem
+// id is matched ignoring case. Unknown keys, disabled quizzes and problems
+// that no longer exist are ignored; an unknown tab opens the default.
 (function openSolutionFromURL() {
   const params = new URLSearchParams(window.location.search);
   const key = params.get('solution');
@@ -1112,8 +1256,9 @@ function setSolutionPreviewMode(on) {
     return;
   }
 
-  const m = /^q([1-9][0-9]?)_([A-Za-z][A-Za-z0-9_-]{0,30})$/.exec(key);
+  const m = /^q([1-9][0-9]?)_([A-Za-z][A-Za-z0-9_-]{0,30})(?:~([1-9][0-9]{0,14}))?$/.exec(key);
   if (!m) return;
+  const solutionId = m[3] ? +m[3] : null;
   const quizNum = +m[1];
   const quiz = typeof QUIZZES !== 'undefined' ? QUIZZES[quizNum - 1] : null;
   if (!quiz || quiz.enabled === false) return;
@@ -1123,7 +1268,7 @@ function setSolutionPreviewMode(on) {
   const p = getQuizProblem(quizNum, m[2]) ||
     [...(quiz.problems || []), ...(quiz.retired || [])].find((q) => q.id.toLowerCase() === lower);
   if (!p) return;
-  whenLoaded(() => openSolution(quizNum, p.id));
+  whenLoaded(() => openSolution(quizNum, p.id, null, solutionId));
 })();
 
 function safeAuthorLink(raw) {

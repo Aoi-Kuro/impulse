@@ -1513,6 +1513,13 @@
       <div class="problem-text" id="solutionProblemText"></div>
     </div>
 
+    <!-- "Default | By @name | …" when a problem has more than one published
+         solution (renderSolutionTabs in js/solutions.js). -->
+    <div class="solution-versions" id="solutionTabs" hidden>
+      <div class="solution-list-title">Versions</div>
+      <div class="solution-tabs" id="solutionTabList" role="tablist" aria-label="Versions"></div>
+    </div>
+
     <!-- Under the problem, so the problem doesn't move when it goes. -->
     <div class="solution-loading" id="solutionLoading" hidden>Loading…</div>
 

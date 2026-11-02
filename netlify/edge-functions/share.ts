@@ -8,6 +8,11 @@
 // published (migration 012, editor/share-card.js). The same page sends a
 // person on to /?solution=q3_P148i straight away, where the site opens it.
 //
+// A problem can have several solutions (migration 013). The plain link is
+// its default; /s/q3_P148i~187 is the solution with id 187 (one of the
+// tabs), with that solution's own picture, and sends on to
+// ?solution=q3_P148i~187.
+//
 // A crawler never runs the redirect script, so it stays on these tags; a
 // meta refresh is deliberately not used, as some crawlers follow it to the
 // plain site page and preview that instead.
@@ -39,13 +44,15 @@ const esc = (s: string) =>
 
 interface Share { image?: string; title?: string; description?: string }
 
-// The published row's share card, or null. Never throws, and gives up
-// after 3 s: a slow database must not hold a crawler (or a person) up.
-async function shareOf(key: string): Promise<Share | null> {
+// The published row's share card — row `id`, or the problem's default —
+// or null. Never throws, and gives up after 3 s: a slow database must not
+// hold a crawler (or a person) up.
+async function shareOf(key: string, id: string | null): Promise<Share | null> {
   if (!COURSE) return null;
+  const which = id ? `&id=eq.${id}` : "&order=is_default.desc";
   try {
     const res = await fetch(
-      `${COURSE.supabaseUrl}/rest/v1/problem_solutions?select=share&problem_key=eq.${key}&status=eq.published&limit=1`,
+      `${COURSE.supabaseUrl}/rest/v1/problem_solutions?select=share&problem_key=eq.${key}${which}&status=eq.published&limit=1`,
       {
         headers: { apikey: COURSE.publishableKey, Authorization: `Bearer ${COURSE.publishableKey}` },
         signal: AbortSignal.timeout(3000),
@@ -61,12 +68,15 @@ async function shareOf(key: string): Promise<Share | null> {
 
 export default async (request: Request) => {
   const url = new URL(request.url);
-  let key = "";
-  try { key = decodeURIComponent(url.pathname.slice("/s/".length).replace(/\/+$/, "")); } catch { /* bad escape */ }
+  let raw = "";
+  try { raw = decodeURIComponent(url.pathname.slice("/s/".length).replace(/\/+$/, "")); } catch { /* bad escape */ }
+  const m = /^(.*?)(?:~([1-9][0-9]{0,14}))?$/.exec(raw);
+  const key = m ? m[1] : "";
+  const id = m && m[2] ? m[2] : null;
   if (!KEY_RE.test(key)) return Response.redirect(new URL("/", url).href, 302);
 
-  const target = new URL(`/?solution=${encodeURIComponent(key)}`, url).href;
-  const share = await shareOf(key);
+  const target = new URL(`/?solution=${encodeURIComponent(key)}${id ? "~" + id : ""}`, url).href;
+  const share = await shareOf(key, id);
   const title = share?.title || COURSE?.shareTitle || "";
   const description = share?.description || COURSE?.description || "";
   const image = share?.image && COURSE

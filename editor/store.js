@@ -64,19 +64,35 @@ const SolutionStore = (function () {
     try { data = await res.json(); } catch (e) { /* non-JSON error page */ }
 
     if (res.status === 409) {
-      const err = new Error('Someone else saved this problem while you were editing it.');
-      err.conflict = true;
+      // "conflict": saved by someone else since; "exists": you already
+      // have a solution on this problem (row = that one); "stale": a share
+      // card for an older version. Anything else is a refusal worth
+      // reading as is (e.g. "Only a published solution can be the default").
+      const code = data && data.error;
+      const known = { conflict: 'Someone else saved this problem while you were editing it.',
+        exists: 'You already have a solution on this problem.', stale: 'stale',
+        changed: 'The author changed it after you opened it. Read the new version, then decide.' };
+      const err = new Error(known[code] || code || known.conflict);
+      err.conflict = !code || code === 'conflict' || code === 'stale';
+      err.exists = code === 'exists';
+      err.changed = code === 'changed';
       err.current = data && data.row;
       throw err;
     }
     if (res.status === 403) {
-      // Two very different failures share this status, so the server's own
-      // error code decides the message — "access key" vs "admin key" is the
-      // difference between asking for a new key and fixing a secret.
+      // Three very different failures share this status, so the server's
+      // own error code decides the message — "access key" vs "admin key" is
+      // the difference between asking for a new key and fixing a secret, and
+      // anything else is the server refusing this action at your level.
       const code = data && data.error;
       if (code === 'admin_auth_failed') {
         const err = new Error('The admin key was not accepted. Check SOLUTIONS_ADMIN_KEY in the function\'s Secrets — and make sure the deployed solutions-admin is the current version.');
         err.adminAuth = true;
+        throw err;
+      }
+      if (code && code !== 'key_auth_failed') {
+        const err = new Error(code);
+        err.forbidden = true;
         throw err;
       }
       const err = new Error('This access key was not accepted. If it was just issued, check that the deployed solutions-admin is the current version.');
@@ -84,6 +100,13 @@ const SolutionStore = (function () {
       throw err;
     }
     if (res.status === 404) {
+      // The function's own 404s ("That solution no longer exists.") carry a
+      // message; a bare 404 means the function itself isn't there.
+      if (data && data.error) {
+        const err = new Error(data.error);
+        err.gone = true;
+        throw err;
+      }
       const err = new Error('The solutions-admin function is not deployed in this Supabase project yet.');
       err.offline = true;
       throw err;
@@ -99,41 +122,62 @@ const SolutionStore = (function () {
     return data;
   }
 
-  /** Who the stored key belongs to — also how the editor checks the key works. */
+  // Which solution a call is about (see solutions-admin.ts, "Which solution
+  // a call is about"): `id` when the editor knows the row, `new` to create
+  // this editor's own on a problem that has someone else's, otherwise the
+  // bare problem_key (your own, else the default).
+  const which = (problemKey, id, isNew) =>
+    id ? { id } : isNew ? { problem_key: problemKey, new: true } : { problem_key: problemKey };
+
+  let meId = null;   // this key's editor id, from whoami
+
+  /** Who the stored key belongs to — also how the editor checks the key
+      works. level: 0 observer … 4 full (migration 013). */
   async function whoami() {
     const d = await call('whoami');
-    return { name: d.name || null };
+    meId = d.id ?? null;
+    return { id: meId, name: d.name || null, level: Number.isInteger(d.level) ? d.level : 4 };
   }
 
-  /** [{ name, link }] for every active editor. */
+  /** [{ name, link, level? }] for every active editor (level: to full editors only). */
   async function editors() {
     const d = await call('editors');
     return Array.isArray(d.editors) ? d.editors : [];
   }
 
-  /** problem_key -> { status, updated_at, author } for every row, drafts included. */
+  /** { index, rows }: index is problem_key -> the entry the editor works on
+      for that problem (your own, else the default); rows is every
+      solution's entry ({ id, problem_key, status, is_default, owner,
+      author, saved_by, updated_at, share, review }), drafts included. */
   async function index() {
     const d = await call('index');
-    return d.index || {};
+    return { index: d.index || {}, rows: Array.isArray(d.rows) ? d.rows : [] };
   }
 
-  /** One full row, or null. */
-  async function get(problemKey) {
-    const d = await call('get', { problem_key: problemKey });
+  /** One full row (with owner and, where you may see it, review), or null. */
+  async function get(problemKey, id) {
+    const d = await call('get', which(problemKey, id));
     return d.row || null;
+  }
+
+  /** Every solution of one problem, full rows, in tab order. */
+  async function list(problemKey) {
+    const d = await call('list', { problem_key: problemKey });
+    return d.rows || [];
   }
 
   /** Create or replace a row. expectedUpdatedAt guards against the other
       editor having saved in the meantime (the server answers 409).
-      payload.author: who to credit when publishing (default: this key's
-      owner; the server checks it is an active editor).
+      payload.author: who to credit when publishing (honoured for full
+      editors only; the server checks it is an active editor).
       payload.share: when publishing, the link-preview picture drawn from
       this content ({ image, title, description, design }), stored with it.
+      opts: { id } the row, or { isNew } your own new one (see `which`).
       Resolves to the saved row; row.shareError says why the picture was
-      not stored when only that failed. */
-  async function save(problemKey, payload, expectedUpdatedAt) {
-    const d = await call('save', {
-      problem_key: problemKey,
+      not stored when only that failed, row.submitted that it went to
+      review instead of being published. */
+  async function save(problemKey, payload, expectedUpdatedAt, opts) {
+    const d = await call('save', Object.assign(which(problemKey, opts && opts.id, opts && opts.isNew), {
       solution: payload.solution,
       figure: payload.figure,
       status: payload.status,
@@ -141,30 +185,37 @@ const SolutionStore = (function () {
       expected_updated_at: expectedUpdatedAt || null,
       author: payload.author || null,
       share: payload.share || null,
-    });
+    }));
     if (d.share_error) d.row.shareError = d.share_error;
+    if (d.submitted) d.row.submitted = true;
     return d.row;
   }
 
   /** Changes only who is credited on an existing row (never its content).
       Rejects with err.conflict (and err.current) when the row changed after
       expectedUpdatedAt. */
-  async function setCredit(problemKey, author, expectedUpdatedAt) {
-    const d = await call('set-credit', {
-      problem_key: problemKey,
+  async function setCredit(problemKey, author, expectedUpdatedAt, id) {
+    const d = await call('set-credit', Object.assign(which(problemKey, id), {
       author: author || null,
       expected_updated_at: expectedUpdatedAt || null,
-    });
+    }));
     return d.row;
+  }
+
+  /** Makes a published solution its problem's default; resolves to the
+      problem's rows in their new order. */
+  async function setDefault(id) {
+    const d = await call('set-default', { id });
+    return d.rows || [];
   }
 
   /** Stores the link-preview picture of a published solution.
       card: { image (JPEG data: URL), title, description, for (the row's
       updated_at it was drawn from), design }. Rejects with err.stale when
       the row was saved again or unpublished meanwhile. */
-  async function shareCard(problemKey, card) {
+  async function shareCard(problemKey, card, id) {
     try {
-      const d = await call('share-card', Object.assign({ problem_key: problemKey }, card));
+      const d = await call('share-card', Object.assign(which(problemKey, id), card));
       return d.share;
     } catch (e) {
       // 409 here means the row moved on, not that a save was refused.
@@ -174,25 +225,57 @@ const SolutionStore = (function () {
   }
 
   /** Delete the row entirely. */
-  async function remove(problemKey) {
-    await call('delete', { problem_key: problemKey });
+  async function remove(problemKey, id) {
+    await call('delete', which(problemKey, id));
     return true;
   }
 
-  /** Every row, for the JSON backup button. */
-  async function exportAll() {
+  /** The review queue (reviewers): [{ id, problem_key, owner, status, review }]. */
+  async function reviews() {
+    const d = await call('reviews');
+    return d.reviews || [];
+  }
+  // seen: { submitted_at, updated_at } of the review and row the reviewer
+  // read; the server refuses (err.changed) if the author moved on since.
+  const seenOf = (seen) => ({
+    submitted_at: (seen && seen.submitted_at) || null,
+    expected_updated_at: (seen && seen.updated_at) || null,
+  });
+  async function approve(id, seen) { return (await call('review-approve', Object.assign({ id }, seenOf(seen)))).row; }
+  async function reject(id, note, seen) { return (await call('review-reject', Object.assign({ id, note: note || null }, seenOf(seen)))).row; }
+
+  /** Every solution, as stored, for the JSON backup button (and reviews,
+      for full editors). */
+  async function exportRows() {
     const d = await call('export');
+    return { rows: d.rows || [], reviews: d.reviews };
+  }
+
+  /** problem_key -> the row the editor works on for that problem (your
+      own, else the default, else the newest), for Check all. */
+  async function exportAll() {
+    const { rows } = await exportRows();
     const out = {};
-    (d.rows || []).forEach((r) => { out[r.problem_key] = r; });
+    const rank = (r) => (r.owner_id === meId ? 2 : r.is_default ? 1 : 0);
+    rows.forEach((r) => {
+      const had = out[r.problem_key];
+      if (!had || rank(r) > rank(had) || (rank(r) === rank(had) && Date.parse(r.updated_at) > Date.parse(had.updated_at))) {
+        out[r.problem_key] = r;
+      }
+    });
     return out;
   }
 
   /** Issues a new editor key. Needs the admin key, which only the site
-      owner has; the generated key is returned once and never again. */
-  async function createEditor(adminKey, name) {
-    const d = await call('create-editor', { name, admin_key: adminKey });
-    return { name: d.name, key: d.key };
+      owner has; the generated key is returned once and never again.
+      level: 0-4, default 0 (observer). */
+  async function createEditor(adminKey, name, level) {
+    const d = await call('create-editor', Object.assign({ name, admin_key: adminKey }, Number.isInteger(level) ? { level } : {}));
+    return { name: d.name, key: d.key, level: d.level };
   }
 
-  return { whoami, editors, index, get, save, setCredit, shareCard, remove, exportAll, createEditor, isMock: false };
+  return {
+    whoami, editors, index, get, list, save, setCredit, setDefault, shareCard, remove,
+    reviews, approve, reject, exportRows, exportAll, createEditor, isMock: false,
+  };
 })();

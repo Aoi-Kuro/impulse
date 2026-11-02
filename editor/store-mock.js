@@ -31,19 +31,28 @@ const SolutionStore = (function () {
   /** Who the stored key belongs to. The real version asks the server, which
       looks the key's hash up in the editors table and returns that name. */
   async function whoami() {
-    return wait({ name: null });          // null -> the UI just says "editor"
+    // null -> the UI just says "editor"; full access, as there is no one
+    // else here to protect anything from.
+    return wait({ id: null, name: null, level: 4 });
   }
 
   /** Every problem_key that has a row, with its status — one call at load,
-      so the list can show what is published without fetching every row. */
+      so the list can show what is published without fetching every row.
+      One solution per problem here, so `rows` is the same entries again. */
   async function index() {
     const all = read();
     const out = {};
     Object.keys(all).forEach((k) => {
       const s = all[k].share;
-      out[k] = { status: all[k].status, updated_at: all[k].updated_at, share: s ? { for: s.for, design: s.design } : null };
+      out[k] = { problem_key: k, status: all[k].status, is_default: all[k].status === 'published',
+        updated_at: all[k].updated_at, share: s ? { for: s.for, design: s.design } : null };
     });
-    return wait(out);
+    return wait({ index: out, rows: Object.values(out) });
+  }
+
+  async function list(problemKey) {
+    const row = read()[problemKey];
+    return wait(row ? [row] : []);
   }
 
   /** One full row, or null when nothing is stored for this problem. */
@@ -126,12 +135,18 @@ const SolutionStore = (function () {
     return wait(true);
   }
 
-  /** Everything, for the JSON backup button. */
+  /** Everything, for the JSON backup button and Check all. */
   async function exportAll() { return wait(read()); }
+  async function exportRows() { return wait({ rows: Object.values(read()) }); }
 
   async function editors() { return wait([]); }
 
-  async function createEditor() { throw new Error('Not available without the database.'); }
+  // Several solutions per problem and reviews need the database.
+  const unavailable = async () => { throw new Error('Not available without the database.'); };
 
-  return { whoami, editors, index, get, save, setCredit, shareCard, remove, exportAll, createEditor, isMock: true };
+  return {
+    whoami, editors, index, get, list, save, setCredit, setDefault: unavailable, shareCard, remove,
+    reviews: async () => wait([]), approve: unavailable, reject: unavailable,
+    exportRows, exportAll, createEditor: unavailable, isMock: true,
+  };
 })();

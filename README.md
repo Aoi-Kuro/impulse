@@ -49,10 +49,13 @@ The procedure is described in [Deploying a new course](#deploying-a-new-course).
   - [Smaller modules](#smaller-modules)
 - [Solutions editor (`/editor`)](#solutions-editor-editor)
   - [Access](#access)
+  - [Access levels](#access-levels)
   - [Layout](#layout)
   - [Figures (TikZ)](#figures-tikz)
   - [Figures (SVG)](#figures-svg)
   - [Solution text](#solution-text)
+  - [Several solutions per problem (versions)](#several-solutions-per-problem-versions)
+  - [Reviews](#reviews)
   - [Saving, publishing and conflicts](#saving-publishing-and-conflicts)
   - [Link previews](#link-previews)
   - [Drafts and local history](#drafts-and-local-history)
@@ -767,15 +770,17 @@ resolves the device to its claimed identity.
   fingerprint). It runs on Stats open, after recording or deleting an
   attempt, on a Realtime Broadcast ping on `attempts:<identity_id>`
   (migration 003), when the network comes back, on a fallback timer every 45 s
-  (`poll.attempts`) while the tab is visible, and on return to the tab only
-  when the last sync is older than that interval. Hashes being deleted are
+  (`poll.attempts`) while the tab is visible, every 5 min instead
+  (`poll.attempts_live`) while its Realtime channel is connected, and on
+  return to the tab only when the last sync is older than 45 s. Hashes being deleted are
   excluded from merges until the delete completes.
 - **Solve-All** (`js/solve-all-sync.js` ↔ `sync-solve-all`): progress is a
   mutable per-problem map, so merges are a **union** that keeps the "more
   resolved" status per problem (correct > revealed > partial/wrong). It syncs
   when a session opens, on a ping on
   `solveall:<identity_id>:<quiz>_<s|c>` (migrations 004/005), on a fallback
-  every 60 s (`poll.solve_all`), on return to the tab after longer than that,
+  every 60 s (`poll.solve_all`; 5 min, `poll.solve_all_live`, while its
+  Realtime channel is connected), on return to the tab after longer than 60 s,
   and on exit. Pings carry the pushing device's id so a device
   ignores its own echo, and unchanged snapshots are not re-pushed — together
   these stop two open devices from ping-ponging. A reset writes a tombstone
@@ -881,7 +886,13 @@ thread on tap.
 - Reading needs **no Edge Function**: migration 008's RLS policy allows anon
   SELECT on `problem_solutions` rows with `status = 'published'`, so drafts are
   unreachable rather than merely hidden.
-- An **index** of published keys (`problem_key`, `updated_at`) is kept in
+- A problem can have **several published solutions**, one per author
+  (migration 013). The default opens first; when there is more than one, a
+  **Versions** box under the problem (styled like the Solution list) offers
+  `Default | By @name | …`, and a tab swaps the figure, text and credit in
+  place without a request (Left/Right/Home/End move between tabs). Tab order
+  is the default, then oldest first (`is_default.desc,created_at.asc,id.asc`).
+- An **index** of published solutions (`id`, `problem_key`, `updated_at`) is kept in
   localStorage (`<prefix>-solutions-index`) and shared by every tab: it is
   reused while under 30 minutes old (`poll.solutions`), and only then fetched
   again, by whichever tab needs it first. A visible tab looks at that copy on
@@ -889,9 +900,12 @@ thread on tap.
   solution published or unpublished in the editor can therefore take up to
   30 minutes to gain or lose its button in an open tab; an unpublished one
   still can't be read meanwhile, because a full row is only ever fetched with
-  `status=published`. A full row is fetched the first time a solution is
-  opened and kept in memory until the index shows it was unpublished or saved
-  again. While offline mode runs, both come from the offline download.
+  `status=published`. All of a problem's published rows are fetched the
+  first time it is opened (one request) and kept in memory, and in Cache
+  Storage (`flux-solution-rows-v2`) across loads, until the index shows one
+  of them was unpublished, saved again, or joined by another (compared as
+  one stamp of every `id@updated_at`). While offline mode runs, both come
+  from the offline download.
 - **"📘 See solution"** is shown but disabled in Random N until the score is
   revealed (so a solution cannot replace the attempt), and only on problems
   with a published solution; usable from the start in Solve-All, and on every
@@ -916,11 +930,16 @@ thread on tap.
   (`figCropToContent`, one shared box for all steps) and scaled by
   `figure.scale`. `vendor/tikzjax/fonts.css` is loaded on the site because the
   SVG glyphs use Computer Modern private-use codepoints.
-- **🔗 Share** copies `https://<site>/s/<problem_key>`. That link is answered
+- **🔗 Share** copies `https://<site>/s/<problem_key>` on the default tab,
+  and `/s/<problem_key>~<id>` on any other (`~` can't be part of a problem
+  id, so the key stays unambiguous); the plain link always opens the
+  problem's current default, a `~id` link that solution (or the default, if
+  it is gone). That link is answered
   by the Netlify Edge Function `netlify/edge-functions/share.ts` with a tiny
   page holding the solution's own preview tags (title, description and the
-  picture the editor drew, see [Link previews](#link-previews)) and a script
-  that sends people on to `/?solution=<key>`; crawlers don't run it, so they
+  picture the editor drew for that solution, see [Link previews](#link-previews);
+  the plain link takes the default's) and a script
+  that sends people on to `/?solution=<key>[~<id>]`; crawlers don't run it, so they
   keep the tags. No meta refresh, which some crawlers would follow to the
   plain site. Without a picture (or when unpublished) the site's own preview
   is used. Netlify's CDN keeps each link's page for 5 minutes. A visitor who
@@ -1372,7 +1391,7 @@ check.
 | Key | Effect | Default |
 |---|---|---|
 | `min_version` | Tabs on an older version reload as soon as they're outside a timed quiz (a timed quiz once it has run 3 h), instead of after 48 h. Must not be above `version`. | no minimum |
-| `poll` | Background intervals in seconds, each clamped to its limits: `attempts` 45 (15–3600), `solve_all` 60 (15–3600), `settings` 900 (60–86400), `stats` 45 (15–3600), `forum` 90 (15–3600), `forum_quiet` 900 (60–21600), `solutions` 1800 (60–86400, how long one solutions index fetch is reused), `update` 300 (60–1800). Zero or a negative value is ignored (default), not clamped to the fastest rate. A changed value takes effect at once. A timer tick is skipped when the same work already ran less than an interval ago (tab return, Realtime ping), so a catch-up isn't repeated seconds later. | values shown |
+| `poll` | Background intervals in seconds, each clamped to its limits: `attempts` 45 (15–3600), `attempts_live` 300 (45–3600, used instead of `attempts` while that Realtime channel is connected), `solve_all` 60 (15–3600), `solve_all_live` 300 (60–3600, likewise), `settings` 900 (60–86400), `stats` 45 (15–3600), `forum` 90 (15–3600), `forum_quiet` 900 (60–21600), `solutions` 1800 (60–86400, how long one solutions index fetch is reused), `update` 300 (60–1800). Zero or a negative value is ignored (default), not clamped to the fastest rate. A changed value takes effect at once. A timer tick is skipped when the same work already ran less than an interval ago (tab return, Realtime ping), so a catch-up isn't repeated seconds later. | values shown |
 | `off` | `realtime`: no Realtime connections; everything runs on its `poll` interval. `forum_posting`: the forum is read-only (no new messages, replies or edits). | nothing off |
 | `sync_paused` | `true`: attempts, Solve-All progress and settings stay in each browser and are neither sent nor fetched; deleting an attempt and resetting Solve-All still go through. Removing it syncs every visible tab at once. | `false` |
 | `purge_id` | Each browser refills its offline cache once per new value (`sw.js` refills at most once an hour, so a fresh install skips it). | none |
@@ -1499,21 +1518,49 @@ banks live from the same origin, so it always matches the deployed course.
   rejection. Keys are per course project.
 - The page carries `noindex, nofollow`.
 
+### Access levels
+
+Each key has a level (`solution_editors.level`, migration 013), shown in the
+top bar after the two version numbers (`13.3.0 · 1.0.1 · L4`).
+`solutions-admin` enforces every rule; the editor only offers what will be
+accepted.
+
+| Level | Name | Can |
+|---|---|---|
+| 0 | Observer | Read everything, drafts included. |
+| 1 | Proposer | Write their own solutions; publishing one, and every later edit to a published one, waits for a reviewer. |
+| 2 | Author | Publish their own solutions directly. |
+| 3 | Reviewer | 2, plus edit anyone's content (its status stays) and approve or reject level-1 submissions. |
+| 4 | Full | 3, plus publish, unpublish and delete anyone's, change credit, choose the default. |
+
+At every level, 0 included, an editor may **delete their own** solutions.
+"Own" is `owner_id` (who created it), never the credit. Lowering someone to
+0 stops their writing while keeping that right; revoking a key ends both.
+Fields of a version the editor can't change are read-only (text can still be
+selected and copied), and the editor's own text tools (snippets, Tab, Enter,
+paste, the SVG window) refuse to write there too.
+
 ### Layout
 
 - **Top bar**: logo (back to the site), sidebar toggle, title, `@editor-name`
   (sign-out) with the site identicon of the nickname signed in on the main
-  site in the same browser, the site version label, themes and day/night.
+  site in the same browser, the version label (`site · editor · L<level>`),
+  themes and day/night.
 - **Sidebar**: quizzes as collapsible groups of problems (retired ones
-  included), each marked with its state; a filter for "problems with work";
-  *Check all* and *Editors* at the bottom.
+  included), each marked with its state; **Mine** (count only your own
+  solutions) and a filter for "problems with work"; *Check all*, *Editors*
+  and, for reviewers, *Reviews (N)* at the bottom.
 - **Problem bar**: problem key, state pill (opens the state panel), *Hide
   figure*, and *Problem* (shows the problem text and accepted answer).
-- **State panel**: current state, sync state, last saved, author, "problem
-  changed since" (one per line), and the actions *Publish*, *Save draft*,
-  *Unpublish*, *Load from database…*, *Clear this problem…*, *History…*,
-  *Check state* (reads the row again and updates the panel and the sidebar
-  dot without touching the fields), *Export all as JSON*.
+- **Versions strip** (under the problem bar, when there is a choice): every
+  solution of the problem, ★ on the default, and *+ My version*.
+- **State panel**: current state, sync state, last saved, author, review
+  (when there is one), "problem changed since" (one per line), and the
+  actions *Publish*, *Save draft*, *Unpublish*, *Make default*, *Approve*,
+  *Reject…*, *Load submitted edit*, *Load from database…*, *Clear this
+  problem…*, *History…*, *Check state* (reads the row again and updates the
+  panel and the sidebar dot without touching the fields), *Export all as
+  JSON*. Buttons the key's level can't use are off or hidden.
 - **Split view**: inputs on the left (TikZ or SVG, captions, solution), previews on
   the right (figure with step viewer, solution). The divider is draggable,
   keyboard-resizable and resets on double-click; the layout stacks vertically
@@ -1658,11 +1705,55 @@ untouched. Commands, environment names, options, numbers, math regions and
 `data-step(s)` attributes picked out) get theme colours softened toward the text colour (`.ed-hl` in
 `editor/editor.css`); only colour changes, never width.
 
+### Several solutions per problem (versions)
+
+- Each editor has at most one solution per problem; the site shows them as
+  tabs (see [Worked solutions](#worked-solutions-site-side)). Exactly one
+  published solution per problem is the **default**, kept by migration 013's
+  triggers whatever writes the row: the first one published becomes it, *Make
+  default* (level 4) moves it, and unpublishing or deleting it promotes the
+  oldest remaining published one.
+- The **Versions strip** lists them (`You`, `@name`, `★` = default, `· draft`,
+  `· in review`). A problem opens on your own version, else the default.
+  *+ My version* (shown while you have none there) opens an empty window of
+  your own; publishing it adds a tab, never the default.
+- **Switching tabs loses nothing and asks nothing**: unsaved changes are
+  set aside for the version they belong to and come back when you switch to
+  it (`•` on a tab = changes kept). Which version each window holds and the
+  kept changes are stored in `<prefix>-editor-versions`, so a reload opens the
+  same version with its own text. Rows already read are reused, so switching
+  back is instant.
+- **Mine** (sidebar, `<prefix>-editor-mine-only`): the dots, the filter and
+  Alt+N count only your own solutions, so a problem with only someone else's
+  counts as open work. Off, a dot stands for the version you work on there.
+
+### Reviews
+
+- A level-1 editor's **Submit for review** saves the row with status
+  `review` (invisible to readers). Their edit to an already published
+  solution leaves the row as it is; the edit waits in `solution_reviews` and
+  readers keep the published version until it is approved.
+- Reviewers (level 3+) see *Reviews (N)* in the sidebar and, on the
+  solution, the review line with *Approve*, *Reject…* (a note for the author,
+  typed in the state panel; Ctrl+Enter rejects) and *Load submitted edit*
+  (puts a pending edit into the window to read).
+- A decision is about what the reviewer read: if the author resubmitted or
+  saved since, nothing is decided and the new version is shown. Nobody below
+  level 4 decides on their own submission. Approving draws the solution's
+  link preview (level-1 authors can't set one themselves).
+- The author sees the outcome on their solution ("rejected by @name: …").
+  A rejection keeps the note until they resubmit.
+
 ### Saving, publishing and conflicts
 
-- A row is either a **draft** (visible only in the editor) or **published**
-  (visible on the site). *Unpublish* returns it to draft; *Clear this
-  problem…* deletes the row.
+- A row is a **draft** (visible only in the editor), **in review** (level-1
+  submissions, also editor-only) or **published** (visible on the site).
+  *Unpublish* returns it to draft.
+- **Clear this problem…** asks whose solution to delete, from any tab:
+  *Delete mine*, and for level 4 one button per other version. A deleted
+  solution goes with its link preview, its pending review and the changes
+  kept for it in this browser; the window then opens what is left. With
+  nothing stored that you may delete, it only empties an unsaved window.
 - Every save stores `problem_hash` (SHA-256 of text, answer and units, first 32
   hex chars — `problemHashOf` in the editor and `solutionProblemHash` on the
   site must stay identical).
@@ -1688,7 +1779,8 @@ untouched. Commands, environment names, options, numbers, math regions and
   `\begin`/`\end`, captions without a figure step, partially captioned steps,
   and a problem changed since the last save. Publishing is refused while a
   figure is still compiling.
-- **Credit**: every publish asks "Who wrote this solution?" — the signed-in
+- **Credit** (level 4 only; everyone else's solutions are credited to them
+  and keep that credit): every publish asks "Who wrote this solution?" — the signed-in
   editor is preselected (Enter publishes), the row's current credit comes
   next ("latest publish"), then every other active editor; Esc cancels. The
   chosen editor becomes `author` (shown on the site as "Solution by @name",
@@ -1698,7 +1790,10 @@ untouched. Commands, environment names, options, numbers, math regions and
   to @name" when the two differ). While the published version matches the
   window, the Publish button reads *Change credit…*: the same question, then
   the `set-credit` action, which changes only `author`/`author_link` (never
-  the content) and is refused if the row changed since it was loaded.
+  the content) and is refused if the row changed since it was loaded. The
+  credit is stored as the editor's id (`author_id`, migration 014), so
+  renaming an editor in `solution_editors` carries over to all their
+  solutions.
 - **Ctrl+S** re-publishes a published solution, or saves anything else as a
   draft, asking first in the cases above (a toast points to the state panel).
 
@@ -1716,17 +1811,29 @@ down from 44 to 32 px to fit, is capped at 680 visible characters (the
 longest problem today is ~650), and is trimmed word by word if it still
 overflows, so it never runs off the card. Figure fills (c3/c4) are the page
 colour and the background bubbles keep to the edges, so they never show as
-boxes.
+boxes. A solution that isn't its problem's default also shows **"Solution by
+@name"** under the brand (its credited author), and its title becomes `Q3
+P143 · Solution by @name | Impulse`; the default names nobody.
 
 - **When:** as part of publishing. The picture is drawn from the content
   being published first ("Publishing… drawing the link preview"), then sent
   in the same `save` request, which stores both together. If only the
   picture fails, the solution is still published and the message says so.
-  *Rebuild figures* redraws the picture of each published one it re-saves;
-  *Change credit* keeps it (the card doesn't show the credit). *Check all*
-  lists published solutions whose picture is missing, drawn from an older
-  version, or from an older design (`ShareCard.DESIGN`; bump it after
-  changing the card's look) with **Make N link previews**.
+  *Rebuild figures* redraws the picture of each published one it re-saves.
+  A level-1 submission draws none; the reviewer's editor draws it on
+  approval.
+- **The name follows the default:** each card stores whose name it shows
+  (`share.by`, null on a default). When the default moves (*Make default*,
+  or an unpublish or delete promoting another) or an alternative's credit
+  changes, the affected cards are redrawn straight away; a card that still
+  shows the wrong name counts as out of date.
+- **Check all** lists published solutions whose picture is missing, drawn
+  from an older version, from an older design (`ShareCard.DESIGN`; bump it
+  after changing the card's look), or showing the wrong name, with **Make N
+  link previews**. Reviewers and full editors get every version listed;
+  others only the solutions they may redraw. Cards are drawn one at a time
+  (MathJax, in the page) while the next row is read ahead and finished cards
+  upload in the background, three at once.
 - **Switching problems while saving:** everything a save or publish needs is
   taken when it starts, so opening another problem never changes or stops
   it. Its buttons stay off until it finishes; the result shows in the state
@@ -1737,8 +1844,9 @@ boxes.
   library can't read that cross-origin stylesheet; MathJax and TikZ fonts it
   embeds itself.
 - **Stored** by `solutions-admin`'s `share-card` action (migration 012): the
-  JPEG in the public `share-cards` bucket under a new name each time (the old
-  one is deleted), and `{ image, title, description, for, design }` in
+  JPEG in the public `share-cards` bucket under a new name each time
+  (`<problem_key>-<id>-<ms>.jpg`; the old one is deleted), and
+  `{ image, title, description, for, design, by }` in
   `problem_solutions.share` (`for` = the `updated_at` it was drawn for). With
   a publish it is written with the row; `share-card` writes it only if the row
   is still that published version, never touching `updated_at`. Title: `Q3 P143 · Solution | Impulse`;
@@ -1777,20 +1885,23 @@ boxes.
   captions would land on the wrong steps), and everything once the editor
   window is outdated. Rebuilds compile step by step behind the live preview,
   and Check all is disabled while one runs. Check all also refreshes the
-  index, showing work published by another editor meanwhile. It only runs
-  when clicked.
+  index, showing work published by another editor meanwhile. Each line
+  opens that problem (on that version, for someone else's link preview). It
+  only runs when clicked.
 - **Full preview**: shows the solution as currently written (saved or not)
   on the site's real Solution screen, in an overlay over the editor. The
   site page (`/?solutionPreview=1`) gets the solution from the editor by
   `postMessage`; nothing is stored.
 - **Editors**: active editors and their links.
-- **Export all as JSON**: every row, as a backup file.
+- **Export all as JSON**: `{ rows, reviews? }`, every solution of every
+  problem (reviews with their content for level 4), as a backup file.
 - **Keyboard**: Alt+↑ / Alt+↓ previous/next problem (respecting the filter),
-  Alt+N next problem with no work.
-- **Version label**: shows both numbers of `site-version.json` at load
-  ("site v12.4.5 · editor v1.0.0"); when either moves on, that part turns red
-  ("outdated") and a tap reloads after purging the service-worker cache
-  (drafts are kept).
+  Alt+N next problem with no work (with *Mine* on: none of yours).
+- **Version label**: both numbers of `site-version.json` at load, then the
+  key's access level once the server has confirmed it (`13.3.0 · 1.0.1 ·
+  L4`; the tooltip spells them out). When either number moves on, that part
+  turns red ("(outdated)!") and a tap reloads after purging the
+  service-worker cache (drafts are kept).
 - **Manual** (📖 in the top bar, also reachable at the key gate): the
   practice site's manual layout (`css/manual.css`) with editor-only content
   from `editor/manual.json`. Its live examples run on the editor's own
@@ -1817,11 +1928,18 @@ curl -X POST "https://<project>.supabase.co/functions/v1/solutions-admin" \
 
 | Action | Body | Effect |
 |---|---|---|
-| `create-editor` | `name`, `link?` | Returns a new 32-hex key **once**; only its salted, peppered hash is stored. |
-| `set-editor-link` | `name`, `link` (`""`/`null` clears) | Sets the http(s) link behind "Solution by @name"; a trigger (migration 009) updates `author_link` on that editor's existing rows. |
-| `revoke-editor` | `name` | The key stops working immediately; the row is kept so past solutions keep their author. |
+| `create-editor` | `name`, `link?`, `level?` (0–4, default 0) | Returns a new 32-hex key **once**; only its salted, peppered hash is stored. |
+| `set-editor-level` | `name`, `level` | Changes an active editor's [access level](#access-levels). |
+| `set-editor-link` | `name`, `link` (`""`/`null` clears) | Sets the http(s) link behind "Solution by @name"; a trigger (migrations 009/014) updates `author_link` on that editor's existing rows. |
+| `revoke-editor` | `name` | The key stops working immediately, including for deleting their own solutions; the row is kept so past solutions keep their author. |
 
 A lost key cannot be recovered: the editor is revoked and a new one created.
+
+The same can be done in Supabase's Table Editor (`solution_editors`): edit
+`level` (0–4; anything else is refused), set `revoked_at` to now to revoke,
+or edit `name` to rename (their solutions follow, migration 014). Never edit
+`key_hash` or `key_salt`. After a rename, *Check all* redraws the link
+previews that showed the old name.
 
 ---
 
@@ -1847,6 +1965,8 @@ never meant to be run.
 | `010_solution_credit.sql` | `problem_solutions.saved_by` (who saved last), so `author` can be the credited editor. Run before deploying the `solutions-admin` that writes it. |
 | `011_settings_sync.sql` | `settings_sync` (one row per identity, RLS on, no policies), `merge_settings_sync()` (per-setting merge, bumps `rev` only on a real change) and the trigger pinging `settings:<identity_id>` with `{rev, device_id}`. Run before deploying `sync-settings`. |
 | `012_share_cards.sql` | `problem_solutions.share` (the link-preview picture's name, title, description and what it was drawn from) and the public `share-cards` storage bucket (JPEG only, 2 MB). Run before deploying the `solutions-admin` that writes it. |
+| `013_solution_levels_and_alternatives.sql` | `solution_editors.level` (0 observer … 4 full; existing editors set to 4), several solutions per problem (`problem_solutions.id` primary key, `owner_id`, `created_at`, `is_default`; one per author per problem), the triggers that keep exactly one default per problem, status `review`, and `solution_reviews` (pending edits and review notes; no policies). Deploy together with the `solutions-admin` that uses it. |
+| `014_solution_author_id.sql` | `problem_solutions.author_id`: the credit as an editor id (`author`/`author_link` stay as a copy of that editor's name and link). The 009 trigger now matches by id, so renaming an editor carries over to their solutions (and to `saved_by`); a trigger re-links `author_id` when `author` is changed without it. Run before deploying the `solutions-admin` that writes it. |
 
 **Tables**
 
@@ -1864,8 +1984,9 @@ never meant to be run.
 | `device_secrets` | Salted + peppered hash of each device's secret. No policies. |
 | `app_variables` | Small cross-invocation state. No policies. |
 | `gemini_debug_log` | One row per notable step of an `@gemini` attempt, for diagnosing silent failures. No policies. |
-| `problem_solutions` | `problem_key`, `solution`, `figure` (`{ tikz, steps: [{ svg, caption }], scale }`, plus `kind`/`svgSrc`/`svgBox` for SVG figures), `status`, `author` (credited editor), `author_link`, `saved_by` (who saved last), `problem_hash`, `updated_at`. |
-| `solution_editors` | Editor name, key hash/salt, link, `revoked_at`. No policies. |
+| `problem_solutions` | `problem_key`, `solution`, `figure` (`{ tikz, steps: [{ svg, caption }], scale }`, plus `kind`/`svgSrc`/`svgBox` for SVG figures), `status`, `author` (credited editor's name, a copy), `author_id` (the credit, by id), `author_link`, `saved_by` (who saved last), `problem_hash`, `updated_at`, `id`, `owner_id` (who created it; "own" means this), `created_at`, `is_default` (one per problem). `status` is `draft`, `review` or `published`. |
+| `solution_editors` | Editor name, key hash/salt, link, `level` (0–4), `revoked_at`. No policies. |
+| `solution_reviews` | One open review per solution: a proposed edit to a published row (or none, for a new submission), its state and review note. No policies. |
 
 **RPCs**: `get_author_stats(p_author_name)`, `get_unique_participants_count()`,
 `get_stats_panel(p_device_id)`, `get_total_quiz_attempts()`,
@@ -1898,7 +2019,7 @@ stand between the public key and the database. Request bodies carry
 | `sync-solve-all.ts` | Pull, push or reset (tombstone) Solve-All progress. |
 | `sync-settings.ts` | Push changed settings and get back the merged set in one call; with no changes and a matching `known_rev` it answers `unchanged`. Clamps future timestamps to server time and returns `server_now` for the client's clock offset. |
 | `save-push-subscription.ts` | Register/remove a Web Push subscription. |
-| `solutions-admin.ts` | Everything the editor needs: `whoami`, `editors`, `index`, `get`, `save` (with 409 conflict check), `share-card` (stores a link-preview JPEG, 409 if the row moved on), `delete` (also removes the picture), `export`; and, with the admin key, `create-editor`, `set-editor-link`, `revoke-editor`. Validates sizes (solution ≤ 60 000 chars, ≤ 12 steps, SVG ≤ 400 000 chars per step, TikZ ≤ 20 000, caption ≤ 500) and rejects SVG containing `<script>`, `<foreignObject>`, `<iframe>`, `<object>`, `<embed>`, `on…=` handlers, `javascript:`, `data:text/html` or `<!ENTITY` before storing; DOMPurify in the browser remains the real defence. |
+| `solutions-admin.ts` | Everything the editor needs, checked against the key's [access level](#access-levels): `whoami` (with level), `editors`, `index`, `get`, `list` (a problem's versions), `save` (by `id`, `new` for your own version, or a bare `problem_key`; 409 conflict check written atomically), `set-credit`, `set-default`, `share-card` (stores a link-preview JPEG and whose name it shows, 409 if the row moved on), `delete` (also removes the picture and review), `reviews`, `review-approve`, `review-reject` (both refused with 409 `changed` if the author moved on since the reviewer read it), `export`; and, with the admin key, `create-editor`, `set-editor-level`, `set-editor-link`, `revoke-editor`. Validates sizes (solution ≤ 60 000 chars, ≤ 12 steps, SVG ≤ 400 000 chars per step, TikZ ≤ 20 000, caption ≤ 500) and rejects SVG containing `<script>`, `<foreignObject>`, `<iframe>`, `<object>`, `<embed>`, `on…=` handlers, `javascript:`, `data:text/html` or `<!ENTITY` before storing; DOMPurify in the browser remains the real defence. |
 
 **Secrets** (Edge Function secrets are project-wide):
 

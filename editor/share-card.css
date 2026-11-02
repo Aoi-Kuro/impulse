@@ -57,6 +57,16 @@
 .sc-course { color: var(--muted); }
 .sc-label  { color: var(--accent); }
 
+/* "Solution by @name" under the brand, on versions other than the
+   problem's default (share-card.js). */
+.sc-by {
+  flex: none; margin-top: 20px;
+  font-family: 'IBM Plex Mono', monospace; font-weight: 600;
+  font-size: 30px; line-height: 1; letter-spacing: .02em; word-spacing: -.3em;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sc-by b { color: var(--text); font-weight: 600; }
+
 /* The condition sits in the middle of the space under the header.
    .sc-text-inner is what share-card.js measures against this box. */
 .sc-text {

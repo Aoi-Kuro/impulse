@@ -153,14 +153,23 @@
   <aside class="ed-sidebar" id="edSidebar" aria-label="Problems">
     <div class="ed-sb-head">
       <span title="Alt+↑ / Alt+↓: previous / next problem · Alt+N: next problem with no work">Problems</span>
-      <button class="ed-filterbtn" id="edFilter" aria-pressed="false" title="Show only problems with work (a dot)" aria-label="Show only problems with work">
-        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M1.5 2.5h13l-5 6v4.5l-3 1.5v-6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-      </button>
+      <span class="ed-sb-tools">
+        <!-- "Mine": dots, the filter and Alt+N count only your own solutions
+             (editor.js, setMineOnly). -->
+        <button class="ed-filterbtn" id="edMine" aria-pressed="false" title="Count only my solutions: a problem with only someone else's has no dot, so the filter and Alt+N treat it as open work" aria-label="Count only my solutions">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="8" cy="5.2" r="2.7" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.8 14c.6-2.9 2.7-4.4 5.2-4.4s4.6 1.5 5.2 4.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <button class="ed-filterbtn" id="edFilter" aria-pressed="false" title="Show only problems with work (a dot)" aria-label="Show only problems with work">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M1.5 2.5h13l-5 6v4.5l-3 1.5v-6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        </button>
+      </span>
     </div>
     <div class="ed-list" id="edList"><div class="ed-note">Loading problems…</div></div>
     <div class="ed-sb-foot">
       <button class="ed-link" id="edCheckAll" title="Re-read every solution from the database and compare each one against its problem">Check all</button>
       <button class="ed-link" id="edEditors" aria-haspopup="dialog">Editors</button>
+      <!-- Reviewers (level 3+) only: what level 1 editors submitted. -->
+      <button class="ed-link" id="edReviews" aria-haspopup="dialog" hidden>Reviews</button>
     </div>
     <!-- Report from "Check all": fills in after the pass, and each line
          selects that problem. -->
@@ -178,6 +187,9 @@
       <button class="ed-probtoggle" id="edProbToggle" aria-expanded="false" aria-controls="edProb">Problem <span class="ed-caret">▾</span></button>
       <button class="ed-figtoggle" id="edFullPreview" title="Show this solution as readers will see it on the site, including unsaved changes">Full preview</button>
     </div>
+    <!-- The problem's solutions, one per author, when there is a choice
+         (renderVersions in editor.js): ★ = the default readers see first. -->
+    <div class="ed-versions" id="edVersions" hidden></div>
 
     <div class="ed-state" id="edState">
       <div class="ed-state-rows">
@@ -185,6 +197,7 @@
         <div class="ed-state-row"><span>Sync state:</span> <b id="edStSync">—</b></div>
         <div class="ed-state-row"><span>Last saved:</span> <b id="edStWhen">—</b></div>
         <div class="ed-state-row"><span>By:</span> <b id="edStAuthor">—</b></div>
+        <div class="ed-state-row" id="edStReviewRow" hidden><span>Review:</span> <b id="edStReview">—</b></div>
         <div class="ed-state-row"><span>Problem changed since:</span> <b id="edStStale">—</b></div>
         <div class="ed-state-row" title="Whether the stored figure was compiled with the current TikZ setup"><span>Figure setup:</span> <b id="edStBuild">—</b> <button class="ed-link ed-st-rebuild" id="edStBuildBtn" hidden title="Recompile the stored figure with the current setup and save it back with the same status, text and credit">Rebuild figure</button></div>
       </div>
@@ -192,6 +205,10 @@
         <button class="ed-abtn primary" id="edBtnPublish">Publish</button>
         <button class="ed-abtn" id="edBtnSave">Save draft</button>
         <button class="ed-abtn" id="edBtnUnpublish">Unpublish</button>
+        <button class="ed-abtn" id="edBtnDefault" hidden title="Readers see this solution first; the others stay as tabs">Make default</button>
+        <button class="ed-abtn primary" id="edBtnApprove" hidden>Approve</button>
+        <button class="ed-abtn danger" id="edBtnReject" hidden>Reject…</button>
+        <button class="ed-abtn" id="edBtnLoadEdit" hidden title="Put the submitted changes into this window to read them; nothing is saved">Load submitted edit</button>
         <button class="ed-abtn danger" id="edBtnReload">Load from database…</button>
         <button class="ed-abtn danger" id="edBtnClear">Clear this problem…</button>
         <button class="ed-abtn" id="edBtnHistory" title="Earlier versions of this problem kept in this browser">History…</button>

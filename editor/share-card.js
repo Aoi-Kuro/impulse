@@ -14,10 +14,13 @@
    in the page and not display:none (the figure and the text are
    measured); scaling it down with a transform is fine.
 
-   data: { brand, course, label, condition, steps, solution }
+   data: { brand, course, label, condition, steps, solution, by }
      brand      'IMPULSE'
      course     'PHYS 161'
      label      'Q1 P136'
+     by         who to name under the brand ("Solution by @name"), for a
+                solution that isn't its problem's default; null for the
+                default, which names nobody
      condition  the problem's `text` (HTML with $…$ maths; its picture
                 is dropped, the card shows the solution's figure instead)
      steps      figure.steps from the solution row; may be empty
@@ -192,10 +195,18 @@ const ShareCard = (function () {
     const head = el('div', 'sc-head');
     head.append(el('span', 'sc-brand', data.brand), el('span', 'sc-sep'),
       el('span', 'sc-course', data.course), el('span', 'sc-sep'), el('span', 'sc-label', data.label));
+    left.append(head);
+    // Another version than the default: whose it is, under the brand.
+    const by = printable(data.by).replace(/^@/, '').trim();
+    if (by) {
+      const line = el('div', 'sc-by', 'Solution by ');
+      line.appendChild(el('b', null, '@' + by));
+      left.appendChild(line);
+    }
     const text = el('div', 'sc-text');
     const textInner = el('div', 'sc-text-inner');
     text.appendChild(textInner);
-    left.append(head, text);
+    left.append(text);
     card.appendChild(left);
 
     let panel = null;
@@ -317,14 +328,16 @@ const ShareCard = (function () {
       .replace(/\s+/g, ' ').trim();
   }
 
-  /** og:title and og:description for a shared link to this solution. */
-  function linkText({ app, label, condition }) {
+  /** og:title and og:description for a shared link to this solution;
+      by: as for build() (names the author of a non-default version). */
+  function linkText({ app, label, condition, by }) {
     const plain = conditionText(condition)
       .replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$((?:\\.|[^$\\])+)\$/g,
         (m, a, b, c, d) => mathToText(a || b || c || d))
       .replace(/\s+/g, ' ').trim();
     const description = plain.length > 200 ? plain.slice(0, 200).replace(/\s+\S*$/, '') + '…' : plain;
-    return { title: `${label} · Solution | ${app}`, description };
+    const name = String(by || '').replace(/^@/, '').trim();
+    return { title: `${label} · Solution${name ? ' by @' + name : ''} | ${app}`, description };
   }
 
   return { W, H, TEXT_CAP, DESIGN, build, toJpeg, linkText, conditionText };
