@@ -55,6 +55,7 @@ function setProblemFlag(key, colour) {
   saveProblemFlags(flags);
   paintProblemFlags(key);
   syncSolveAllFlagFilter();
+  paintSolutionListFlags();
   // Stamps the change and schedules a push (a no-op while sync is off).
   if (typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges();
 }
@@ -91,6 +92,7 @@ function writeProblemFlagSet(quizNum, set) {
 function applyProblemFlags() {
   paintProblemFlags();
   syncSolveAllFlagFilter();
+  paintSolutionListFlags();
 }
 
 function paintProblemFlag(btn, colour) {
@@ -115,6 +117,34 @@ function problemFlagHtml(quizNum, problemId) {
   const c = problemFlagByKey(key);
   return `<button type="button" class="problem-flag-btn" data-flag-key="${key}" data-flag="${c}"`
     + ` aria-pressed="${!!c}" aria-label="Flag" title="${c ? 'Flagged · tap to remove' : 'Flag this problem'}">${PROBLEM_FLAG_SVG}</button>`;
+}
+
+/* ── Flags in the solution list (js/solutions.js) ─────────────────────
+   A small filled flag in the top-left corner of a flagged problem's box,
+   in its colour, blinking slowly. Every mark's blink is set back by how
+   far the page clock is into the period, so marks added at different
+   times (another set, a flag synced in) still blink together. */
+const PROBLEM_FLAG_BLINK_MS = 2400;   // css/problem-flags.css, problemFlagBlink
+
+function problemFlagListMarkHtml(quizNum, problemId) {
+  const c = problemFlagByKey(problemFlagKey(quizNum, problemId));
+  if (!c) return '';
+  const delay = -(performance.now() % PROBLEM_FLAG_BLINK_MS);
+  return `<span class="solution-list-flag" data-flag="${c}" style="animation-delay:${delay.toFixed(0)}ms">${PROBLEM_FLAG_SVG}</span>`;
+}
+
+// After a flag changes: the open list's boxes get the new marks.
+function paintSolutionListFlags() {
+  const grid = document.getElementById('solutionListGrid');
+  if (!grid || !grid.dataset.quiz) return;
+  const quizNum = +grid.dataset.quiz;
+  grid.querySelectorAll('.solution-list-item[data-problem]').forEach((btn) => {
+    const old = btn.querySelector('.solution-list-flag');
+    const c = problemFlagByKey(problemFlagKey(quizNum, btn.dataset.problem));
+    if (old && +old.dataset.flag === c) return;
+    if (old) old.remove();
+    if (c) btn.insertAdjacentHTML('beforeend', problemFlagListMarkHtml(quizNum, btn.dataset.problem));
+  });
 }
 
 /* ── The C1 / C2 window ───────────────────────────────────────────────
@@ -200,7 +230,7 @@ window.addEventListener('resize', placeProblemFlagPop);
 
 // Flagged or unflagged in another tab.
 window.addEventListener('storage', (e) => {
-  if (e.key === PROBLEM_FLAGS_KEY || e.key === null) { paintProblemFlags(); syncSolveAllFlagFilter(); }
+  if (e.key === PROBLEM_FLAGS_KEY || e.key === null) { paintProblemFlags(); syncSolveAllFlagFilter(); paintSolutionListFlags(); }
 });
 
 /* ── Solve them all: flagged only ─────────────────────────────────────

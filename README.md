@@ -2219,7 +2219,7 @@ in `editor/editor.js`. Afterwards run *Check all → Rebuild* in the editor.
 ## License
 
 This is a free, non-commercial study project: no ads, no paid features, no
-fees. The repository holds three kinds of material under three different terms.
+fees. The repository holds four kinds of material under four different terms.
 
 **Code** (everything not listed below) — Copyright © 2026 Ansar Seitkali
 and contributors. Licensed under the
@@ -2229,6 +2229,13 @@ under the same license with their source code, and that anyone using a
 modified version over a network (such as a hosted copy of this site) is offered
 its source code. Copyright and attribution notices must be kept.
 
+**Names and logos** (the names "Impulse" and "Flux", the site logos drawn by
+`js/logo-wordmark.js` and `js/logo-tumble.js`, and the app icons in `favicon/`)
+— © 2026 Ansar Seitkali. **Not licensed**: they are not covered by the AGPL or
+any other license here, as section 7(e) of the AGPL allows. Copies and modified
+versions of the code must use a different name and logo, and must not present
+themselves as this site or as connected to it.
+
 **Worked solutions** (the solution text and figures written in the solutions
 editor and shown on the Solution screen) — © their authors, credited under each
 solution, and published on the site with their permission. **All rights
@@ -2236,6 +2243,8 @@ reserved**: no license is granted, so they may not be copied, republished,
 adapted or used commercially without permission (ask the corresponding
 author, through the link on their name in the Copyright screen's authors
 table). Each solution shows "All rights reserved" under its author line.
+The idea of adding worked solutions to the site, and of figures that build up
+step by step, came from [@abzalozhentay](https://t.me/abzalozhentay). Thank you!
 
 **Problems and figures** (problem statements, numerical data, answers and
 figures in `course/`, including `course/quizzes/` and `course/images/`) — are

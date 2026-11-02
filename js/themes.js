@@ -22,8 +22,12 @@ const FONT_OPTIONS = [
 ];
 function fontOptionById(id){ return FONT_OPTIONS.find(f => f.id === id) || FONT_OPTIONS[0]; }
 
+// Classic (the plain body styles, no data-theme) is the default for anyone
+// who hasn't picked a theme; its id stays 'default', as saved before it was
+// renamed.
+const DEFAULT_COLOR_THEME = 'default';
 const THEMES = [
-  { id:'default', name:'Default', night:{bg:'#0d1117',accent:'#79AFFF',accent2:'#FF8A98'}, day:{bg:'#ffffff',accent:'#2C6DD5',accent2:'#C73A4A'} },
+  { id:'default', name:'Classic', night:{bg:'#0d1117',accent:'#79AFFF',accent2:'#FF8A98'}, day:{bg:'#ffffff',accent:'#2C6DD5',accent2:'#C73A4A'} },
   { id:'nord',    name:'Nord',    night:{bg:'#2E3440',accent:'#88C0D0',accent2:'#B48EAD'}, day:{bg:'#ECEFF4',accent:'#4C7EA8',accent2:'#8067A8'} },
   { id:'sakura',  name:'Sakura',  night:{bg:'#241A20',accent:'#FF7AA8',accent2:'#8FD6A8'}, day:{bg:'#FFF5F7',accent:'#E8558A',accent2:'#4FAE7A'} },
   { id:'cyber',   name:'Cyber',   night:{bg:'#05060A',accent:'#00F0FF',accent2:'#FF2FD0'}, day:{bg:'#F2F4FB',accent:'#7A00E0',accent2:'#D6009C'} },
@@ -51,7 +55,7 @@ function deriveTheme(bg, text, accent, accent2){
 }
 
 /* ── state ── */
-function getColorTheme(){ return localStorage.getItem(THEME_KEY) || 'default'; }
+function getColorTheme(){ return localStorage.getItem(THEME_KEY) || DEFAULT_COLOR_THEME; }
 function defaultCustomDraft(){
   return {
     night:{ bg:'#0d1117', text:'#e6edf3', accent:'#58a6ff', accent2:'#ff8a98' },
@@ -203,6 +207,8 @@ function renderThemeGrid(){
 }
 function selectTheme(id){
   closeThemePanel();
+  // Picked during a nudge: the choice stands, and the banner's done.
+  if (_nudgeActive) { endThemeNudge(false); BannerManager.release('theme'); }
   runThemeChange(() => { applyColorTheme(id, true); renderThemeGrid(); });
 }
 
@@ -299,25 +305,54 @@ function saveCustomTheme(){
   closeCustomThemeModal();
 }
 
-/* ── theme nudge banner (~15 min after page load, at most once/day) ── */
+/* ── theme nudge banner (~15 min after page load, at most once/day) ──
+   The banner previews a random theme on the live page without saving it;
+   ✕ puts the previous one back. Hiding the banner (its own setting or Go
+   silent) has to stop the preview too, not just the banner: the CSS in
+   css/settings.css only hides the element, so a preview running behind it
+   used to stay on screen until a reload. Three ✕ in all turn the banner's
+   own setting on. */
 const NUDGE_INTERVAL = 24 * 60 * 60 * 1000; // 1 day
+const NUDGE_REFUSALS_KEY = STORAGE_PREFIX + '-theme-nudge-refusals';
+const NUDGE_REFUSALS_MAX = 3;
 let _nudgePrevTheme = null;
+let _nudgeActive = false;
+
+function themeNudgeSuppressed(){
+  return typeof getSetting === 'function' &&
+    (getSetting('notifications', 'hideThemeNudge') === true || getSetting('notifications', 'goSilent') === true);
+}
+
+// Banner off and preview over. revert: put the previous theme back (✕, or
+// hidden by a setting); false when the person just picked a theme
+// themselves (selectTheme), which must not be undone.
+function endThemeNudge(revert){
+  _nudgeActive = false;
+  localStorage.setItem(NUDGE_KEY, String(Date.now()));
+  document.getElementById('theme-nudge-banner').classList.remove('visible');
+  if (revert) applyColorTheme(_nudgePrevTheme || DEFAULT_COLOR_THEME, false);
+}
 
 // The actual reveal is deferred to BannerManager so it only happens once
 // nothing higher-priority (update) or earlier-in-line (bug/telegram) is showing.
 BannerManager.register('theme',
   () => { // show
+    // Its turn may come long after it asked: the setting can be on by now.
+    if (themeNudgeSuppressed()) { setTimeout(() => BannerManager.release('theme'), 0); return; }
     const cur = getColorTheme();
-    const pool = THEMES.filter(t => t.id !== 'default' && t.id !== cur);
+    const pool = THEMES.filter(t => t.id !== cur);
     const pick = (pool.length ? pool : THEMES)[Math.floor(Math.random() * (pool.length || THEMES.length))];
     _nudgePrevTheme = cur;
+    _nudgeActive = true;
     applyColorTheme(pick.id, false);
     document.getElementById('theme-nudge-name').textContent = pick.name;
     document.getElementById('theme-nudge-banner').classList.add('visible');
   },
   () => { // hide (preempted by a higher-priority banner)
+    if (!_nudgeActive) return;
+    _nudgeActive = false;
     document.getElementById('theme-nudge-banner').classList.remove('visible');
-    applyColorTheme(_nudgePrevTheme || 'default', false);
+    applyColorTheme(_nudgePrevTheme || DEFAULT_COLOR_THEME, false);
   }
 );
 
@@ -327,16 +362,28 @@ function scheduleThemeNudge(){
   setTimeout(triggerThemeNudge, 15 * 60 * 1000);
 }
 function triggerThemeNudge(){
-  if (typeof getSetting === 'function' && getSetting('notifications', 'hideThemeNudge') === true) return;
+  if (themeNudgeSuppressed()) return;
   const last = +localStorage.getItem(NUDGE_KEY) || 0;
   if (Date.now() - last < NUDGE_INTERVAL) return;
   BannerManager.request('theme');
 }
 function dismissThemeNudge(){
-  localStorage.setItem(NUDGE_KEY, String(Date.now()));
-  document.getElementById('theme-nudge-banner').classList.remove('visible');
-  applyColorTheme(_nudgePrevTheme || 'default', false);
+  if (!_nudgeActive) return;
+  endThemeNudge(true);
   BannerManager.release('theme');
+  const refusals = (+localStorage.getItem(NUDGE_REFUSALS_KEY) || 0) + 1;
+  localStorage.setItem(NUDGE_REFUSALS_KEY, String(refusals));
+  if (refusals >= NUDGE_REFUSALS_MAX && typeof setSetting === 'function') {
+    setSetting('notifications', 'hideThemeNudge', true);
+    if (typeof applyNotificationSettings === 'function') applyNotificationSettings();
+  }
+}
+// Called by applyNotificationSettings() (js/settings.js) on every change,
+// including ones synced in from another device.
+function syncThemeNudgeSuppression(){
+  if (!themeNudgeSuppressed()) return;
+  if (_nudgeActive) endThemeNudge(true);
+  BannerManager.cancel('theme');
 }
 
 window.addEventListener('DOMContentLoaded', () => {

@@ -119,7 +119,7 @@ const SETTINGS_SYNC_CODES = (() => {
   }
   codes['theme.color'] = {
     get: () => getColorTheme(),
-    def: 'default',
+    def: DEFAULT_COLOR_THEME,
     valid: v => v === 'custom' || THEMES.some(t => t.id === v),
     write: v => localStorage.setItem(THEME_KEY, v),
     apply: () => applyColorTheme(getColorTheme(), false),

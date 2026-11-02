@@ -937,6 +937,7 @@ function renderSolutionList() {
       btn.appendChild(i);
       btn.dataset.tried = 'Solve them all: ' + dot[1];
     }
+    if (typeof problemFlagListMarkHtml === 'function') btn.insertAdjacentHTML('beforeend', problemFlagListMarkHtml(quizNum, p.id));
     btn.onclick = () => {
       if (btn.getAttribute('aria-current')) closeSolutionList();
       else openSolution(quizNum, p.id);
@@ -965,7 +966,8 @@ function updateSolutionList(announce) {
     if (id === here) btn.setAttribute('aria-current', 'true');
     else btn.removeAttribute('aria-current');
     btn.title = (id === here ? 'This solution' : open ? 'Open the solution' : 'No solution yet')
-      + (btn.dataset.tried ? ' · ' + btn.dataset.tried : '');
+      + (btn.dataset.tried ? ' · ' + btn.dataset.tried : '')
+      + (btn.querySelector('.solution-list-flag') ? ' · Flagged' : '');
   });
   document.getElementById('solutionListCount').textContent =
     boxes.length ? `(${available}/${boxes.length} available now)` : '';

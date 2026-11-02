@@ -1802,6 +1802,7 @@ function applyNotificationSettings() {
     const hide = getSetting('notifications', key) === true || effectiveSilent;
     document.documentElement.classList.toggle(cls, hide);
   }
+  if (typeof syncThemeNudgeSuppression === 'function') syncThemeNudgeSuppression(); // js/themes.js: stops a running theme preview too
 
   // ── Badges (problem buttons + forum button) — Go silent only ──
   document.documentElement.classList.toggle('settings-silent-badges', effectiveSilent);

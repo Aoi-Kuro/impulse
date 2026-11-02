@@ -101,3 +101,28 @@
 }
 .sticky-flag-filter-btn[aria-pressed="true"] .problem-flag-cloth { fill: currentColor; }
 .sticky-flag-filter-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Flagged problems in the solution list: a filled flag in the box's
+   top-left corner (the result dot keeps the bottom-right), blinking
+   slowly, all in step (js/problem-flags.js sets each one's delay). */
+.solution-list-flag {
+  position: absolute; top: 2px; left: 2px;
+  display: inline-flex; line-height: 0;
+  pointer-events: none;
+  animation: problemFlagBlink 2.4s ease-in-out infinite;
+}
+.solution-list-flag svg {
+  width: .7rem; height: .7rem;
+  fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.solution-list-flag .problem-flag-cloth { fill: currentColor; }
+.solution-list-flag[data-flag="1"] { color: var(--accent); }
+.solution-list-flag[data-flag="2"] { color: var(--accent2); }
+@keyframes problemFlagBlink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .25; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .solution-list-flag { animation: none; }
+}

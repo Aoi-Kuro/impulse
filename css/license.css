@@ -93,6 +93,7 @@
    runs under each author's last row. */
 .license-authors { margin-top: 0.9rem; }
 .license-authors[hidden] { display: none; }
+.license-authors + p { margin-top: 0.9rem; }
 .license-authors-scroll { overflow-x: auto; }
 .license-authors-table {
   /* As wide as its content, centred in the card. */
