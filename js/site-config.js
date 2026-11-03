@@ -15,7 +15,8 @@
 //   "min_version": "12.4.6"
 //       Tabs on an older version reload as soon as they are outside a timed
 //       quiz, instead of after the usual 48 h; a timed quiz is interrupted
-//       only once it has run 3 h. Missing: no minimum. Handled in
+//       only once it has run 3 h. Either way after a 5-minute countdown
+//       banner ("marked critical"). Missing: no minimum. Handled in
 //       js/quiz-engine.js (maybeForceUpdateOutsideQuiz).
 //   "poll": { "attempts": 120, ... }
 //       Background intervals in seconds (SITE_POLL below). A missing name

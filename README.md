@@ -1356,13 +1356,27 @@ and the full-screen reminder queue first-come-first-served. API: `register`,
   "Hide update reminder" on, the banner is suppressed, and "Update anyway
   outside quiz mode" reloads silently as soon as no timed attempt is running.
   An update left waiting for 48 hours (dismissed or not), or one the running
-  version is below `min_version` for, is applied the same way regardless of
-  settings, and even during a timed attempt once that attempt has run for 3
-  hours. At most one forced reload per outdated version per 24 hours, so a
-  reload that doesn't bring the new version can't loop.
+  version is below `min_version` for, is applied regardless of settings, and
+  even during a timed attempt once that attempt has run for 3 hours, but never
+  without warning: a second banner (`#update-forced-banner`, blinking "!",
+  not hidden by the hide settings or Go silent, no ✕) says why ("N days
+  behind" or "marked critical") and counts down 5 minutes, with Reload now.
+  During a timed attempt it waits and says the reload comes 5 minutes after
+  the quiz, with ✕ instead of Reload now (hides it until the quiz ends, when
+  the countdown appears); a quiz started mid-countdown puts it back to waiting, and its end
+  starts a full 5 minutes again. If nobody saw the countdown (tab hidden, or
+  no input since it started), the reloaded page shows "The site was updated
+  while you were away, since you were N days behind / due to a critical fix"
+  once they're back (hidden tab: when shown again; tab left on screen: at the
+  first mouse move, tap or key) for 10 seconds of on-screen time
+  (`#update-done-banner`, receding outline), only when the reload really
+  brought a newer version. At most one forced reload per outdated
+  version per tab per 24 hours (sessionStorage), so a reload that doesn't
+  bring the new version can't loop.
 - **Bug-report nudge** ("Report on Telegram"): at most once a day, after 10
-  minutes of use.
-- **Theme nudge**: once, suggesting a preset.
+  minutes of use. The third ✕ turns on "Hide bug report reminder".
+- **Theme nudge**: once, suggesting a preset. The third ✕ turns on "Hide try
+  new theme reminder". Both counts start over then.
 
 ### Remote settings (`site-version.json`)
 
@@ -1393,7 +1407,7 @@ check.
 
 | Key | Effect | Default |
 |---|---|---|
-| `min_version` | Tabs on an older version reload as soon as they're outside a timed quiz (a timed quiz once it has run 3 h), instead of after 48 h. Must not be above `version`. | no minimum |
+| `min_version` | Tabs on an older version reload 5 minutes after a "marked critical" countdown banner appears, outside a timed quiz (a timed quiz once it has run 3 h), instead of after 48 h. Must not be above `version`. | no minimum |
 | `poll` | Background intervals in seconds, each clamped to its limits: `attempts` 45 (15–3600), `attempts_live` 300 (45–3600, used instead of `attempts` while that Realtime channel is connected), `solve_all` 60 (15–3600), `solve_all_live` 300 (60–3600, likewise), `settings` 900 (60–86400), `stats` 45 (15–3600), `forum` 90 (15–3600), `forum_live` 300 (60–3600, used instead of `forum` while the forum's Realtime channel is connected), `forum_quiet` 900 (60–21600), `solutions` 1800 (60–86400, how long one solutions index fetch is reused), `update` 900 (60–1800). Zero or a negative value is ignored (default), not clamped to the fastest rate. A changed value takes effect at once. A timer tick is skipped when the same work already ran less than an interval ago (tab return, Realtime ping), so a catch-up isn't repeated seconds later. | values shown |
 | `off` | `realtime`: no Realtime connections; everything runs on its `poll` interval. `forum_posting`: the forum is read-only (no new messages, replies or edits). | nothing off |
 | `sync_paused` | `true`: attempts, Solve-All progress and settings stay in each browser and are neither sent nor fetched; deleting an attempt and resetting Solve-All still go through. Removing it syncs every visible tab at once. | `false` |
@@ -1420,7 +1434,7 @@ builds keep reading the old name.
 
 | Situation | Setting | Notes |
 |---|---|---|
-| Release fixes something every open tab must get now | bump `version` and set `min_version` to it | Tabs reload within one check; a running timed quiz is never interrupted before it ends or has run 3 h. Only tabs on 12.5.1 or newer read it: older tabs still get the banner and the timed reload (12.4.5+; after 24 h up to 13.2.0, 48 h since), or need a manual reload (12.4.4 and older). |
+| Release fixes something every open tab must get now | bump `version` and set `min_version` to it | Tabs reload within one check plus the 5-minute countdown; a running timed quiz is never interrupted before it ends or has run 3 h. Only tabs on 12.5.1 or newer read it: older tabs still get the banner and the timed reload (12.4.5+; after 24 h up to 13.2.0, 48 h since), or need a manual reload (12.4.4 and older). |
 | Supabase quota running high | `poll` with longer intervals (`attempts`, `forum`, `update` first) | Takes effect at once, also mid-interval. Realtime still delivers changes, so slower fallbacks mostly cost freshness after a missed ping. |
 | Supabase or its Realtime service is down or flaky | `off: ["realtime"]` | Drops every live connection; the fallback polls carry on unchanged. |
 | Database trouble, or a sync bug | `sync_paused: true` | Work stays in each browser; removing it makes every visible tab sync at once (one catch-up each). |
@@ -1430,7 +1444,7 @@ builds keep reading the old name.
 **What the safety rules guarantee** (checked in the test below):
 
 - A forced reload (`min_version`, or the 48 h rule) happens at most once per
-  outdated version per 24 hours per browser, even when the new code is not
+  outdated version per 24 hours per tab, even when the new code is not
   actually on the server, so a misconfigured release cannot loop. In that
   case the update banner stays up after the one reload, since the newer
   version really is announced but not served.
@@ -2081,7 +2095,10 @@ possible.
   sent every time as the fallback.
 - **Identity token** — a separate HMAC token for the `device_id → identity_id`
   resolution (TTL 5 min, since an identity can be reassigned on exit/claim).
-  `drop-nickname` returns `clear_identity_token`; the client deletes it and
+  `claim-nickname` issues it but never trusts it: it always reads
+  `identity_devices` live, because a stale "no identity" token sent an
+  already-linked device down the create path (`identity_devices_pkey`
+  errors). `drop-nickname` returns `clear_identity_token`; the client deletes it and
   other open tabs reload through a `storage` event (deferred during a timed
   attempt).
 

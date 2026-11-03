@@ -366,6 +366,38 @@
   <button class="banner-dismiss" onclick="dismissUpdate()" title="Dismiss">✕</button>
 </div>
 
+<!-- ── Overdue update warning: 5-minute countdown to a forced reload ──
+     Filled in by _renderForcedUpdateBanner() (js/quiz-engine.js). Not
+     hidden by "Hide update reminder" or Go silent: it warns about a reload
+     that happens anyway. No ✕ for the same reason, except while it waits
+     for a timed quiz to end (.waiting): then ✕ hides it until that quiz is
+     over, and the countdown shows up once it is. -->
+<div id="update-forced-banner" role="status" aria-live="polite">
+  <svg class="forced-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="9.5"></circle>
+    <line x1="12" y1="7" x2="12" y2="13.2"></line>
+    <circle class="forced-icon-dot" cx="12" cy="16.6" r="1.1"></circle>
+  </svg>
+  <span class="banner-text">
+    <strong id="update-forced-title"></strong>
+    <span id="update-forced-body"></span>
+  </span>
+  <button class="banner-reload" id="update-forced-btn" onclick="reloadForUpdate()">Reload now</button>
+  <button class="banner-dismiss" onclick="dismissForcedUpdateForQuiz()" title="Hide until the quiz ends">✕</button>
+</div>
+
+<!-- ── "Updated while you were away": 10 s after a forced reload nobody saw ──
+     The outline recedes over the 10 s (showUpdateDoneBanner, js/quiz-engine.js).
+     Tap to close early. -->
+<div id="update-done-banner" role="status" aria-live="polite" hidden onclick="closeUpdateDoneBanner()">
+  <svg class="banner-ring" aria-hidden="true"><rect pathLength="100"></rect></svg>
+  <svg class="forced-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="9.5"></circle>
+    <polyline points="7.8,12.4 10.8,15.3 16.4,9.2"></polyline>
+  </svg>
+  <span class="banner-text" id="update-done-text"></span>
+</div>
+
 <!-- ── Bug report nudge banner ── -->
 <div id="bug-report-banner" role="status" aria-live="polite">
   <span class="banner-icon">🐛</span>

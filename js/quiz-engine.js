@@ -2465,7 +2465,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '13.4.1';
+const CURRENT_VERSION = '13.4.2';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.
@@ -2543,19 +2543,28 @@ function _updateWaitedMs() {
 }
 
 // Update always takes top priority — it has no hider, since nothing outranks it.
+// One BannerManager slot, two banners: the plain "new version" one, or the
+// countdown below once the update is overdue.
 BannerManager.register('update', () => {
-  document.getElementById('update-banner').classList.add('visible');
+  document.getElementById(_forcedUpdate ? 'update-forced-banner' : 'update-banner').classList.add('visible');
 });
 
-// Applies a pending update with a silent reload when either:
+function _updateOverdue() {
+  return _belowMinVersion || _updateWaitedMs() >= UPDATE_FORCE_AFTER;
+}
+
+// Applies a pending update when either:
 //   • Notifications > "Update anyway outside quiz mode" (settings.js) is on
 //     together with "Hide update reminder" — the point is to still get the
 //     update applied for someone who's opted out of ever seeing the nag
-//     banner; or
+//     banner. A silent reload straight away, as that setting promises; or
 //   • the update has been waiting UPDATE_FORCE_AFTER (48 h), or this
 //     version is below site-version.json's "min_version", whatever the
 //     settings or a dismissed banner say — a tab kept open for days must
-//     not stay on old code forever.
+//     not stay on old code forever. Never a reload out of the blue: a
+//     banner counts down UPDATE_FORCE_COUNTDOWN (5 min) first, also when
+//     the hide settings or Go silent are on, since it warns about a reload
+//     that happens either way (_syncForcedUpdate below).
 // Never during a live timed attempt, except an overdue update once that
 // attempt has run UPDATE_FORCE_DURING_QUIZ_AFTER (3 h): nobody is still
 // working on it by then. Called right after a mismatch is detected, on
@@ -2564,14 +2573,13 @@ BannerManager.register('update', () => {
 // poll (poll.update) once it's finally safe to apply.
 async function maybeForceUpdateOutsideQuiz() {
   if (!_updatePending) return;
-  const overdue = _belowMinVersion || _updateWaitedMs() >= UPDATE_FORCE_AFTER;
-  if (!overdue) {
-    if (typeof getSetting !== 'function') return;
-    const hidden = getSetting('notifications', 'hideUpdateReminder') === true;
-    const forceOutside = getSetting('notifications', 'forceRefreshOutsideQuiz') === true;
-    if (!hidden || !forceOutside) return;
-  }
-  if (isQuizTimerActive() && !(overdue && quizTimerRunningMs() >= UPDATE_FORCE_DURING_QUIZ_AFTER)) return;
+  if (_updateOverdue()) { _syncForcedUpdate(); return; }
+  if (_forcedUpdate) _endForcedUpdate(); // min_version taken back out
+  if (typeof getSetting !== 'function') return;
+  const hidden = getSetting('notifications', 'hideUpdateReminder') === true;
+  const forceOutside = getSetting('notifications', 'forceRefreshOutsideQuiz') === true;
+  if (!hidden || !forceOutside) return;
+  if (isQuizTimerActive()) return;
   if (!_claimForcedReload()) return;
   await purgeUpdateCacheAndWait();
   location.reload();
@@ -2580,18 +2588,300 @@ async function maybeForceUpdateOutsideQuiz() {
 // A forced reload that didn't bring the new version (site-version.json bumped
 // without CURRENT_VERSION, say) would land straight back here and reload
 // again, forever, for every visitor. So: one forced reload per outdated
-// version per UPDATE_FORCED_GAP. Without localStorage there's no way to
-// tell, so no forced reload at all.
+// version per tab per UPDATE_FORCED_GAP. Per tab (sessionStorage, which
+// survives the reload but isn't shared), so the first tab to reload doesn't
+// leave the browser's other old tabs counting down to a reload that never
+// comes. Without sessionStorage there's no way to tell, so no forced reload
+// at all.
 const UPDATE_FORCED_GAP = 24 * 60 * 60 * 1000;
 const UPDATE_FORCED_KEY = STORAGE_PREFIX + '-update-forced';  // { from: CURRENT_VERSION, at }
-function _claimForcedReload() {
+function _forcedReloadAllowed() {
   try {
-    const rec = JSON.parse(localStorage.getItem(UPDATE_FORCED_KEY) || 'null');
-    if (rec && rec.from === CURRENT_VERSION && Date.now() - rec.at < UPDATE_FORCED_GAP) return false;
-    localStorage.setItem(UPDATE_FORCED_KEY, JSON.stringify({ from: CURRENT_VERSION, at: Date.now() }));
+    const rec = JSON.parse(sessionStorage.getItem(UPDATE_FORCED_KEY) || 'null');
+    return !(rec && rec.from === CURRENT_VERSION && Date.now() - rec.at < UPDATE_FORCED_GAP);
+  } catch (_) { return false; }
+}
+function _claimForcedReload() {
+  if (!_forcedReloadAllowed()) return false;
+  try {
+    sessionStorage.setItem(UPDATE_FORCED_KEY, JSON.stringify({ from: CURRENT_VERSION, at: Date.now() }));
     return true;
   } catch (_) { return false; }
 }
+
+// ─── Overdue update countdown ────────────────────────────────────────────────
+// Outside a timed attempt the countdown runs; during one (under 3 h) it
+// waits, and the banner says the reload comes UPDATE_FORCE_COUNTDOWN after
+// the quiz. A quiz started mid-countdown puts it back to waiting, and the
+// end of that quiz starts a full countdown again, so finishing a quiz never
+// reloads the page under the results. While waiting, the banner has ✕ instead
+// of Reload now (a reload would lose the attempt): it hides the banner until
+// the quiz ends, when the countdown shows up. The deadline is a timestamp checked
+// every second, so a hidden tab's throttled timers still reload it about on
+// time, out of sight.
+const UPDATE_FORCE_COUNTDOWN = 5 * 60 * 1000;
+let _forcedUpdate = false;    // countdown banner owns the 'update' slot
+let _forcedDeadline = 0;      // 0 while waiting for a quiz to end
+let _forcedTicker = null;
+let _forcedRendered = '';     // headline/body last written, so a tick only touches the clock
+let _forcedHiddenForQuiz = false;  // ✕ while waiting: off screen until the quiz ends
+
+function _forcedWaitingForQuiz() {
+  return isQuizTimerActive() && quizTimerRunningMs() < UPDATE_FORCE_DURING_QUIZ_AFTER;
+}
+
+// Waiting or counting down, by whether a timed quiz is under way now.
+function _updateForcedDeadline() {
+  if (_forcedWaitingForQuiz()) { _forcedDeadline = 0; return; }
+  if (_forcedDeadline) return;
+  _forcedDeadline = Date.now() + UPDATE_FORCE_COUNTDOWN;
+  // The quiz is over: a banner hidden for it comes back for the countdown.
+  if (_forcedHiddenForQuiz) {
+    _forcedHiddenForQuiz = false;
+    const banner = document.getElementById('update-forced-banner');
+    banner.classList.remove('hiding');
+    banner.classList.add('visible');
+  }
+}
+
+function _syncForcedUpdate() {
+  if (!_forcedReloadAllowed()) { if (_forcedUpdate) _endForcedUpdate(); return; }
+  _updateForcedDeadline();
+  if (!_forcedUpdate) {
+    _forcedUpdate = true;
+    // Already on screen as the plain banner: swap in place, BannerManager
+    // still has 'update' active and would ignore another request.
+    const plain = document.getElementById('update-banner');
+    if (plain.classList.contains('visible')) {
+      plain.classList.remove('visible');
+      document.getElementById('update-forced-banner').classList.add('visible');
+    }
+    BannerManager.request('update');
+  }
+  if (!_forcedTicker) _forcedTicker = setInterval(_forcedTick, 1000);
+  _renderForcedUpdateBanner();
+}
+
+function _endForcedUpdate() {
+  _forcedUpdate = false;
+  _forcedDeadline = 0;
+  _forcedRendered = '';
+  _forcedHiddenForQuiz = false;
+  clearInterval(_forcedTicker);
+  _forcedTicker = null;
+  document.getElementById('update-forced-banner').classList.remove('visible');
+  BannerManager.release('update');
+}
+
+// ✕, only offered while waiting for a quiz. Keeps the 'update' slot, so no
+// other banner pops up mid-quiz in its place.
+function dismissForcedUpdateForQuiz() {
+  if (!_forcedUpdate || _forcedDeadline) return;
+  _forcedHiddenForQuiz = true;
+  const banner = document.getElementById('update-forced-banner');
+  banner.classList.add('hiding');
+  const done = () => {
+    banner.removeEventListener('animationend', onEnd);
+    clearTimeout(fallback);
+    banner.classList.remove('hiding');
+    if (_forcedHiddenForQuiz) banner.classList.remove('visible'); // the quiz may have ended mid-fade
+  };
+  // The blinking icon's animation never ends, but filter by target anyway.
+  const onEnd = (e) => { if (e.target === banner) done(); };
+  banner.addEventListener('animationend', onEnd);
+  const fallback = setTimeout(done, 380); // reduced motion can skip animationend
+}
+
+function _forcedTick() {
+  _updateForcedDeadline();
+  if (_forcedDeadline && Date.now() >= _forcedDeadline) {
+    clearInterval(_forcedTicker);
+    _forcedTicker = null;
+    if (!_claimForcedReload()) { _endForcedUpdate(); return; }
+    // Nobody watched the countdown: say why on the reloaded page.
+    if (document.hidden || _lastInputAt < _forcedDeadline - UPDATE_FORCE_COUNTDOWN) _noteUpdatedWhileAway(document.hidden);
+    reloadForUpdate();
+    return;
+  }
+  if (!document.hidden) _renderForcedUpdateBanner();
+}
+
+function _renderForcedUpdateBanner() {
+  const banner = document.getElementById('update-forced-banner');
+  const critical = _belowMinVersion;
+  const waiting = !_forcedDeadline;
+  const key = `${critical}|${waiting}|${Math.floor(_updateWaitedMs() / 86400000)}`;
+  if (key !== _forcedRendered) {
+    _forcedRendered = key;
+    const days = Math.max(2, Math.floor(_updateWaitedMs() / 86400000));
+    banner.classList.toggle('critical', critical);
+    banner.classList.toggle('waiting', waiting);
+    document.getElementById('update-forced-title').textContent = critical
+      ? 'A recent update was marked critical.'
+      : `You’re ${days} days behind the latest update.`;
+    // The ticking clock is aria-live="off": announced once with the
+    // sentence, not every second.
+    const when = waiting
+      ? `${UPDATE_FORCE_COUNTDOWN / 60000} minutes after this quiz`
+      : 'in <span class="forced-time" aria-live="off"></span>';
+    document.getElementById('update-forced-body').innerHTML = critical
+      ? `You’ll be updated automatically ${when}, or update now yourself.`
+      : `The site will reload automatically ${when}, or reload now yourself.`;
+    document.getElementById('update-forced-btn').textContent = critical ? 'Update now' : 'Reload now';
+  }
+  const clock = banner.querySelector('.forced-time');
+  if (clock) {
+    const sec = Math.max(0, Math.ceil((_forcedDeadline - Date.now()) / 1000));
+    clock.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  }
+}
+
+// A quiz started mid-countdown: back to waiting at once, not on the next tick.
+window.addEventListener('quiztimer:activechange', (event) => {
+  if (_forcedUpdate && event.detail && event.detail.active) _syncForcedUpdate();
+});
+
+// ─── "Updated while you were away" ───────────────────────────────────────────
+// A countdown that ran out in a hidden tab, or with no input at all since it
+// started, reloaded a page nobody was looking at. The reloaded page then says
+// why, once the person is back: a hidden tab as soon as it's shown again, a
+// tab left on screen at the first mouse move, tap or key. It stays
+// UPDATE_DONE_MS of on-screen time (paused while the tab is hidden), with
+// the outline receding like the full-screen reminder's. Kept in
+// sessionStorage, so only that tab says it, and only if the reload really
+// brought a newer version.
+const UPDATE_DONE_MS = 10 * 1000;
+const UPDATE_AWAY_KEY = STORAGE_PREFIX + '-update-away';  // { from, critical, days, hidden, at }
+let _lastInputAt = Date.now();
+['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'].forEach((type) => {
+  window.addEventListener(type, () => { _lastInputAt = Date.now(); }, { passive: true, capture: true });
+});
+
+function _noteUpdatedWhileAway(hidden) {
+  try {
+    sessionStorage.setItem(UPDATE_AWAY_KEY, JSON.stringify({
+      from: CURRENT_VERSION,
+      critical: _belowMinVersion,
+      days: Math.max(2, Math.floor(_updateWaitedMs() / 86400000)),
+      hidden,
+      at: Date.now(),
+    }));
+  } catch (_) {}
+}
+
+function _takeUpdatedWhileAwayNote() {
+  try {
+    const rec = JSON.parse(sessionStorage.getItem(UPDATE_AWAY_KEY) || 'null');
+    sessionStorage.removeItem(UPDATE_AWAY_KEY);
+    if (!rec || rec.from === CURRENT_VERSION || Date.now() - rec.at > UPDATE_FORCED_GAP) return null;
+    return rec;
+  } catch (_) { return null; }
+}
+
+let _updateDone = null;  // { note, timer, fadeTimer, finished, left, since }
+
+BannerManager.register('update-done',
+  () => { // show
+    if (!_updateDone || _updateDone.finished) { setTimeout(() => BannerManager.release('update-done'), 0); return; }
+    showUpdateDoneBanner();
+  },
+  () => { // hide (an update banner preempted it): it was a passing notice, so it's over
+    if (_updateDone) _updateDone.finished = true;
+    _resetUpdateDoneBanner();
+  }
+);
+
+function showUpdateDoneBanner() {
+  const banner = document.getElementById('update-done-banner');
+  const { note } = _updateDone;
+  banner.classList.toggle('critical', !!note.critical);
+  document.getElementById('update-done-text').innerHTML = note.critical
+    ? 'The site was updated while you were away, <strong>due to a critical fix in the latest update</strong>.'
+    : `The site was updated while you were away, <strong>since you were ${Number(note.days) || 2} days behind the latest update</strong>.`;
+  banner.hidden = false;
+  banner.classList.remove('hiding', 'running');
+  banner.classList.add('visible');
+  // Same geometry as _drawFullscreenHintRing: the ring's viewBox is the
+  // banner's own pixel size so its corners match the border radius.
+  const ring = banner.querySelector('.banner-ring');
+  const rect = ring.querySelector('rect');
+  const w = banner.offsetWidth, h = banner.offsetHeight, inset = 0.75;
+  const radius = parseFloat(getComputedStyle(banner).borderTopLeftRadius) || 0;
+  ring.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  rect.setAttribute('x', inset);
+  rect.setAttribute('y', inset);
+  rect.setAttribute('width', Math.max(0, w - inset * 2));
+  rect.setAttribute('height', Math.max(0, h - inset * 2));
+  rect.setAttribute('rx', Math.max(0, radius - inset));
+  banner.style.setProperty('--done-ms', UPDATE_DONE_MS + 'ms');
+  banner.classList.remove('paused');
+  void banner.offsetWidth; // restart the ring animation
+  banner.classList.add('running');
+  _updateDone.left = UPDATE_DONE_MS;
+  _resumeUpdateDoneBanner();
+}
+
+// Only on-screen time counts: the timer and the ring stop while hidden.
+function _resumeUpdateDoneBanner() {
+  clearTimeout(_updateDone.timer);
+  _updateDone.since = Date.now();
+  _updateDone.timer = setTimeout(closeUpdateDoneBanner, _updateDone.left);
+  document.getElementById('update-done-banner').classList.remove('paused');
+}
+function _pauseUpdateDoneBanner() {
+  clearTimeout(_updateDone.timer);
+  _updateDone.left = Math.max(0, _updateDone.left - (Date.now() - _updateDone.since));
+  document.getElementById('update-done-banner').classList.add('paused');
+}
+
+function _resetUpdateDoneBanner() {
+  if (_updateDone) { clearTimeout(_updateDone.timer); clearTimeout(_updateDone.fadeTimer); }
+  const banner = document.getElementById('update-done-banner');
+  banner.classList.remove('visible', 'hiding', 'running', 'paused');
+  banner.hidden = true;
+}
+
+// The 10 s ran out, or the banner was tapped.
+function closeUpdateDoneBanner() {
+  if (!_updateDone || _updateDone.finished) return;
+  _updateDone.finished = true;
+  clearTimeout(_updateDone.timer);
+  const banner = document.getElementById('update-done-banner');
+  // The ring's own animationend bubbles up here too: only the banner's counts.
+  const onEnd = (e) => { if (e.target === banner) done(); };
+  const done = () => {
+    banner.removeEventListener('animationend', onEnd);
+    _resetUpdateDoneBanner();
+    BannerManager.cancel('update-done');
+  };
+  banner.classList.add('hiding');
+  banner.addEventListener('animationend', onEnd);
+  _updateDone.fadeTimer = setTimeout(done, 380); // reduced motion can skip animationend
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  const note = _takeUpdatedWhileAwayNote();
+  if (!note) return;
+  _updateDone = { note, timer: null, fadeTimer: null, finished: false, left: 0, since: 0 };
+  const loadedAt = Date.now();
+  const inputs = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'];
+  const show = () => {
+    if (document.hidden) return;
+    if (!note.hidden && _lastInputAt <= loadedAt) return;  // left on screen: wait for a sign of life
+    document.removeEventListener('visibilitychange', show);
+    inputs.forEach((type) => window.removeEventListener(type, show, true));
+    BannerManager.request('update-done');
+  };
+  document.addEventListener('visibilitychange', show);
+  // Added after the _lastInputAt listeners (same phase), so it sees the new time.
+  inputs.forEach((type) => window.addEventListener(type, show, { passive: true, capture: true }));
+  show();
+  document.addEventListener('visibilitychange', () => {
+    if (!_updateDone || _updateDone.finished || !_updateDone.since) return;
+    if (document.hidden) _pauseUpdateDoneBanner();
+    else _resumeUpdateDoneBanner();
+  });
+});
 
 // A dismissed banner keeps polling: the manifest also carries the settings
 // in js/site-config.js, which have to reach every open tab. It just isn't
@@ -2906,6 +3196,12 @@ BannerManager.register('bug',
   }
 );
 
+// Three ✕ in all turn on "Hide bug report reminder" (same rule as the
+// theme nudge, js/themes.js). The count starts over then, so turning the
+// setting back off gives three more.
+const BUG_NUDGE_REFUSALS_KEY = STORAGE_PREFIX + '-bug-nudge-refusals';
+const BUG_NUDGE_REFUSALS_MAX = 3;
+
 function showBugBanner() {
   if (typeof getSetting === 'function' && getSetting('notifications', 'hideBugReportReminder') === true) return;
   const last = +localStorage.getItem(BUG_NUDGE_KEY) || 0;
@@ -2922,6 +3218,15 @@ function dismissBugBanner() {
     banner.classList.remove('visible', 'hiding');
   }, { once: true });
   BannerManager.release('bug');
+  const refusals = (+localStorage.getItem(BUG_NUDGE_REFUSALS_KEY) || 0) + 1;
+  if (refusals >= BUG_NUDGE_REFUSALS_MAX && typeof setSetting === 'function') {
+    localStorage.removeItem(BUG_NUDGE_REFUSALS_KEY);
+    setSetting('notifications', 'hideBugReportReminder', true);
+    // After the slide-out: the setting's display:none would cut it short.
+    setTimeout(() => { if (typeof applyNotificationSettings === 'function') applyNotificationSettings(); }, 350);
+  } else {
+    localStorage.setItem(BUG_NUDGE_REFUSALS_KEY, String(refusals));
+  }
 }
 
 // Run immediately on load, then on the set interval

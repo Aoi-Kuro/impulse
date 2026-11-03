@@ -924,6 +924,137 @@
   }
   #update-banner .banner-dismiss:hover { color: var(--text); }
 
+  /* ── Overdue update warning (countdown to a forced reload) ──
+     Same frame as #update-banner, but wraps onto two lines (headline, then
+     the countdown) and is tinted by why it's forced: --partial for an update
+     left waiting 48 h, --wrong for one below "min_version" (.critical).
+     #update-done-banner, the 5 s "updated while you were away" notice after
+     such a reload, shares the frame; its outline recedes like the
+     full-screen reminder's. */
+  #update-forced-banner,
+  #update-done-banner {
+    --forced-tint: var(--partial, var(--accent));
+    display: none;
+    position: fixed;
+    bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    width: max-content;
+    max-width: min(34rem, calc(100vw - 2rem));
+    background: var(--surface);
+    border: 1px solid var(--forced-tint);
+    border-radius: calc(8px * var(--radius-mult));
+    padding: 0.65rem 1.1rem;
+    box-shadow: 0 4px 24px color-mix(in srgb, var(--shadow) calc(0.45 * 100%), transparent);
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--text);
+    align-items: center;
+    gap: 0.9rem;
+    animation: banner-slide-in 0.35s cubic-bezier(.4,0,.2,1);
+  }
+  #update-forced-banner.critical,
+  #update-done-banner.critical { --forced-tint: var(--wrong, var(--accent)); }
+  #update-forced-banner.visible,
+  #update-done-banner.visible { display: flex; }
+  #update-forced-banner .forced-icon,
+  #update-done-banner .forced-icon {
+    flex-shrink: 0;
+    width: 1.15rem;
+    height: 1.15rem;
+    fill: none;
+    stroke: var(--forced-tint);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    animation: forced-icon-blink 2.4s ease-in-out infinite;
+  }
+  #update-forced-banner .forced-icon-dot { fill: var(--forced-tint); stroke: none; }
+  #update-done-banner .forced-icon { animation: none; stroke-linejoin: round; }
+  @keyframes forced-icon-blink {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.25; }
+  }
+  #update-done-banner .banner-text { color: var(--muted); line-height: 1.4; }
+  #update-done-banner .banner-text strong { color: var(--text); font-weight: 600; }
+  #update-done-banner {
+    border-color: transparent;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #update-done-banner.hiding {
+    animation: banner-slide-out 0.3s cubic-bezier(.4,0,.2,1) forwards;
+    pointer-events: none;
+  }
+  #update-done-banner .banner-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+  /* pathLength="100" in the markup: the dash runs 100 → 0 whatever the
+     banner's size, so only the corner radius needs measuring (JS). */
+  #update-done-banner .banner-ring rect {
+    fill: none;
+    stroke: var(--forced-tint);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 100 100;
+    stroke-dashoffset: 0;
+  }
+  #update-done-banner.running .banner-ring rect {
+    animation: update-done-ring var(--done-ms, 10000ms) linear forwards;
+  }
+  #update-done-banner.paused .banner-ring rect { animation-play-state: paused; }
+  @keyframes update-done-ring { to { stroke-dashoffset: 100; } }
+  #update-forced-banner .banner-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  #update-forced-banner .banner-text strong { color: var(--text); font-weight: 600; }
+  #update-forced-banner .forced-time { color: var(--text); font-variant-numeric: tabular-nums; }
+  #update-forced-banner .banner-reload {
+    flex-shrink: 0;
+    /* Tinted rather than filled: light themes' --wrong is too dark for
+       dark text and --partial too light for white, in some palettes. */
+    background: color-mix(in srgb, var(--forced-tint) 18%, transparent);
+    color: var(--text);
+    border: 1px solid var(--forced-tint);
+    border-radius: calc(4px * var(--radius-mult));
+    padding: 0.32rem 0.85rem;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+  }
+  #update-forced-banner .banner-reload:hover { opacity: 0.85; }
+  /* Waiting for a timed quiz to end: ✕ instead of Reload now, since a
+     reload would throw the attempt away. */
+  #update-forced-banner .banner-dismiss {
+    display: none;
+    flex-shrink: 0;
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 1rem; line-height: 1; padding: 0 0.1rem; transition: color 0.15s;
+  }
+  #update-forced-banner .banner-dismiss:hover { color: var(--text); }
+  #update-forced-banner.waiting .banner-reload { display: none; }
+  #update-forced-banner.waiting .banner-dismiss { display: block; }
+  #update-forced-banner.hiding {
+    animation: banner-slide-out 0.3s cubic-bezier(.4,0,.2,1) forwards;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #update-forced-banner .forced-icon { animation: none; }
+  }
+
   /* ── Bug report nudge banner ── */
   #bug-report-banner {
     display: none;
@@ -1080,6 +1211,8 @@
       to   { opacity: 0; transform: translateY(12px); }
     }
     #update-banner,
+    #update-forced-banner,
+    #update-done-banner,
     #bug-report-banner,
     #fullscreen-hint-banner,
     #theme-nudge-banner {
@@ -1094,10 +1227,14 @@
       animation-name: banner-slide-in-mobile;
     }
     #bug-report-banner.hiding,
+    #update-forced-banner.hiding,
+    #update-done-banner.hiding,
     #fullscreen-hint-banner.hiding {
       animation: banner-slide-out-mobile 0.3s cubic-bezier(.4,0,.2,1) forwards;
     }
     #update-banner .banner-text,
+    #update-forced-banner .banner-text,
+    #update-done-banner .banner-text,
     #bug-report-banner .banner-text,
     #fullscreen-hint-banner .banner-text,
     #theme-nudge-banner .banner-text {

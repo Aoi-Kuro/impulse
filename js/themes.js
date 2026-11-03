@@ -374,6 +374,7 @@ function dismissThemeNudge(){
   const refusals = (+localStorage.getItem(NUDGE_REFUSALS_KEY) || 0) + 1;
   localStorage.setItem(NUDGE_REFUSALS_KEY, String(refusals));
   if (refusals >= NUDGE_REFUSALS_MAX && typeof setSetting === 'function') {
+    localStorage.removeItem(NUDGE_REFUSALS_KEY); // so turning the setting back off gives three more
     setSetting('notifications', 'hideThemeNudge', true);
     if (typeof applyNotificationSettings === 'function') applyNotificationSettings();
   }

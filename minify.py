@@ -4,6 +4,8 @@ minify.py  ·  Builds a minified copy of the site as a zip for Netlify.
     python minify.py                 -> ../<folder>-netlify.zip (next to this project folder)
     python minify.py path/to/out.zip -> that file instead
     python minify.py --deploy        -> deploys the build to Netlify instead of zipping it
+    python minify.py --draft         -> the same, as a draft deploy: own preview URL, live site
+                                        untouched; prints the command that publishes it later
 
 --deploy uses the Netlify CLI (Node.js, then `npm install -g netlify-cli`,
 `netlify login`, and once in this folder `netlify link` to pick the site).
@@ -389,7 +391,7 @@ def check_manifest(problems):
             if _vcmp(version, prev_v) < 0:
                 actions.append(f'Version goes DOWN, {prev_v} -> {version}: open tabs on {prev_v} are told to "update" to the older one.')
             else:
-                actions.append(f'New version {version} (was {prev_v}): open tabs show the update banner and reload by themselves after 48 h.')
+                actions.append(f'New version {version} (was {prev_v}): open tabs show the update banner and reload by themselves after 48 h (after a 5-min countdown banner).')
 
     editor = data.get('editor')
     if editor is not None and not _version_ok(editor):
@@ -410,7 +412,7 @@ def check_manifest(problems):
                 'that is not deployed (once a day each, the reload guard stops more)')
         else:
             same = ' (unchanged)' if old.get('min_version') == mv else ''
-            actions.append(f'Tabs below {mv} reload within one update check (~{update_s / 60:.0f} min) instead of after 48 h; '
+            actions.append(f'Tabs below {mv} reload within one update check (~{update_s / 60:.0f} min) plus a 5-min "critical" countdown, instead of after 48 h; '
                            f'a timed quiz first, unless it has run 3 h{same}.')
 
     if 'poll' in data:
@@ -539,8 +541,9 @@ def netlify_site_id():
         return None
 
 
-def deploy(stage):
-    """Deploys stage/site plus stage/netlify/edge-functions to production."""
+def deploy(stage, draft=False):
+    """Deploys stage/site plus stage/netlify/edge-functions to production,
+    or as a draft (draft=True) that can be published later as it is."""
     cli = shutil.which('netlify')
     site = netlify_site_id()
     if not cli or not site:
@@ -550,20 +553,30 @@ def deploy(stage):
         if not site:
             print(f'  - this folder is not linked to a Netlify site: run  netlify link  in {SRC}')
         sys.exit(1)
-    print(f'Deploying to Netlify site {site} …')
+    print(f'Deploying {"a draft " if draft else ""}to Netlify site {site} …')
     # From the stage folder, so the CLI finds netlify/edge-functions there.
-    result = subprocess.run([cli, 'deploy', '--prod', '--dir', 'site', '--site', site], cwd=stage)
+    cmd = [cli, 'deploy', '--dir', 'site', '--site', site] + (['--json'] if draft else ['--prod'])
+    result = subprocess.run(cmd, cwd=stage, capture_output=draft, text=draft)
     if result.returncode != 0:
+        if draft:
+            print(result.stdout, result.stderr)
         print('Netlify deploy failed (see above). Nothing on the live site changed.')
         sys.exit(result.returncode)
+    if draft:
+        out = result.stdout
+        info = json.loads(out[out.index('{'):out.rindex('}') + 1])
+        print(f'Draft deploy {info["deploy_id"]}: {info["deploy_url"]}')
+        print('Publish it (as it is, no rebuild) with:')
+        print(f'  netlify api restoreSiteDeploy --data "{{\"site_id\":\"{site}\",\"deploy_id\":\"{info["deploy_id"]}\"}}"')
 
 
 def main():
     global ESBUILD
     project = os.path.basename(SRC.rstrip(os.sep))
     args = sys.argv[1:]
-    deploying = '--deploy' in args
-    args = [a for a in args if a != '--deploy']
+    draft = '--draft' in args
+    deploying = '--deploy' in args or draft
+    args = [a for a in args if a not in ('--deploy', '--draft')]
     zip_path = os.path.abspath(args[0]) if args else os.path.join(os.path.dirname(SRC), f'{project}-netlify.zip')
     ESBUILD = esbuild_path()
 
@@ -625,8 +638,8 @@ def main():
 
         if deploying:
             report(stats, bundles, manifest_actions)
-            deploy(stage)
-            print('All checks passed. Deployed.')
+            deploy(stage, draft)
+            print('All checks passed. ' + ('Draft deployed; the live site is unchanged.' if draft else 'Deployed.'))
             return
 
         tmp_zip = os.path.join(stage, 'site.zip')
