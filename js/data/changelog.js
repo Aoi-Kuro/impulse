@@ -27,10 +27,11 @@
 // everyone who already used the site before it, never to first-time
 // visitors (js/splash.js, takeDeployMessage). '' = nothing special. Set or
 // clear it on every deploy; changing only the text shows it again too.
-const DEPLOY_MESSAGE = 'Problems can now have several solutions! Want to write one with us? Contact the admin!';
+const DEPLOY_MESSAGE = '';
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 const CHANGELOG = [
+  { version: "13.4.1", note: "Database moved from Tokyo to Frankfurt.", scope: 1 },
   { version: "13.4.0", note: "Problems can have several solutions, shown as version tabs; a shared link opens the version you share.", scope: 0 },
   { version: "13.3.0", note: "Problems can be flagged, with a flagged-only filter in Entire Set. See correct answer no longer locks the problem.", scope: 0 },
   { version: "13.2.5", note: "Updated problem list.", scope: 1 },

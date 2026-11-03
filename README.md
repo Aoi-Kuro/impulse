@@ -833,11 +833,14 @@ flagging and nickname changes go through Edge Functions.
 - **Live updates**: one Realtime subscription to Postgres Changes on
   `forum_messages` drives the unread badges, the open feed and the per-problem
   counts. A fallback check every 90 s (`poll.forum`, skipped while the tab is
-  hidden) catches a missed event. **Quiet mode**: once the newest message is
+  hidden) catches a missed event; while the subscription is connected it
+  waits 5 minutes instead (`poll.forum_live`), as a missed push is then all
+  it covers. **Quiet mode**: once the newest message is
   over 24 h old (learned from a one-column `created_at` request at start-up and
   from every message seen since), the fallback slows to every 15 minutes
   (`poll.forum_quiet`); any new message switches it back, and it never applies
-  while the forum screen is open.
+  while the forum screen is open. The longest of the intervals that apply is
+  used.
 - **Read-only switch**: `off: ["forum_posting"]` in `site-version.json`
   refuses new messages, replies and edits in the composer with a short notice;
   reading is unaffected (see [Remote settings](#remote-settings-site-versionjson)).
@@ -1345,7 +1348,7 @@ time: `update` always preempts (others are paused, not lost); `bug`, `theme`
 and the full-screen reminder queue first-come-first-served. API: `register`,
 `request`, `release`, `cancel`.
 
-- **Update banner**: `site-version.json` is polled every 5 minutes (`poll.update`)
+- **Update banner**: `site-version.json` is polled every 15 minutes (`poll.update`)
   while the tab is visible (and on return to it, at most once per interval),
   also after the banner was dismissed, since the file carries the remote
   settings below; a mismatch with `CURRENT_VERSION` shows "New version
@@ -1391,7 +1394,7 @@ check.
 | Key | Effect | Default |
 |---|---|---|
 | `min_version` | Tabs on an older version reload as soon as they're outside a timed quiz (a timed quiz once it has run 3 h), instead of after 48 h. Must not be above `version`. | no minimum |
-| `poll` | Background intervals in seconds, each clamped to its limits: `attempts` 45 (15–3600), `attempts_live` 300 (45–3600, used instead of `attempts` while that Realtime channel is connected), `solve_all` 60 (15–3600), `solve_all_live` 300 (60–3600, likewise), `settings` 900 (60–86400), `stats` 45 (15–3600), `forum` 90 (15–3600), `forum_quiet` 900 (60–21600), `solutions` 1800 (60–86400, how long one solutions index fetch is reused), `update` 300 (60–1800). Zero or a negative value is ignored (default), not clamped to the fastest rate. A changed value takes effect at once. A timer tick is skipped when the same work already ran less than an interval ago (tab return, Realtime ping), so a catch-up isn't repeated seconds later. | values shown |
+| `poll` | Background intervals in seconds, each clamped to its limits: `attempts` 45 (15–3600), `attempts_live` 300 (45–3600, used instead of `attempts` while that Realtime channel is connected), `solve_all` 60 (15–3600), `solve_all_live` 300 (60–3600, likewise), `settings` 900 (60–86400), `stats` 45 (15–3600), `forum` 90 (15–3600), `forum_live` 300 (60–3600, used instead of `forum` while the forum's Realtime channel is connected), `forum_quiet` 900 (60–21600), `solutions` 1800 (60–86400, how long one solutions index fetch is reused), `update` 900 (60–1800). Zero or a negative value is ignored (default), not clamped to the fastest rate. A changed value takes effect at once. A timer tick is skipped when the same work already ran less than an interval ago (tab return, Realtime ping), so a catch-up isn't repeated seconds later. | values shown |
 | `off` | `realtime`: no Realtime connections; everything runs on its `poll` interval. `forum_posting`: the forum is read-only (no new messages, replies or edits). | nothing off |
 | `sync_paused` | `true`: attempts, Solve-All progress and settings stay in each browser and are neither sent nor fetched; deleting an attempt and resetting Solve-All still go through. Removing it syncs every visible tab at once. | `false` |
 | `purge_id` | Each browser refills its offline cache once per new value (`sw.js` refills at most once an hour, so a fresh install skips it). | none |
@@ -1406,7 +1409,7 @@ builds keep reading the old name.
 2. Run `python minify.py`. It stops on a typo or an invalid value and ends
    with a list of what the file will make open tabs do; read that list.
 3. Deploy the zip. Visible tabs pick the change up at their next update
-   check: within 5 minutes by default (`poll.update`). Hidden tabs make no
+   check: within 15 minutes by default (`poll.update`). Hidden tabs make no
    requests at all and apply it the moment they are shown again. New page
    loads start from the last settings this browser saw and correct
    themselves at the first check, a second after loading.
@@ -1947,8 +1950,14 @@ previews that showed the old name.
 
 The schema is Postgres + Row Level Security. A course's project is built by
 running `superbase/migrations/` **in order** in the SQL editor of a fresh
-project. `superbase/database.sql` is an old context-only dump, superseded and
-never meant to be run.
+project, or `superbase/migrations/ALL.sql` alone (all of them folded into one
+script; never both). `superbase/database.sql` is an old context-only dump,
+superseded and never meant to be run.
+
+**Moving a course to another Supabase project** (other region or account):
+follow [`superbase/dev/MIGRATION.md`](superbase/dev/MIGRATION.md) — schema,
+secrets, Edge Functions, a verified data copy and the site switch, with
+about 5 minutes of read-only site. The tools it uses are in `superbase/dev/`.
 
 | Migration | Adds |
 |---|---|
@@ -1967,6 +1976,7 @@ never meant to be run.
 | `012_share_cards.sql` | `problem_solutions.share` (the link-preview picture's name, title, description and what it was drawn from) and the public `share-cards` storage bucket (JPEG only, 2 MB). Run before deploying the `solutions-admin` that writes it. |
 | `013_solution_levels_and_alternatives.sql` | `solution_editors.level` (0 observer … 4 full; existing editors set to 4), several solutions per problem (`problem_solutions.id` primary key, `owner_id`, `created_at`, `is_default`; one per author per problem), the triggers that keep exactly one default per problem, status `review`, and `solution_reviews` (pending edits and review notes; no policies). Deploy together with the `solutions-admin` that uses it. |
 | `014_solution_author_id.sql` | `problem_solutions.author_id`: the credit as an editor id (`author`/`author_link` stay as a copy of that editor's name and link). The 009 trigger now matches by id, so renaming an editor carries over to their solutions (and to `saved_by`); a trigger re-links `author_id` when `author` is changed without it. Run before deploying the `solutions-admin` that writes it. |
+| `015_forum_view_security_invoker.sql` | `forum_messages_public` reads with the visitor's rights (`security_invoker`), fixing Supabase's "Security Definer View" warning; visitors may read `identities.id`, `nickname`, `avatar_svg` (never `pin_hash`/`pin_salt`), only for people who have posted. |
 
 **Tables**
 
@@ -2230,7 +2240,7 @@ forum, paused sync, a cache refill for a new `purge_id`.
 1. **The repository is duplicated** into a new one for the course (each course
    is a fully separate repository/site, not a branch).
 2. **A new Supabase project is created**, Realtime is enabled, and every file
-   in `superbase/migrations/` is run **in order** (000 → 010).
+   in `superbase/migrations/` is run **in order** (000 → 015), or `ALL.sql` alone.
    `forum_messages` is added to the `supabase_realtime` publication.
 3. **The Edge Functions are deployed** from `superbase/edge-functions/` with the
    auth settings above, and the project's secrets are set: `OPENAI_API_KEY`,

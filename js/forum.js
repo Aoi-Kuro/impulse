@@ -279,15 +279,20 @@ function _forumRealtimeWake() {
 // don't want to just sit there waiting for the next push or the 90s
 // fallback; catch up immediately instead.
 let _forumRealtimeEverConnected = false;
+// The channel is SUBSCRIBED right now: the fallback check then only covers
+// a missed push, so it waits "poll.forum_live" (5 min by default) instead
+// of "poll.forum" (same reasoning as js/attempts-sync.js's fallback poll).
+let _forumRealtimeLive = false;
 
-// One fallback check, if its interval (90s, or 15 min when quiet) is up.
+// One fallback check, if its interval is up: 90s, 5 min while the Realtime
+// channel is connected, or 15 min when quiet (whichever is longest).
 // Runs from the timer and when the tab comes back into view; a hidden tab
 // skips it. The few seconds of slack keep a timer tick that fires a little
 // early from being skipped for a whole extra interval.
 function _forumFallbackTick() {
   if (document.hidden) return;
   const quiet = _forumIsQuiet();
-  const every = sitePollMs(quiet ? 'forum_quiet' : 'forum');
+  const every = Math.max(sitePollMs(quiet ? 'forum_quiet' : 'forum'), _forumRealtimeLive ? sitePollMs('forum_live') : 0);
   if (Date.now() - _forumLastFallbackAt < every - 5000) return;
   // Catches a message whose Realtime event was missed even when no poll
   // below is active to notice it, so quiet mode can end.
@@ -313,17 +318,22 @@ function _ensureForumRealtime() {
   if (_forumRealtimeChannel || siteOff('realtime')) return; // "off" in site-version.json: the fallback tick carries it alone
   const client = getForumClient();
   if (!client) return;
-  _forumRealtimeChannel = client
+  const channel = client
     .channel('forum-messages-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_messages' }, (payload) => {
       if (payload && payload.eventType === 'INSERT' && payload.new) _forumNoteMessageAt(payload.new.created_at || new Date().toISOString());
       _forumRealtimeWake();
-    })
-    .subscribe((status) => {
-      if (status !== 'SUBSCRIBED') return;
-      if (_forumRealtimeEverConnected) _forumRealtimeWake(); // reconnect, not first connect — catch up now
-      _forumRealtimeEverConnected = true;
     });
+  _forumRealtimeChannel = channel;
+  channel.subscribe((status) => {
+    // A channel already dropped by _forumDropRealtimeChannel reports its
+    // own CLOSED late; it must not mark the current one as down.
+    if (channel !== _forumRealtimeChannel) return;
+    _forumRealtimeLive = status === 'SUBSCRIBED';
+    if (status !== 'SUBSCRIBED') return;
+    if (_forumRealtimeEverConnected) _forumRealtimeWake(); // reconnect, not first connect — catch up now
+    _forumRealtimeEverConnected = true;
+  });
 }
 
 // Tears the socket down once nothing needs it — no point holding a
@@ -340,6 +350,7 @@ function _forumDropRealtimeChannel() {
     const client = getForumClient();
     if (client) client.removeChannel(_forumRealtimeChannel);
     _forumRealtimeChannel = null;
+    _forumRealtimeLive = false;
     _forumRealtimeEverConnected = false; // next _ensureForumRealtime() starts a fresh channel/first-connect
   }
 }

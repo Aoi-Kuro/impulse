@@ -79,8 +79,8 @@ const COURSES = {
       // TODO(phys161 release): stand up the phys161 Supabase project
       // (schema + edge functions from superbase/), then fill these in.
       // Left blank on purpose — see below for what happens otherwise.
-      url: 'https://ntlonovwrpspqncmejdm.supabase.co',
-      publishableKey: 'sb_publishable_cj-dJARetQ3jv_1r3vqtKQ_kndImovt',
+      url: 'https://srbwxqixcqbkgziqehuf.supabase.co',
+      publishableKey: 'sb_publishable_c3qQR-aIOGtusd9cD4SjKg_rF3FYEMV',
     },
     // TODO(phys161 release): generate a fresh VAPID keypair for the
     // phys161 project (web-push generate-vapid-keys or equivalent), put

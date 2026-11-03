@@ -48,9 +48,10 @@ const SITE_POLL = {
   settings:    [900, 60, 86400],     // settings sync fallback (js/settings-sync.js)
   stats:       [45, 15, 3600],       // Forum & Site panel refresh (js/stats.js)
   forum:       [90, 15, 3600],       // forum fallback check (js/forum.js)
+  forum_live:  [300, 60, 3600],      // forum fallback check while Realtime is connected (js/forum.js)
   forum_quiet: [900, 60, 21600],     // forum fallback check once nobody has posted for 24 h
   solutions:   [1800, 60, 86400],    // how long one solutions index fetch is reused (js/solutions.js)
-  update:      [300, 60, 1800],      // site-version.json check (js/quiz-engine.js)
+  update:      [900, 60, 1800],      // site-version.json check (js/quiz-engine.js)
 };
 const SITE_OFF_NAMES = ['realtime', 'forum_posting'];
 const SITE_CONFIG_KEY = STORAGE_PREFIX + '-site-config';

@@ -2465,7 +2465,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '13.4.0';
+const CURRENT_VERSION = '13.4.1';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.
@@ -2560,8 +2560,8 @@ BannerManager.register('update', () => {
 // attempt has run UPDATE_FORCE_DURING_QUIZ_AFTER (3 h): nobody is still
 // working on it by then. Called right after a mismatch is detected, on
 // every poll, and the instant a quiz attempt ends (see stopLiveQuizTimer
-// above) so a pending update doesn't sit around for up to another 5-minute
-// poll once it's finally safe to apply.
+// above) so a pending update doesn't sit around for up to another update
+// poll (poll.update) once it's finally safe to apply.
 async function maybeForceUpdateOutsideQuiz() {
   if (!_updatePending) return;
   const overdue = _belowMinVersion || _updateWaitedMs() >= UPDATE_FORCE_AFTER;
@@ -2642,7 +2642,7 @@ async function checkForUpdate() {
 //
 // At most once per new version per browser: the worker refills the whole
 // precache list after every purge, and before this guard a tab left open on
-// an old version repeated that on every 5-minute poll (~2.7 MB each time).
+// an old version repeated that on every update poll (~2.7 MB each time).
 // The worker's cache is shared by every tab, so one purge (UPDATE_PURGED_KEY)
 // covers them all; _purge covers this tab when localStorage is unavailable.
 const UPDATE_PURGED_KEY = STORAGE_PREFIX + '-update-purged';
