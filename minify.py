@@ -567,7 +567,8 @@ def deploy(stage, draft=False):
         info = json.loads(out[out.index('{'):out.rindex('}') + 1])
         print(f'Draft deploy {info["deploy_id"]}: {info["deploy_url"]}')
         print('Publish it (as it is, no rebuild) with:')
-        print(f'  netlify api restoreSiteDeploy --data "{{\"site_id\":\"{site}\",\"deploy_id\":\"{info["deploy_id"]}\"}}"')
+        data = json.dumps({'site_id': site, 'deploy_id': info['deploy_id']})
+        print(f"  netlify api restoreSiteDeploy --data '{data}'")
 
 
 def main():
