@@ -246,29 +246,9 @@ async function issueIdentityToken(deviceId: string, identityId: string | null): 
   return { token, expiresAt };
 }
 
-// Returns { ok: false } on any invalid/expired/mismatched token -- caller
-// falls back to the normal identity_devices DB lookup exactly as before.
-// Returns { ok: true, identityId: null } for a device confirmed NOT linked
-// to any identity (a lurker), so that case is cached too, not just the
-// linked case.
-async function verifyIdentityToken(deviceId: string, token: unknown): Promise<{ ok: true; identityId: string | null } | { ok: false }> {
-  if (!DEVICE_TOKEN_SECRET || typeof token !== 'string' || !token.includes('.')) return { ok: false };
-  const [encoded, sig] = token.split('.');
-  let payload: string;
-  try { payload = atob(encoded); } catch { return { ok: false }; }
-  const parts = payload.split(':');
-  if (parts.length !== 3) return { ok: false };
-  const [tokenDeviceId, identityIdPart, expiresAtStr] = parts;
-  if (tokenDeviceId !== deviceId) return { ok: false };
-  const expiresAt = Number(expiresAtStr);
-  if (!Number.isFinite(expiresAt) || Date.now() / 1000 > expiresAt) return { ok: false };
-  const expected = await hmacHex(payload);
-  if (expected.length !== sig.length) return { ok: false };
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
-  if (diff !== 0) return { ok: false };
-  return { ok: true, identityId: identityIdPart === '' ? null : identityIdPart };
-}
+// This function only ISSUES identity tokens (for the other endpoints to
+// consume) -- it never verifies one itself; see the live lookup in the
+// handler for why.
 
 function randomPin(): string {
   const n = 10000 + Math.floor(Math.random() * 90000); // always exactly 5 digits
@@ -496,27 +476,22 @@ export default {
 
     // "mine" = the identity (if any) this device is currently linked to.
     // "target" = the identity (if any) that already owns the requested name.
-    // The identity_devices half of "mine" is checked against the short-lived
-    // identity token first (see that helper's own comment above); the DB
-    // read still runs in parallel with the target lookup below, but only
-    // when the token was cold/expired/missing — a no-op placeholder stands
-    // in for it otherwise so Promise.all's shape doesn't need to change.
-    const identityCheck = await verifyIdentityToken(deviceId, payload?.identity_token);
-    const mineIdentityKnown = identityCheck.ok;
-
+    // The identity_devices half of "mine" is always read live here, never
+    // from the identity token: claim is the one call that decides between
+    // create/link/rename, and a stale cached "lurker" token (e.g. one an
+    // older in-flight request from another endpoint wrote back AFTER a
+    // fresh claim) sent an already-linked device down Case 1, which then
+    // failed on identity_devices_pkey. Claims are rare, so the extra read
+    // costs nothing in log volume.
     const [targetIdentity, mineLink] = await Promise.all([
       db.from('identities').select('*').eq('nickname_lower', nicknameLower).maybeSingle(),
-      mineIdentityKnown
-        ? Promise.resolve({ data: null as { identity_id: string } | null, error: null as unknown })
-        : db.from('identity_devices').select('identity_id').eq('device_id', deviceId).maybeSingle(),
+      db.from('identity_devices').select('identity_id').eq('device_id', deviceId).maybeSingle(),
     ]);
     if (mineLink.error || targetIdentity.error) {
       console.error('claim-nickname: lookup error', mineLink.error || targetIdentity.error);
       return Response.json({ ok: false, error: 'server_error' }, { status: 500 });
     }
-    const mineIdentityId: string | null = mineIdentityKnown
-      ? (identityCheck.ok ? identityCheck.identityId : null)
-      : (mineLink.data ? mineLink.data.identity_id : null);
+    const mineIdentityId: string | null = mineLink.data ? mineLink.data.identity_id : null;
 
     let mineIdentity: IdentityRow | null = null;
     if (mineIdentityId) {
