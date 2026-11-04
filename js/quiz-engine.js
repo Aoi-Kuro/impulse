@@ -805,6 +805,9 @@ function checkAll() {
     const pts = res.pts;
     totalPts += pts;
 
+    // Lock the field: what stays on screen is what was graded and saved
+    // (render() builds fresh fields for the next quiz).
+    ansEl.disabled = true;
     markAnswerInput(ansEl, pts);
 
     if      (pts === 1)   card.classList.add("correct");
@@ -2465,7 +2468,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '13.4.2';
+const CURRENT_VERSION = '13.4.3';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.

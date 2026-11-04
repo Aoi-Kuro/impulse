@@ -31,6 +31,7 @@ const DEPLOY_MESSAGE = '';
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 const CHANGELOG = [
+  { version: "13.4.3", note: "Answer fields in Random quiz are locked after Check answers.", scope: 0 },
   { version: "13.4.2", note: "Overdue updates now warn with a 5-minute countdown.", scope: 0 },
   { version: "13.4.1", note: "Database moved from Tokyo to Frankfurt.", scope: 1 },
   { version: "13.4.0", note: "Problems can have several solutions, shown as version tabs; a shared link opens the version you share.", scope: 0 },
