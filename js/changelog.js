@@ -241,7 +241,7 @@ function renderChangelog() {
 
   // ── Overlay canvas (field lines) ─────────────────────────────────────────
   const overlay = document.createElement('canvas');
-  overlay.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:9990;'; // stays below #update-banner/#bug-report-banner/#theme-nudge-banner (9997-9999) — see their CSS comment
+  overlay.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:9990;visibility:hidden;'; // stays below #update-banner/#bug-report-banner/#theme-nudge-banner (9997-9999) — see their CSS comment
   document.body.appendChild(overlay);
 
   function resizeOverlay() {
@@ -461,27 +461,43 @@ function renderChangelog() {
   }
 
   // ── Main draw ─────────────────────────────────────────────────────────────
+  // The overlay covers the whole screen, so clearing it costs a full-screen
+  // repaint even when nothing is on it, and that kept the GPU busy on an idle
+  // menu. It is only cleared while it holds something, and stays hidden (no
+  // layer to composite at all) the rest of the time.
+  let overlayDrawn = false;
+
+  function hideOverlay() {
+    if (!overlayDrawn) return;
+    overlayDrawn = false;
+    overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
+    overlay.style.visibility = 'hidden';
+  }
+
   function drawFieldLines(dt) {
     const dpr = window.devicePixelRatio || 1;
     const oc  = overlay.getContext('2d');
 
-    // Always clear first so lines disappear as soon as conditions aren't met
-    oc.clearRect(0, 0, overlay.width, overlay.height);
-
     // Don't render if: changelog is closed, user toggled lines off,
     // or the landing screen is no longer visible (user entered the quiz).
-    if (!changelogOpen) return;
-    if (!fieldLinesEnabled) return;
-    const landing = document.getElementById('landingScreen');
-    if (landing && landing.classList.contains('hidden')) return;
+    if (!changelogOpen) return hideOverlay();
+    if (!fieldLinesEnabled) return hideOverlay();
+    if (landingHidden()) return hideOverlay();
 
-    if (cursorX < -100) return;
+    if (cursorX < -100) return hideOverlay();
 
     const btn = getButtonCenter();
-    if (!btn) return;
+    if (!btn) return hideOverlay();
 
     const dist = Math.hypot(cursorX - btn.x, cursorY - btn.y);
-    if (dist < 20) return;
+    if (dist < 20) return hideOverlay();
+
+    if (overlayDrawn) {
+      oc.clearRect(0, 0, overlay.width, overlay.height);
+    } else {
+      overlayDrawn = true;
+      overlay.style.visibility = 'visible';
+    }
 
     const lerpSpeed = 0.055;
     if (smoothCX < -100) { smoothCX = cursorX; smoothCY = cursorY; }
@@ -527,15 +543,52 @@ function renderChangelog() {
   // Use rAF timestamp so arrowT advances at the same real-time speed regardless
   // of display refresh rate (60 Hz, 120 Hz, 144 Hz, etc.)
   let lastTimestamp = null;
+  let lastChargeDraw = null;
+  let loopFrame = 0;
+
+  // The charge only pulses slowly, so it doesn't need every frame of a 144 Hz
+  // screen. With reduced motion it holds still and redraws once a second, so
+  // a theme change still reaches it.
+  const CHARGE_FRAME_MS = 33;
+  const CHARGE_STILL_FRAME_MS = 1000;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  function landingHidden() {
+    const landing = document.getElementById('landingScreen');
+    return !!landing && landing.classList.contains('hidden');
+  }
 
   function loop(timestamp) {
+    // Everything here belongs to the landing screen, so nothing runs elsewhere.
+    if (landingHidden()) {
+      hideOverlay();
+      loopFrame = 0;
+      lastTimestamp = null;
+      lastChargeDraw = null;
+      return;
+    }
     if (lastTimestamp === null) lastTimestamp = timestamp;
     const dt = Math.min(timestamp - lastTimestamp, 64); // cap at ~2 missed frames
     lastTimestamp = timestamp;
 
-    drawCharge(dt);
+    const still = reducedMotion.matches;
+    const sinceCharge = lastChargeDraw === null ? Infinity : timestamp - lastChargeDraw;
+    if (sinceCharge >= (still ? CHARGE_STILL_FRAME_MS : CHARGE_FRAME_MS)) {
+      drawCharge(still || lastChargeDraw === null ? 0 : Math.min(sinceCharge, 64));
+      lastChargeDraw = timestamp;
+    }
     drawFieldLines(dt);
-    requestAnimationFrame(loop);
+    loopFrame = requestAnimationFrame(loop);
+  }
+
+  function startLoop() {
+    if (!loopFrame && !landingHidden()) loopFrame = requestAnimationFrame(loop);
+  }
+
+  function watchLanding() {
+    startLoop();
+    const landing = document.getElementById('landingScreen');
+    if (landing) new MutationObserver(startLoop).observe(landing, { attributes: true, attributeFilter: ['class'] });
   }
 
   // ── Allow other modules to hide/show the field-lines overlay ──
@@ -543,6 +596,6 @@ function renderChangelog() {
     overlay.style.display = visible ? '' : 'none';
   };
 
-  document.addEventListener('DOMContentLoaded', () => { renderChangelog(); requestAnimationFrame(loop); });
-  if (document.readyState !== 'loading') { renderChangelog(); requestAnimationFrame(loop); }
+  document.addEventListener('DOMContentLoaded', () => { renderChangelog(); watchLanding(); });
+  if (document.readyState !== 'loading') { renderChangelog(); watchLanding(); }
 })();

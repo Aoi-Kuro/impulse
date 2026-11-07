@@ -376,7 +376,55 @@
     el.style.animation = 'none';
     void el.offsetWidth; // force reflow
     el.style.animation = '';
+    noteBounceActivity();
   }
+
+  // ── The bounce rests when nobody is around ──────────────────────────────
+  // It was the main GPU cost of an idle menu. After a minute with no activity
+  // its speed eases down to zero, wherever in the bounce it happens to be, and
+  // any activity eases it back up, so it never jumps.
+  const BOUNCE_IDLE_MS = 60 * 1000;
+  const BOUNCE_EASE_MS = 1500;
+  let bounceIdleTimer = 0;
+  let bounceEaseFrame = 0;
+  let bounceResting = false;
+
+  function easeBounceTo (rate) {
+    cancelAnimationFrame(bounceEaseFrame);
+    const el = document.getElementById('splashText');
+    // None while the splash isn't rendered, or with reduced motion.
+    const bounce = el && el.getAnimations().find(a => a.animationName);
+    if (!bounce) return;
+    if (rate > 0) bounce.play();
+    const from = bounce.playbackRate;
+    const start = performance.now();
+    const step = (now) => {
+      const t = Math.min((now - start) / BOUNCE_EASE_MS, 1);
+      bounce.playbackRate = from + (rate - from) * t * (2 - t);
+      if (t < 1) bounceEaseFrame = requestAnimationFrame(step);
+      else if (rate === 0) bounce.pause();
+    };
+    bounceEaseFrame = requestAnimationFrame(step);
+  }
+
+  function noteBounceActivity () {
+    clearTimeout(bounceIdleTimer);
+    bounceIdleTimer = setTimeout(() => {
+      bounceResting = true;
+      easeBounceTo(0);
+    }, BOUNCE_IDLE_MS);
+    if (bounceResting) {
+      bounceResting = false;
+      easeBounceTo(1);
+    }
+  }
+
+  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel', 'scroll'].forEach((type) => {
+    window.addEventListener(type, noteBounceActivity, { capture: true, passive: true });
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) noteBounceActivity();
+  });
 
   // Shown instead of nothing if splashes.json can't be fetched — most
   // commonly because the page is opened as a local file:// path rather

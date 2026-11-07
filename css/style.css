@@ -2967,6 +2967,9 @@
   .mc-splash:hover { filter: brightness(1.12); }
   .mc-splash:active { filter: brightness(0.94); }
   .mc-splash:empty { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .mc-splash { animation: none !important; } /* also beats the phone-width mcSplashBounceFlat below */
+  }
   @keyframes mcSplashBounce {
     from { transform: translateX(-50%) rotate(9deg) scale(1);    }
     to   { transform: translateX(-50%) rotate(9deg) scale(1.14); }
