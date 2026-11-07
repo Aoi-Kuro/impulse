@@ -114,7 +114,8 @@ export function toTex(n: Ast, num: (v: number) => string = numberToTex): string 
         case '-':
           return `${a} - ${b}`;
         case '*':
-          return n.implicit ? `${a}\\,${b}` : `${a} \\cdot ${b}`;
+          // two numbers side by side need the dot: 2\,3 reads as 23
+          return n.implicit && n.b.t !== 'num' ? `${a}\\,${b}` : `${a} \\cdot ${b}`;
         case '/':
           return `\\frac{${tex(stripParen(n.a))}}{${tex(stripParen(n.b))}}`;
         case '^': {

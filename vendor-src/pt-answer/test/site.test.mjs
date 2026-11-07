@@ -51,9 +51,10 @@ test('grading rules', () => {
     ['9.81 N/kg', 9.81, ['m/s^2'], 1],
     ['9.81 m/s', 9.81, ['m/s^2'], 0.9],
     ['9.81', 9.81, ['m/s^2'], 0.9],
-    ['9.81 m*s^-2', 9.81, ['m/s^2'], 0],
-    ['9.81 m·s^-2', 9.81, ['m/s^2'], 0],
-    ['9.81 m/s/s', 9.81, ['m/s^2'], 0],
+    ['9.81 m*s^-2', 9.81, ['m/s^2'], 0.9], // a * between units is invalid: a wrong unit
+    ['9.81 m·s^-2', 9.81, ['m/s^2'], 0.9],
+    ['9.81 m/s/s', 9.81, ['m/s^2'], 1], // read as m/s^2
+    ['5 kg/m/s', 5, ['kg/(m s)'], 1],
     ['9.7 m/s^2', 9.81, ['m/s^2'], 0],
     ['9.9 m/s^2', 9.81, ['m/s^2'], 1], // within 1%
     ['', 9.81, ['m/s^2'], 0],
@@ -66,10 +67,11 @@ test('grading rules', () => {
     ['3/4', 0.75, [], 1],
     ['(1+2)/4', 0.75, [], 1],
     ['2*pi rad', 6.2832, ['rad'], 1],
-    ['2pi', 6.2832, ['rad'], 1],
+    ['2pi', 6.2832, ['rad'], 0.9],
     ['2 pi', 6.2832, [], 1],
     ['2pi rad', 6.2832, ['rad'], 1],
-    ['2 e', 5.4366, [], 1],
+    ['2 e', 5.4366, [], 0], // e is not a constant
+    ['2*e', 5.4366, [], 0],
     ['sqrt(2)', 1.4142, [], 0],
     ['2,5 m', 2.5, ['m'], 0],
     ['−3 m', -3, ['m'], 1],
@@ -110,11 +112,11 @@ test('grading rules', () => {
     ['4000 eV', 4, ['keV'], 1],
     ['326.9 nm', 326.9, ['nm'], 1],
     ['0.3269 um', 326.9, ['nm'], 1],
-    // rad and no unit are the same
-    ['1.2', 1.2, ['rad'], 1],
+    // rad is a unit like any other, as on NU Moodle
+    ['1.2', 1.2, ['rad'], 0.9],
     ['1.2 rad', 1.2, ['rad'], 1],
-    ['1.2 rad', 1.2, [], 1],
-    ['1.2 rad', 1.2, ['(none)', ''], 1],
+    ['1.2 rad', 1.2, [], 0.9],
+    ['1.2 rad', 1.2, ['(none)', ''], 0.9],
     ['1.2 °', 1.2, ['rad'], 0.9],
     // only SI conversions
     ['20 m/s', 20, ['m/s'], 1],
@@ -130,19 +132,19 @@ test('grading rules', () => {
     ['3 in^3', 3, ['in^3'], 1],
     ['12.5 %', 12.5, ['%'], 1],
     ['12.5%', 12.5, ['%'], 1],
-    // Moodle grammar: a unit name once, one "/"
-    ['4 m m', 4, ['m^2'], 0],
+    // a unit name once: a repeat is a wrong unit
+    ['4 m m', 4, ['m^2'], 0.9],
     ['4 m^2', 4, ['m^2'], 1],
     ['3 J/(kg K)', 3, ['J/(kg K)'], 1],
     ['3 J/kg K', 3, ['J/(kg K)'], 1],
-    // exponents as qtype_formulas reads them: 2, -2 or (-2) only
-    ['5 m/s^(2)', 5, ['m/s^2'], 0],
+    // exponents: 2, -2, (-2), and (2) read as 2; anything else is a wrong unit
+    ['5 m/s^(2)', 5, ['m/s^2'], 1], // brackets around a whole power: read as m/s^2
     ['5 m s^(-2)', 5, ['m/s^2'], 1],
     ['5 m s^-2', 5, ['m/s^2'], 1],
     ['8 kN m^-2', 8, ['kN m^(-2)'], 1],
-    ['5 m^(+2)', 5, ['m^2'], 0],
-    ['5 m^+2', 5, ['m^2'], 0],
-    ['5 m^1.5', 5, ['m^2'], 0],
+    ['5 m^(+2)', 5, ['m^2'], 0.9],
+    ['5 m^+2', 5, ['m^2'], 0.9],
+    ['5 m^1.5', 5, ['m^2'], 0.9],
     ['5 m²', 5, ['m^2'], 1],
     ['5 s⁻¹', 5, ['s^-1'], 1],
     // the official statement's examples
@@ -166,7 +168,7 @@ test('split and join keep what was typed', () => {
   for (const [t, value, unit] of [['0.5 m m', '0.5', 'm m'], ['3 m/s/s', '3', 'm/s/s'], ['5 N*m', '5', 'N*m'], ['2pi', '2pi', ''], ['abc', 'abc', '']]) {
     assert.deepEqual({ ...splitAnswer(t) }, { value, unit }, t);
   }
-  for (const t of ['0.5 m m', '3 m/s/s', '5 N*m', '7 kg·m']) {
+  for (const t of ['0.5 m m', '5 N*m', '7 kg·m']) {
     assert.equal(gradeAnswer(t, { answer: 5, units: ['m'] }).unitStatus, 'invalid', t);
   }
   assert.deepEqual({ ...splitAnswer('  ') }, { value: '', unit: '' });
@@ -178,11 +180,26 @@ test('preview text', () => {
   assert.match(v('67 m/s').latex, /67.*dfrac\{\\text\{m\}\}\{\\text\{s\}\}/);
   assert.equal(v('67'), null); // a plain number: no preview, the missing unit isn't hinted at
   assert.equal(v('1e4').ok, true); // but 10^4 notation is previewed
-  assert.equal(v('9.81 m/s/s').error, 'unit-syntax');
+  assert.equal(v('9.81 m m').error, 'unit-syntax');
+  assert.equal(v('9.81 N*m').error, 'unit-syntax');
+  assert.equal(v('9.81 m/s/s').ok, true); // read as m/s^2
+  assert.equal(v('125m/s^2').ok, true); // no space needed
+  assert.match(v('2 3').latex, /2 \\cdot 3/); // two numbers keep the dot
   assert.equal(v('2,5 m').ok, false);
   assert.match(v('2pi').latex, /2.*\\pi/); // 2π, not 2 of a unit "pi"
   assert.doesNotMatch(v('2pi').latex, /text\{pi\}/);
   assert.match(v('5 hectares').latex, /hectares/); // an unknown unit still splits off
+});
+
+// ── against the real plugin ──
+// moodle-marks.json holds marks from the real qtype_formulas grade(); an entry
+// with `site` is a difference kept on purpose, and says why in `why`.
+test('marks against the real qtype_formulas', () => {
+  const { cases } = JSON.parse(read('vendor-src/pt-answer/test/moodle-marks.json'));
+  const wrong = cases.filter((c) => pts(c.text, c.answer, c.units) !== (c.site ?? c.moodle))
+    .map((c) => `${JSON.stringify(c.text)} for ${c.answer} ${JSON.stringify(c.units)}: got ${pts(c.text, c.answer, c.units)}, want ${c.site ?? c.moodle}, Moodle ${c.moodle}`);
+  assert.deepEqual(wrong, []);
+  assert.deepEqual(cases.filter((c) => 'site' in c && !c.why).map((c) => c.text), []);
 });
 
 // ── the real problems ──

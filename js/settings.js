@@ -122,6 +122,11 @@ const SETTINGS_DEFAULTS = {
     // used automatically once the order-picker modal is skipped.
     solveAllLockedOrder: 'ordered',
     revealWrongInstantly: false,
+    // 'note' | 'hint' | 'button' | 'off': what a wrong answer matching a
+    // common mistake does (js/common-mistakes.js).
+    commonMistakes: 'note',
+    // 'inline' | 'tabs' | 'legacy': where a card's controls sit (js/card-layout.js).
+    cardLayout: 'inline',
     // The left/right progress rail shown beside Solve-All on wide screens
     // (js/solve-all-nav.js). On by default — it's been the only behavior
     // until now, so this just makes it optional going forward.
@@ -1610,6 +1615,32 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
+    <div class="settings-section-header">Problem card</div>
+
+    <div class="settings-row" data-row-key="cardLayout">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Layout under each problem</div>
+        <div class="settings-row-desc">Inline joins Check to your answer, with chat, Common mistakes and Solution in a row below. Tabs turns that row into three tabs across the card. Legacy keeps every button in one row.</div>
+      </div>
+      <div class="settings-choice-group">${[['inline', 'Inline'], ['tabs', 'Tabs'], ['legacy', 'Legacy']].map(([value, label]) => `
+        <button type="button" class="settings-choice-btn${getCardLayout() === value ? ' active' : ''}" data-card-layout="${value}"
+                onclick="setCardLayout('${value}');">${label}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="settings-section-header">Common mistakes</div>
+
+    <div class="settings-row" data-row-key="commonMistakes">
+      <div class="settings-row-label">
+        <div class="settings-row-title">When your answer matches a common mistake</div>
+        <div class="settings-row-desc">Reason shows why, right under your answer. Hint only flashes the button. Button does nothing until you open it. Off hides common mistakes completely.</div>
+      </div>
+      <div class="settings-choice-group">${[['note', 'Reason'], ['hint', 'Hint'], ['button', 'Button'], ['off', 'Off']].map(([value, label]) => `
+        <button type="button" class="settings-choice-btn${(getSetting('study', 'commonMistakes') || 'note') === value ? ' active' : ''}" data-mistakes="${value}"
+                onclick="setCommonMistakesMode('${value}');">${label}</button>`).join('')}
+      </div>
+    </div>
+
     <div class="settings-section-header">Solutions</div>
 
     <div class="settings-row" data-row-key="openSolutionList">
@@ -1652,6 +1683,22 @@ function syncSolveAllOrderBlock(lockOrderOn) {
 // Ordered/Shuffled choice buttons themselves — same reasoning as
 // syncSolveAllOrderBlock above, just for the .active highlight instead of
 // the blocked state.
+function setCardLayout(layout) {
+  setSetting('study', 'cardLayout', layout);
+  applyCardLayout();
+  document.querySelectorAll('[data-row-key="cardLayout"] .settings-choice-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.cardLayout === layout);
+  });
+}
+
+function setCommonMistakesMode(mode) {
+  setSetting('study', 'commonMistakes', mode);
+  applyStudySettings();
+  document.querySelectorAll('[data-row-key="commonMistakes"] .settings-choice-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mistakes === mode);
+  });
+}
+
 function syncSolveAllOrderActive(order) {
   const row = document.querySelector('[data-row-key="solveAllOrder"]');
   if (!row) return;
@@ -1669,6 +1716,10 @@ function applyStudySettings() {
   document.documentElement.classList.toggle('settings-hide-topic-while-active', getSetting('study', 'hideTopicWhileActive') === true);
   document.documentElement.classList.toggle('settings-hide-sa-nav-rail', getSetting('study', 'showSolveAllNavRail') === false);
   document.documentElement.classList.toggle('settings-hide-sticky-score', getSetting('study', 'showStickyScore') === false);
+  // Classes rather than a redraw, so a change applies to the cards on screen.
+  const mistakes = getSetting('study', 'commonMistakes') || 'note';
+  document.documentElement.classList.toggle('settings-mistakes-off', mistakes === 'off');
+  document.documentElement.classList.toggle('settings-mistakes-quiet', mistakes !== 'note');
 }
 
 // Settings > Study > "Reset filter on page load" — clears every quiz's

@@ -2,7 +2,8 @@
  * Dimension classes. Units of one class convert by factor; the factor is
  * relative to the SI coherent unit the class's `dims` describe (kg, not g).
  * Across classes, units match when their SI dimensions agree (`J` ≡ `N m` ≡
- * `kg m^2 s^-2`), as in Moodle. A class without `dims` only matches itself.
+ * `kg m^2 s^-2`). A class without `dims` only matches itself. Moodle only does
+ * this for the equivalents a question lists; the site accepts them all.
  *
  * impulse copy — the classes below are ours, for the course's rules:
  *   - SI units take every SI prefix and convert through their SI dimensions:
@@ -10,9 +11,11 @@
  *     V/m ≡ N/C, Wb ≡ V s ≡ T m^2, Hz ≡ s^-1. The electrical units (A, C,
  *     V, Ω/Ohm, F, T, Wb, H) are here for PHYS 162.
  *   - micro is µ, μ, u, mc or mk (the last two: "мк" typed in Latin).
- *   - everything else (min, h, day, eV, L, atm, bar, cal, rpm, °, rad …)
- *     converts only within itself, by its prefixes (keV ≡ 1000 eV,
- *     mL ≡ 0.001 L), never to SI: km/h is not m/s, L is not dm^3.
+ *   - eV converts to J with qtype_formulas' factor, 1 J = 6.24150947e18 eV.
+ *   - ohm is qtype_formulas' spelling, Ohm and Ω are the course's.
+ *   - everything else (min, h, day, L, atm, bar, cal, rpm, °, rad …)
+ *     converts only within itself, by its prefixes (mL ≡ 0.001 L), never
+ *     to SI: km/h is not m/s, L is not dm^3.
  */
 export interface UnitClass {
   /** Class id; conventionally its base unit name. */
@@ -83,7 +86,7 @@ export const SI_CLASSES: readonly UnitClass[] = Object.freeze<UnitClass[]>([
   si('Hz', { s: -1 }),
   si('C', { A: 1, s: 1 }),
   si('V', { kg: 1, m: 2, s: -3, A: -1 }),
-  { id: 'Ω', units: { ...prefixed('Ω', 1, ALL), ...prefixed('Ohm', 1, ALL) }, dims: { kg: 1, m: 2, s: -3, A: -2 } },
+  { id: 'Ω', units: { ...prefixed('Ω', 1, ALL), ...prefixed('Ohm', 1, ALL), ...prefixed('ohm', 1, ALL) }, dims: { kg: 1, m: 2, s: -3, A: -2 } },
   si('F', { kg: -1, m: -2, s: 4, A: 2 }),
   si('T', { kg: 1, s: -2, A: -1 }),
   si('Wb', { kg: 1, m: 2, s: -2, A: -1 }),
@@ -92,7 +95,7 @@ export const SI_CLASSES: readonly UnitClass[] = Object.freeze<UnitClass[]>([
   { id: 'min', units: { min: 1 } },
   { id: 'h', units: { h: 1 } },
   { id: 'day', units: { day: 1, days: 1 } },
-  { id: 'eV', units: prefixed('eV', 1, 'k M G T m µ') },
+  { id: 'eV', units: prefixed('eV', 1 / 6.24150947e18, 'k M G T P m µ'), dims: { kg: 1, m: 2, s: -2 } },
   { id: 'L', units: prefixed('L', 1, 'm µ d c') },
   { id: 'atm', units: { atm: 1 } },
   { id: 'bar', units: prefixed('bar', 1, 'm k') },

@@ -14,7 +14,7 @@
 // design kept one, merging each session's fresh CSS into a single
 // growing blob, and repeatedly proved fragile — timing gaps around when
 // it got persisted, and no way for it to self-correct or even get reset
-// by "Rerender Equations" if a merge ever went wrong. Bundling CSS with
+// if a merge ever went wrong. Bundling CSS with
 // its own HTML removes that whole class of bug: if a card's HTML is
 // correct, its CSS is provably correct too, because nothing else can
 // have touched either one independently.
@@ -432,22 +432,8 @@ function storeCachedMathHTML(problemId, hash, html, css) {
     console.error('Math cache write error:', err));
 }
 
-// Removes a single card's cached HTML+CSS (in-memory and persisted), so
-// the next render treats it as a cache miss and re-typesets it from
-// scratch. Used by the manual "Rerender Equations" action — a lighter-
-// weight escape hatch than clearing the whole render cache.
-function deleteCachedMathHTML(problemId) {
-  _mathCacheMap.delete(problemId);
-  if (!_mathCacheDB) return;
-  const tx = _mathCacheDB.transaction('cards', 'readwrite');
-  tx.objectStore('cards').delete(problemId);
-  tx.onerror = () => console.error('Math cache delete error:', tx.error);
-}
-
-// Full wipe of the persistent render cache — every quiz, every problem —
-// unlike deleteCachedMathHTML/rerenderSolveAllEquations (js/quiz-engine.js),
-// which only ever touch whatever set is currently on screen. Reuses the
-// exact same clear _mathCacheClearAll() already does internally on a
+// Full wipe of the persistent render cache — every quiz, every problem.
+// Reuses the exact same clear _mathCacheClearAll() already does internally on a
 // schema mismatch (see initMathCache above); this just exposes it as an
 // on-demand action — Settings > Sync & Storage's "Reset all prerendered
 // LaTeX equations" button (js/offline-mode.js) — and re-writes the

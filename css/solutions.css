@@ -1,4 +1,4 @@
-/* "See solution" button + the Solution screen (js/solutions.js).
+/* "Solution" button + the Solution screen (js/solutions.js).
    The screen mirrors #forumScreen in css/forum.css: a real page that
    replaces whatever screen you were on, scrolled by the window, rather
    than a modal floating over it. Figure styling itself lives in
@@ -418,3 +418,68 @@ html.solution-preview #solutionScreen.visible { animation: none; }
   border-color: var(--accent); font-weight: 600;
 }
 .editor-access-btn.primary:hover { filter: brightness(1.08); color: var(--on-accent, var(--chrome-dark)); }
+
+/* Common mistakes (js/common-mistakes.js): a small text button in the row
+   under a problem, its list, and the note under a matching wrong answer. */
+.mistake-btn {
+  background: none; border: 0; border-radius: calc(4px * var(--radius-mult));
+  padding: .2rem .3rem; cursor: pointer; color: var(--muted);
+  font-family: var(--mono); font-size: .68rem; white-space: nowrap;
+  transition: color .15s;
+}
+.mistake-btn::after { content: ' \25B8'; display: inline-block; margin-left: .25em; transition: transform .22s ease; }
+.mistake-btn[aria-expanded="true"]::after { transform: rotate(90deg); }
+.mistake-btn:hover { color: var(--accent); }
+.mistake-btn.mistake-btn-hint { animation: solutionBtnHint .85s ease .38s; }
+/* The list only opens when asked; a wrong answer that's on it gets its note
+   (.mistake-hit). A Random quiz shows neither until it's checked. */
+.card-check-row.rq-locked .mistake-btn { display: none; }
+
+.mistake-panel { display: none; }
+.mistake-panel.open { display: block; }
+/* Out of sight but laid out, for its maths before the first opening */
+.mistake-panel-typesetting { display: block; height: 0; overflow: hidden; visibility: hidden; }
+.mistake-panel-body {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  row-gap: .1rem; align-items: stretch;
+  padding: .5rem .7rem .65rem; border-top: 1px solid var(--border);
+  font-family: var(--mono); font-size: .72rem; line-height: 1.5;
+}
+.mistake-head {
+  color: var(--muted); font-size: .6rem;
+  letter-spacing: .08em; text-transform: uppercase;
+}
+.mistake-head, .mistake-value, .mistake-reason { padding: .1rem .4rem; }
+.mistake-head:nth-child(odd), .mistake-value { padding-right: .9rem; }
+.mistake-value { color: var(--wrong); }
+.mistake-reason { color: var(--text); }
+/* The row for the answer on the card */
+.mistake-value.mistake-mine, .mistake-reason.mistake-mine { background: rgba(var(--wrong-rgb), .09); }
+.mistake-value.mistake-mine { border-radius: calc(4px * var(--radius-mult)) 0 0 calc(4px * var(--radius-mult)); }
+.mistake-reason.mistake-mine { border-radius: 0 calc(4px * var(--radius-mult)) calc(4px * var(--radius-mult)) 0; }
+.mistake-hit { color: var(--text); margin-top: .1rem; }
+.mistake-typesetting { visibility: hidden; }
+
+html.settings-mistakes-quiet .mistake-hit,
+html.settings-mistakes-off .mistake-btn,
+html.settings-mistakes-off .mistake-panel { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mistake-btn::after { transition: none; }
+  .mistake-btn.mistake-btn-hint { animation-duration: .5s; }
+}
+
+/* The row under a problem: forum, Solution and Common mistakes stay put on
+   the left, and what changes as you work sits on the right, so "See correct
+   answer" appearing never moves them. */
+.card-check-row { justify-content: flex-start; }
+.card-check-row .forum-problem-btn { margin-right: 0; }
+.forum-problem-btn > span:empty { display: none; }
+.card-check-row .btn-see-answer,
+.card-check-row .check-problem-btn { margin-left: auto; }
+.card-check-row .btn-see-answer + .check-problem-btn { margin-left: 0; }
+
+@media (max-width: 520px) {
+  .mistake-btn-long { display: none; }
+  .card-check-row { flex-wrap: wrap; }
+}

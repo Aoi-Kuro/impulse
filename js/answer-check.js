@@ -6,14 +6,19 @@
 // tests are in vendor-src/pt-answer). This file applies the course's rules
 // on top of it:
 //
-//   - answer type "numeric": numbers with + - * / ^, brackets, pi and e
+//   - answer type "numeric": numbers with + - * / ^, brackets and pi
 //     (9.81, 1.5e3, 2*10^-3, 3/4, 2*pi); no functions
 //   - p.units lists the accepted units ([] = none); p.answer is in units[0]
-//   - "rad", "none" and "(none)" written alone mean no unit, either way round
+//   - "none" and "(none)" written alone mean no unit, either way round
 //   - units convert by SI prefix and SI equivalence (500 cm = 5 m, J = N m,
-//     V/m = N/C), never through non-SI units (km/h is not m/s)
-//   - points: right value and unit 1; right value, wrong or missing unit 0.9;
-//     a unit that isn't valid (N*m, m m) 0, as in Moodle; wrong value 0
+//     V/m = N/C, eV = J), never through other non-SI units (km/h is not m/s)
+//   - m^(2) and m/s/s are read as m^2 and m/s^2 (courseUnit)
+//   - points: right value and unit 1; right value, wrong, missing or invalid
+//     unit 0.9, as in Moodle; wrong value 0
+//
+// The real qtype_formulas plugin is the reference for all of this. Where the
+// site differs from it on purpose is listed in
+// vendor-src/pt-answer/test/moodle-marks.json, which site.test.mjs checks.
 //
 // Answers are stored as before, as two strings: entered_value/entered_unit
 // in attempts, {ans, unit} in Solve-them-all progress. splitAnswer() makes
@@ -34,16 +39,53 @@ const ANSWER_MESSAGES = {
   'not-a-number': 'This doesn’t work out to a number.',
   domain: 'This can’t be worked out (division by zero?).',
   budget: 'That answer is too complex.',
-  'unit-syntax': 'Not a valid unit. Multiply with a space (N m), divide with one / (m/s^2).',
+  'unit-syntax': 'Not a valid unit. Multiply with a space (N m), divide with / (m/s^2).',
   'unit-unknown': 'Unknown unit.',
   'unit-missing': 'Add a unit.',
-  'unit-no-space': 'Put a space between the number and the unit: 9.81 m/s^2, not 9.81m/s^2.',
 };
 
-const NO_UNIT = new Set(['', 'rad', 'none', '(none)']);
+const NO_UNIT = new Set(['', 'none', '(none)']);
 function unitOrNone(u) {
   const s = (u || '').trim();
   return NO_UNIT.has(s) ? '' : s;
+}
+
+// The spellings the engine's strict reading refuses but whose meaning is
+// plain: brackets around a whole power ("m^(2)") and dividing twice ("m/s/s",
+// read as m/s^2; "kg/m/s" as kg/(m s)). splitAnswer() keeps what was typed;
+// this is only how it's read. A * between units stays invalid.
+function courseUnit(unit) {
+  const u = (unit || '').replace(/\^\(\s*(\d+)\s*\)/g, '^$1');
+  const parts = u.split('/');
+  if (parts.length < 3 || /[()]/.test(u)) return u;
+  const top = PTAnswer.tryParseStudentUnit(parts[0]);
+  if (!top || !Object.keys(top).length) return u;
+  const bottom = {};
+  for (const part of parts.slice(1)) {
+    const names = PTAnswer.tryParseStudentUnit(part);
+    if (!names || !Object.keys(names).length) return u;
+    for (const [name, exp] of Object.entries(names)) {
+      if (name in top || exp < 0) return u;
+      bottom[name] = (bottom[name] || 0) + exp;
+    }
+  }
+  const under = Object.entries(bottom).map(([name, exp]) => (exp === 1 ? name : `${name}^${exp}`));
+  return `${parts[0].trim()}/${under.length > 1 ? `(${under.join(' ')})` : under[0]}`;
+}
+
+// Text the plugin's parser can't read at all, so it gives up on the whole
+// answer and the right number earns nothing ("5 m/", "5 m.", "5 m/(s").
+// A unit it can read but not accept ("5 m m") is only a wrong unit.
+function unitUnreadable(unit) {
+  const u = unit.trim();
+  if (/[,;:?\\'"@`]|\.(?!\d)|[-+*/=&|~^<>!]$/.test(u)) return true;
+  const open = [];
+  const pairs = { ')': '(', ']': '[', '}': '{' };
+  for (const c of u) {
+    if ('([{'.includes(c)) open.push(c);
+    else if (pairs[c] && open.pop() !== pairs[c]) return true;
+  }
+  return open.length > 0;
 }
 
 // Every name in the unit is one the engine knows (m, kOhm, eV …).
@@ -72,25 +114,6 @@ function splitAnswer(text) {
   return split;
 }
 
-// The unit typed right against the number ("125m/s^2"): a format mistake,
-// warned about in the preview and scored like an invalid unit (0 pt).
-// Degrees and percent are written that way on purpose (30°, 50%).
-function unitLacksSpace(text, unit) {
-  const s = (text || '').trim();
-  if (!unit || !s.endsWith(unit) || s.length === unit.length) return false;
-  if (/^[°%]/.test(unit)) return false;
-  return !/\s/.test(s[s.length - unit.length - 1]);
-}
-
-// splitAnswer() for saving (attempts, Entire Set progress). A unit typed
-// without a space is kept whole in value, so joinAnswer() gives back what
-// was typed rather than a corrected "125 m/s^2" that would read as right
-// in the review and the regrade.
-function answerPartsToStore(text) {
-  const parts = splitAnswer(text);
-  return unitLacksSpace(text, parts.unit) ? { value: (text || '').trim(), unit: '' } : parts;
-}
-
 function joinAnswer(value, unit) {
   return [value, unit].map(x => (x || '').trim()).filter(Boolean).join(' ');
 }
@@ -104,31 +127,27 @@ function answerUnitFactor(student, accepted) {
 /** Grades the text of an answer field against problem p.
     → { pts: 1 | 0.9 | 0, valueOk, unitStatus, value, unit }, where
     unitStatus is 'ok', 'wrong', 'missing' (none typed, one expected) or
-    'invalid' (not a valid unit, or no space before it — then noSpace is
-    true: no points). */
+    'invalid' (not a valid unit). A wrong, missing or invalid unit costs 0.1;
+    the number is then taken as typed, not converted. */
 function gradeAnswer(text, p) {
   const { value, unit } = splitAnswer(text);
+  const read = courseUnit(unit);
   const out = { pts: 0, valueOk: false, unitStatus: 'ok', value, unit };
-  if (unit && PTAnswer.tryParseStudentUnit(unit) === null) {
-    out.unitStatus = 'invalid';
-    return out;
-  }
-  if (unitLacksSpace(text, unit)) {
-    out.unitStatus = 'invalid';
-    out.noSpace = true;
-    return out;
-  }
-  const student = unitOrNone(unit);
-  const accepted = (p.units && p.units.length ? p.units : ['']).map(unitOrNone);
+  const invalid = !!read && PTAnswer.tryParseStudentUnit(read) === null;
   // units[0] first: the stored answer is written in it
   let factor = false;
-  for (const a of accepted) {
-    factor = answerUnitFactor(student, a);
-    if (factor !== false) break;
+  if (invalid) {
+    out.unitStatus = 'invalid';
+  } else {
+    const student = unitOrNone(read);
+    for (const a of (p.units && p.units.length ? p.units : ['']).map(unitOrNone)) {
+      factor = answerUnitFactor(student, a);
+      if (factor !== false) break;
+    }
+    if (factor === false) out.unitStatus = student ? 'wrong' : 'missing';
   }
-  if (factor === false) out.unitStatus = student ? 'wrong' : 'missing';
   const v = PTAnswer.validateAnswer(value, ANSWER_TYPE);
-  if (!v.ok) return out;
+  if (!v.ok || (invalid && unitUnreadable(unit))) return out;
   out.valueOk = PTAnswer.withinTolerance(v.value * (factor === false ? 1 : factor), p.answer, { tolerance: {} });
   out.pts = out.valueOk ? (out.unitStatus === 'ok' ? 1 : 0.9) : 0;
   return out;
@@ -147,18 +166,31 @@ function answerFeedbackHtml(res, p, withExpected) {
   const expected = withExpected ? ` Expected ≈ <strong>${fmt(p.answer)}</strong> ${fmtUnit(p.units)}` : '';
   if (res.pts === 1) return `✓ Correct <span class="pts-badge pts-full">+1 pt</span>`;
   if (res.pts === 0.9) {
-    const hint = res.unitStatus === 'missing' ? `the unit is missing: ${unit}` : `unit should be ${unit}`;
+    const hint = res.unitStatus === 'missing' ? `the unit is missing: ${unit}`
+      : res.unitStatus === 'invalid' ? `the unit isn't valid: it should be ${unit}` : `unit should be ${unit}`;
     return `✓ Value correct, but ${hint} <span class="pts-badge pts-partial">+0.9 pt</span>`;
   }
-  if (res.noSpace) {
-    return `✗ Put a space between the number and the unit (9.81 m/s^2).${expected} <span class="pts-badge pts-zero">+0 pt</span>`;
-  }
   if (res.unitStatus === 'invalid') {
-    return `✗ Unit format invalid: a space multiplies (N m), one / divides (m/s^2).${expected} <span class="pts-badge pts-zero">+0 pt</span>`;
+    return `✗ Unit format invalid: a space multiplies (N m), / divides (m/s^2).${expected} <span class="pts-badge pts-zero">+0 pt</span>`;
   }
   return withExpected
     ? `✗${expected} <span class="pts-badge pts-zero">+0 pt</span>`
     : `✗ Wrong answer <span class="pts-badge pts-zero">+0 pt</span>`;
+}
+
+// The line under the field in the Inline and Tabs layouts, where the Check
+// button shows right or wrong: only what there is to fix, or nothing.
+// `answerSeen`: a card whose answer was revealed earns nothing until solved.
+function answerNoticeHtml(res, p, answerSeen) {
+  const unit = `<strong>${fmtUnit(p.units)}</strong>`;
+  if (res.pts === 0.9) {
+    const hint = res.unitStatus === 'missing' ? `the unit is missing: ${unit}`
+      : res.unitStatus === 'invalid' ? `the unit isn't valid: it should be ${unit}` : `the unit should be ${unit}`;
+    return `Number is correct, but ${hint}${answerSeen ? '' : ' (0.9 pt)'}`;
+  }
+  if (res.pts === 1) return '';
+  if (res.unitStatus === 'invalid') return 'Unit format invalid: a space multiplies (N m), / divides (m/s^2).';
+  return '';
 }
 
 const ANSWER_RESULT_CLASSES = ['correct-input', 'partial-input', 'wrong-input'];
@@ -227,11 +259,11 @@ function answerPreview(text) {
   const s = (text || '').trim();
   if (!s) return null;
   const { value, unit } = splitAnswer(s);
-  if (unitLacksSpace(s, unit) && PTAnswer.tryParseStudentUnit(unit) !== null) return { ok: false, error: 'unit-no-space' };
+  const read = courseUnit(unit);
   if (!unit && value === s && PTAnswer.validateAnswer(s, ANSWER_TYPE).ok) {
     return /^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(s) ? null : PTAnswer.validateField(s, ANSWER_TYPE, false);
   }
-  return PTAnswer.validateField(s, ANSWER_TYPE, true);
+  return PTAnswer.validateField(read === unit ? s : joinAnswer(value, read), ANSWER_TYPE, true);
 }
 
 function _showPreview(input) {

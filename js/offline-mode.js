@@ -63,6 +63,7 @@ const OFFLINE_CORE_FILES = [
   'css/solve-all-nav.css',
   'css/figure.css',
   'css/solutions.css',
+  'css/card-layouts.css',
   'css/problem-flags.css',
   'vendor/tikzjax/fonts.css',
   'vendor/dompurify/purify.min.js',
@@ -77,6 +78,8 @@ const OFFLINE_CORE_FILES = [
   'js/data/tips.js',
   'vendor/pt-answer/pt-answer.min.js',
   'js/answer-check.js',
+  'js/common-mistakes.js',
+  'js/card-layout.js',
   'js/stats.js',
   'js/stats-export.js',
   'js/attempts-sync.js',
@@ -119,6 +122,9 @@ const OFFLINE_CORE_FILES = [
   'course/quizzes/quiz2.js',
   'course/quizzes/quiz3.js',
   'course/quizzes/quiz4.js',
+  'course/quizzes/quiz1-mistakes.js',
+  'course/quizzes/quiz2-mistakes.js',
+  'course/quizzes/quiz3-mistakes.js',
   'course/quizzes/quizzes.js',
   'course/figures/quiz1.js',
   'course/figures/quiz2.js',
@@ -663,10 +669,8 @@ function performResetAllCache() {
 }
 
 // B) Reset all prerendered LaTeX equations — full wipe of the persistent
-// MathJax render cache (clearAllMathCache, js/math-cache.js), every quiz,
-// not just whichever set happens to be on screen (that lighter version is
-// the manual's own "🔁 Rerender Equations" button — js/quiz-engine.js's
-// rerenderSolveAllEquations). No reload needed: the cache is simply empty
+// MathJax render cache (clearAllMathCache, js/math-cache.js), every quiz.
+// No reload needed: the cache is simply empty
 // afterward, and the next Solve-All open re-typesets and re-caches fresh.
 function performResetMathCache() {
   const btn = document.getElementById('resetMathCacheBtn');

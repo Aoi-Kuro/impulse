@@ -3857,7 +3857,7 @@ function paintForumProblemButtons(list, prefix, counts) {
       badgeEl.style.display = 'flex';
       atEl.style.display = c.mentioned ? 'flex' : 'none';
     } else {
-      totalEl.textContent = String(c.total);
+      totalEl.textContent = c.total > 0 ? String(c.total) : '';
       badgeEl.style.display = 'none';
       atEl.style.display = 'none';
     }

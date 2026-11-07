@@ -100,18 +100,27 @@ function unitFactor(student: string, part: GradablePart & { unit: string }): num
   return a !== null && b !== null && sameUnit(a, b) ? 1 : false;
 }
 
-/** |value − model| within tolerance; exact integer match for `integer` parts. */
+// impulse copy: qtype_formulas builds its grading expression as text, which
+// keeps PHP's 14 significant digits.
+const php14 = (x: number): number => Number(x.toPrecision(14));
+
+/**
+ * Relative error under the tolerance, strictly, as qtype_formulas' `_relerr <
+ * 0.01` (impulse copy: exactly 1% off is wrong); exact integer match for
+ * `integer` parts.
+ */
 export function withinTolerance(value: number, model: number, part: Pick<Part, 'integer' | 'tolerance'>): boolean {
   if (part.integer) {
     const target = Math.round(model);
     return Math.abs(value - target) <= 1e-9 * Math.max(1, Math.abs(target));
   }
   const tol = effectiveTolerance(part);
-  const mag = Math.abs(model);
-  let allowed = tol.rel * mag;
-  if (mag < tol.absBelow && tol.abs !== undefined) allowed = Math.max(allowed, tol.abs);
-  // A few ULPs of slack so that exact-boundary answers are not lost to rounding.
-  return Math.abs(value - model) <= allowed + 4 * Number.EPSILON * Math.max(mag, Math.abs(value));
+  const a = php14(model);
+  const r = php14(value);
+  if (Math.abs(a) < tol.absBelow && tol.abs !== undefined && Math.abs(r - a) <= tol.abs) return true;
+  const squared = php14(a * a);
+  if (squared === 0) return r === 0;
+  return Math.sqrt((a - r) * (a - r)) / Math.sqrt(squared) < tol.rel;
 }
 
 /**
@@ -148,7 +157,7 @@ export function gradePart(
   const { value, unit } = normalizeResponse(response, part.answerType);
   base.studentUnit = unit;
 
-  // An invalid unit makes the whole answer invalid, as in Moodle: no credit at all.
+  // An invalid unit is a wrong unit, as in Moodle: the number still counts.
   const unitInvalid = unit !== '' && tryParseStudentUnit(unit) === null;
   if (unitInvalid) {
     base.unitOk = false;
@@ -169,7 +178,7 @@ export function gradePart(
   base.studentValue = v.value;
   base.valueOk = withinTolerance(v.value * base.conversionFactor, model, part);
   const penalty = part.unit === undefined ? 0 : effectiveUnitPenalty(part);
-  base.fraction = unitInvalid ? 0 : (base.valueOk ? 1 : 0) * (base.unitOk ? 1 : 1 - penalty);
+  base.fraction = (base.valueOk ? 1 : 0) * (base.unitOk ? 1 : 1 - penalty);
   return base;
 }
 

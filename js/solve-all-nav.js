@@ -18,8 +18,8 @@
 // quiz-engine.js, and quiz-engine.js never needs to know this file exists.
 // Instead it watches #solveAllMode's `active` class and #solveAllContainer's
 // children via MutationObserver, so it rebuilds itself automatically
-// whenever Solve-All is opened, closed, or re-rendered (new quiz, Rerender
-// Equations, a filtered pool, ...) no matter which code path triggered it.
+// whenever Solve-All is opened, closed, or re-rendered (new quiz,
+// a filtered pool, ...) no matter which code path triggered it.
 // The flags follow the cards' data-flag attributes the same way.
 
 (function () {

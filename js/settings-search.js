@@ -87,6 +87,8 @@ const SETTINGS_SEARCH_KEYWORDS = {
   showSolveAllNavRail: 'progress rail, line progress, progress line, progress bar, sidebar, side bar, scroll indicator, scrollbar, navigation, ticks, you are here, minimap, entire set, solve all, wide screen, desktop',
   showStickyScore: 'progress window, score, solved count, counter, badge, floating score, progress badge, how many solved, tally, corner, entire set, solve all, hide score, remove score',
   openSolutionList: 'solution list, solutions list, list of solutions, all solutions, grid, problem grid, open by default, always open, show list, available solutions, which problems have solutions, worked solutions, next solution, previous solution, browse solutions, jump to problem',
+  cardLayout: 'problem card, card layout, layout, inline, tabs, legacy, old layout, buttons, check button, solution button',
+  commonMistakes: 'common mistakes, mistakes, wrong answer, reason, why wrong, hint, hints, misconception, explanation, turn off mistakes, hide mistakes',
   revealWrongInstantly: 'wrong answer, correct answer, show answer, reveal answer, see correct answer, instant feedback, immediate feedback, right away, mistakes, solution, answer key, skip step, check answer, feedback',
 
   // ── Sync & Storage

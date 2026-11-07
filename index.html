@@ -232,6 +232,7 @@
 <!-- Solution figures (shared with the authoring tool) + the solution screen -->
 <link rel="stylesheet" href="css/figure.css">
 <link rel="stylesheet" href="css/solutions.css">
+<link rel="stylesheet" href="css/card-layouts.css">
 <!-- Flags on problem cards (js/problem-flags.js) -->
 <link rel="stylesheet" href="css/problem-flags.css">
 <!-- TeX fonts: dvisvgm writes figure glyphs as private-use codepoints in
@@ -688,11 +689,10 @@
   </header>
 
   <div class="solve-all-actions-row">
-    <button class="btn-reset-progress" onclick="resetSolveAll()">🗑 Reset Progress</button>
     <!-- Every problem of this set, the ones with a solution clickable
          (openSolutionBrowser in js/solutions.js). -->
     <button class="btn-solution-list" onclick="openSolutionBrowser(selectedQuizNum)" title="Solutions for this set">📘 Solution list</button>
-    <button class="btn-rerender-eqs" onclick="rerenderSolveAllEquations()">🔁 Rerender Equations</button>
+    <button class="btn-reset-progress" onclick="resetSolveAll()">🗑 Reset Progress</button>
   </div>
   <div id="solveAllContainer"></div>
 </div>
@@ -1380,6 +1380,9 @@
 <script src="course/quizzes/quiz1.js"></script>
 <script src="course/quizzes/quiz2.js"></script>
 <script src="course/quizzes/quiz3.js"></script>
+<script src="course/quizzes/quiz1-mistakes.js"></script>
+<script src="course/quizzes/quiz2-mistakes.js"></script>
+<script src="course/quizzes/quiz3-mistakes.js"></script>
 <script src="course/quizzes/quiz4.js"></script>
 
 <!-- ── Changelog data ── -->
@@ -1395,6 +1398,8 @@
      course's rules on it. Before stats + quiz-engine, which grade with it. ── -->
 <script src="vendor/pt-answer/pt-answer.min.js"></script>
 <script src="js/answer-check.js"></script>
+<script src="js/common-mistakes.js"></script>
+<script src="js/card-layout.js"></script>
 
 <!-- ── Stats module (must load before quiz-engine) ── -->
 <script src="js/stats.js"></script>

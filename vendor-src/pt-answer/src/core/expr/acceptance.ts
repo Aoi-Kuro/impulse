@@ -37,7 +37,8 @@ const studentEvaluator = createEvaluator({
 });
 
 const STUDENT_FNS = new Set<string>(STUDENT_FUNCTIONS);
-const CONSTANT_NAMES = new Set(['pi', 'e']);
+// impulse copy: pi only, as in qtype_formulas (there e is not a constant).
+const CONSTANT_NAMES = new Set(['pi']);
 const NUMERIC_OPS = new Set(['+', '-', '*', '/', '^']);
 
 type Violation = { error: AnswerErrorCode; params?: Record<string, unknown> };

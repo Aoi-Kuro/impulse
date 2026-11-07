@@ -17,7 +17,8 @@ the answer path of its `packages/core` and `packages/ui/src/lib/answer`:
 
 | Here | Upstream |
 |---|---|
-| `src/core/errors.ts`, `expr/acceptance.ts`, `expr/evaluate.ts`, `expr/latex.ts`, `expr/names.ts`, `units/index.ts`, `units/parse.ts`, `numbers/decimal.ts`, `schema/defaults.ts`, `grade/index.ts` | `packages/core/src/…`, unchanged |
+| `src/core/errors.ts`, `expr/evaluate.ts`, `expr/names.ts`, `units/index.ts`, `units/parse.ts`, `numbers/decimal.ts`, `schema/defaults.ts` | `packages/core/src/…`, unchanged |
+| `src/core/expr/acceptance.ts`, `expr/latex.ts`, `grade/index.ts` | same, small changes (below) |
 | `src/ui/answer/messages.ts` | `packages/ui/src/lib/answer/messages.ts`, unchanged |
 | `src/ui/answer/validate.ts` | same, one regex changed (below) |
 | `src/core/expr/ast.ts` | same, parses with `parser.ts` instead of mathjs |
@@ -36,15 +37,25 @@ the answer path of its `packages/core` and `packages/ui/src/lib/answer`:
   where mathjs would build nodes that `ast.ts` refuses anyway.
 - **Unit table** (`units/table.ts`, header comment): SI units take every SI
   prefix and convert through SI dimensions; the electrical units A, C, V,
-  Ω/Ohm, F, T, Wb, H are added for PHYS 162; micro is also `u`, `mc`, `mk`;
-  non-SI units (min, h, day, eV, L, atm, bar, cal, rpm, °, rad …) convert only
-  within themselves, never to SI (upstream converts km/h to m/s, L to m³,
-  eV to J).
+  Ω/Ohm/ohm, F, T, Wb, H are added for PHYS 162; micro is also `u`, `mc`, `mk`;
+  eV converts to J with qtype_formulas' factor; other non-SI units (min, h,
+  day, L, atm, bar, cal, rpm, °, rad …) convert only within themselves, never
+  to SI (upstream converts km/h to m/s and L to m³).
+- **Expressions read as qtype_formulas reads them** (`expr/parser.ts`,
+  `expr/acceptance.ts`, `expr/latex.ts`): implicit multiplication sits at the
+  level of `*` and `/`, left to right, so `x/2pi` is `(x/2)*pi`; numbers side
+  by side multiply (`1.5 10^3`), previewed with a dot; `e` is not a constant.
+  mathjs differs on all three, so `differential.test.ts` no longer applies to
+  these inputs.
+- **Tolerance as qtype_formulas' `_relerr < 0.01`** (`grade/index.ts`,
+  `withinTolerance`): strict, with PHP's 14 significant digits, no slack.
+- **An invalid unit is a wrong unit** (`grade/index.ts`): the number still
+  counts, as in Moodle.
 - **Student exponents as Moodle reads them** (`units/parse.ts`,
   `tryParseStudentUnit`): after `^` only `2`, `-2` or `(-2)`, as in
   qtype_formulas' `parse_unit` (`answer_unit.php`); `s^(2)`, `s^(+2)`,
   `s^+2` and `m^1.5` are invalid. Units written in problems keep the looser
-  grammar.
+  grammar. `js/answer-check.js` then relaxes this for `s^(2)` and `m/s/s`.
 - **No lookbehind** in `validate.ts`'s e-notation regex: Safari before 16.4
   can't parse it, which would stop the whole file loading.
 - `schema/scenario.ts` and `instantiate/index.ts` only declare the types the
@@ -71,6 +82,17 @@ node --test vendor-src/pt-answer/test/site.test.mjs
 COURSES="../examphys" OLD_ENGINE=old-quiz-engine.js node --test vendor-src/pt-answer/test/site.test.mjs
 ```
 
+**Against the real plugin**: `test/moodle-marks.json` holds marks from the
+unmodified qtype_formulas, and `site.test.mjs` checks every entry. An entry
+with `site` and `why` is a difference kept on purpose. To regenerate the marks
+(PHP 8.x with `mbstring`, no Moodle needed), put a clone of
+<https://github.com/FormulasQuestion/moodle-qtype_formulas> at
+`<root>/question/type/formulas`, add empty PHP files at
+`<root>/lib/questionlib.php`, `<root>/question/engine/lib.php` and
+`<root>/question/behaviour/adaptivemultipart/behaviour.php`, then run
+`php test/moodle/harness.php <root> input.json output.json`, where each input
+is `{"t": text, "a": "model answer", "p": "unit = equivalent"}`.
+
 **Upstream suites and the parser-vs-mathjs test** run in a checkout of
 pt-nu-phys161, with this folder's files copied over its own:
 
@@ -87,7 +109,8 @@ cp <impulse>/vendor-src/pt-answer/test/differential.test.ts packages/core/test/
 (cd packages/ui && CI=true npx vitest run)
 ```
 
-Results at the time of writing (2026-10-17):
+Results at the time of writing (2026-10-17), before the parser, tolerance and
+`eV` changes made to match qtype_formulas, which those suites don't expect:
 
 - `test/differential.test.ts`: our parser and mathjs agree on 196
   hand-picked inputs and 600 000 random ones (same AST, node count and depth,

@@ -154,6 +154,8 @@ impulse/
 │   │   ├── quiz1.js .. quiz4.js   Problem banks: Quiz_N_Problems and
 │   │   │                          Quiz_N_Retired arrays (+ optional
 │   │   │                          Quiz_N_Gaps)
+│   │   ├── quiz1-mistakes.js .. quiz3-mistakes.js   Common wrong answers and
+│   │   │                       short notes, shown by js/common-mistakes.js
 │   │   └── quizzes.js       QUIZZES registry + id/number helpers
 │   ├── images/quiz_1..4/    Figure images referenced from problem text
 │   ├── figures/quiz1.js .. quiz4.js  Redrawn SVG for those images, by file
@@ -181,6 +183,7 @@ impulse/
 │   ├── data/changelog.js    Changelog entries (platform history)
 │   ├── data/tips.js         Rotating top-bar tip strings
 │   ├── answer-check.js      Answer field: grading rules, preview box
+│   ├── card-layout.js       Problem card layouts: Inline, Tabs, Legacy
 │   ├── stats.js             Attempt log, chart, table, problems overview,
 │   │                        attempt review, Forum & Site panel
 │   ├── stats-export.js      Export to PDF / Excel / CSV / TXT
@@ -192,7 +195,7 @@ impulse/
 │   │                        (shared with the editor)
 │   ├── solution-render.js   Solution text → blocks + MathJax (shared with
 │   │                        the editor)
-│   ├── solutions.js         "See solution" buttons and the Solution screen
+│   ├── solutions.js         "Solution" buttons and the Solution screen
 │   ├── problem-flags.js     Flag button on problem cards (C1 / C2)
 │   ├── editor-access.js     Hidden long-press entry to /editor on the logo
 │   ├── quiz-engine.js       Quiz engine: Random N, cumulative, filters,
@@ -242,7 +245,8 @@ impulse/
 │   ├── settings.css         Settings screen + Display hide classes
 │   ├── solve-all-nav.css    Solve-All progress rail
 │   ├── figure.css           Solution figures (shared with the editor)
-│   ├── solutions.css        "See solution" button + Solution screen
+│   ├── solutions.css        "Solution" button + Solution screen
+│   ├── card-layouts.css     Looks of the Inline and Tabs card layouts
 │   └── problem-flags.css    Flag button on problem cards + its C1/C2 window
 │
 ├── images/                  Framework images (not course-specific)
@@ -512,13 +516,15 @@ two boxes, value and unit, checked by its own parser in `quiz-engine.js`.
 
 **Numbers** (Moodle's "numeric" type): `3.14`, `-0.5`, `.5`, `1.6e-19`,
 `2.998E8`, `5*10^3`, `10^-4`, `10^(-4)`, and arithmetic with
-`+ - * / ^`, brackets, `pi` and `e` (`3/4`, `2*pi`, `(1+2)/3`). No functions
-(`sqrt(2)`), no comma decimals (`3,14`), no `x` for times. Typographic
-`×`, `·`, `−`, `π` and superscripts (`10⁻³`) are read as their ASCII forms.
+`+ - * / ^`, brackets and `pi` (`3/4`, `2*pi`, `(1+2)/3`). Numbers side by side
+multiply (`1.5 10^3`), at the same level as `*` and `/`, so `x/2pi` is
+`(x/2)*pi`. `e` is not a constant. No functions (`sqrt(2)`), no comma decimals
+(`3,14`), no `x` for times. Typographic `×`, `·`, `−`, `π` and superscripts
+(`10⁻³`) are read as their ASCII forms.
 
-**Tolerance**: `|value − answer| <= 1% · |answer|` (plus a few units in the
-last place for rounding), after unit conversion. Purely relative, so tiny
-answers (10⁻²⁶ kg) are checked as strictly as large ones; an answer of 0
+**Tolerance**: `|value − answer| < 1% · |answer|`, after unit conversion, as
+the plugin's `_relerr < 0.01`: exactly 1% off is wrong. Purely relative, so
+tiny answers (10⁻²⁶ kg) are checked as strictly as large ones; an answer of 0
 accepts only 0.
 
 **Units** (Moodle grammar):
@@ -526,24 +532,28 @@ accepts only 0.
 - a space multiplies (`N m`), one `/` divides (`N/C`, `kg m/s^2`),
   everything after `/` divides (`J/kg K` = `J/(kg K)`), and the part after
   `/` may be in brackets
-- `^` raises: `m^2`, `s^-1`, `s^(-1)`; brackets only around a negative
-  exponent, as in Moodle (`s^(2)`, `s^+2`, `m^1.5` are invalid);
-  superscripts work (`m²`, `s⁻¹`)
+- a second `/` divides again: `m/s/s` is read as `m/s^2`, `kg/m/s` as
+  `kg/(m s)` (Moodle refuses this)
+- `^` raises: `m^2`, `s^-1`, `s^(-1)`, and `m^(2)` is read as `m^2` (Moodle
+  refuses that one); `s^+2` and `m^1.5` are invalid; superscripts work
+  (`m²`, `s⁻¹`)
 - each unit name at most once: `m m` is invalid (write `m^2`)
-- `*`, `·`, `×` between units and a second `/` are invalid
+- `*`, `·`, `×` between units are invalid
 - units are case-sensitive; `%` is a unit of its own
-- `rad`, `none` and `(none)` written alone mean no unit, either way round
+- `none` and `(none)` written alone mean no unit, either way round; `rad` is a
+  unit like any other, so a bare number on a `rad` answer loses 0.1, as on NU
+  Moodle
 
 **Conversion** (the unit table in
 `vendor-src/pt-answer/src/core/units/table.ts`):
 
 - SI units take every SI prefix (`Y … y`, with `u`, `mc`, `mk` for micro):
-  `m s g A K mol N J W Pa Hz C V Ohm/Ω F T Wb H`. They convert through their
-  SI dimensions, so any equivalent spelling is accepted: `J` = `N m` =
+  `m s g A K mol N J W Pa Hz C V Ohm/ohm/Ω F T Wb H`. They convert through
+  their SI dimensions, so any equivalent spelling is accepted: `J` = `N m` =
   `kg m^2/s^2`, `V/m` = `N/C`, `Wb` = `V s` = `T m^2`, `Hz` = `s^-1`.
-- Other units convert only within themselves, by their prefixes: `keV` =
-  1000 `eV`, `mL` = 0.001 `L`, but `km/h` is not `m/s`, `L` is not `m^3`,
-  `eV` is not `J`, `min` is not `s`.
+- `eV` converts to `J` with the plugin's factor, 1 J = 6.24150947e18 eV.
+- Other units convert only within themselves, by their prefixes: `mL` = 0.001
+  `L`, but `km/h` is not `m/s`, `L` is not `m^3`, `min` is not `s`.
 - Names the table doesn't know (`hectares`, `in`) match only themselves.
 
 `p.answer` is in `units[0]`; a student's unit is converted to the first
@@ -556,8 +566,20 @@ whole answer that is a number on its own is not split at an unknown "unit"
 (`2pi` is 2π); a valid number followed by an invalid unit splits there
 (`0.5 m m`), so it is reported as a unit mistake.
 
-**Scoring** per problem: value ✓ + unit ✓ = **1**; value ✓ + unit wrong or
-missing = **0.9**; invalid unit = **0** (as in Moodle); value ✗ = **0**.
+**Scoring** per problem: value ✓ + unit ✓ = **1**; value ✓ + unit wrong,
+missing or invalid = **0.9**; value ✗ = **0**. With a wrong unit the number is
+taken as typed, not converted. Text the plugin's parser can't read at all
+(`5 m/`, `5 m.`, `5 m/(s`) scores 0 even with the right number. No space is
+needed before the unit (`125m/s^2`).
+
+**The real plugin is the reference.** `vendor-src/pt-answer/test/moodle-marks.json`
+holds marks from the unmodified qtype_formulas v6.4.0, which NU runs in 6.3 or
+newer; the penalty of 0.1 is confirmed by marked attempts on NU Moodle. The
+site differs from it on purpose in these ways, each listed in that file:
+every SI equivalent is accepted whether or not the question lists it; `m^(2)`
+and `m/s/s` are read; typographic symbols are read; a unit on a problem with
+none costs 0.1 (Moodle gives 0); every SI unit takes every prefix; `Ohm`, `ohm`
+and `Ω` are one unit.
 
 **Storage is unchanged**: attempts keep `entered_value` / `entered_unit` and
 Solve-All progress keeps `{ans, unit}`, split from the field with
@@ -643,7 +665,7 @@ from all earlier quizzes and the remainder from the selected one. "Check
 answers" scores everything at once, shows the result panel with a score-box
 row (a P⇄Q toggle switches cumulative rows between problem and quiz labels), a
 "Last attempts" mini-panel, per-problem forum buttons and, where published,
-"📘 See solution" buttons. Each attempt is recorded by `stats.js`.
+"📘 Solution" buttons. Each attempt is recorded by `stats.js`.
 
 - **Problem Pool Filter**, per quiz, with four modes saved per quiz in
   localStorage: *none*, *topic* (checkboxes), *number* (ranges such as
@@ -669,7 +691,7 @@ quizzes up to it, in cumulative mode) is shown, ordered or shuffled (an order
 picker page appears unless the order is locked in Settings). Each card is
 checked on its own. "See correct answer" shows the answer under the field and
 marks the card *revealed* (counted as ✗) without locking it: the field and
-"↺ Try again" stay usable, a correct answer then counts as ✓, and the button
+"↺ Retry" stay usable, a correct answer then counts as ✓, and the button
 turns into "Hide correct answer" (hiding is per page, not saved). Only a
 correct answer locks a card; `lockedIds` from older builds that locked
 revealed cards are ignored unless the status is `correct`. A wrong try after
@@ -683,8 +705,8 @@ while any problem of the set is [flagged](#problem-flags): it toggles
 `flags-only` on `#solveAllContainer` (unflagged cards hidden by CSS, the
 current card kept in place), turns itself off when the last flag is removed,
 and resets when Entire Set closes. "🗑 Reset Progress" clears
-the session (locally and on the server); "🔁 Rerender Equations" discards the
-cached typesetting for the current set.
+the session (locally and on the server). Broken typesetting is fixed from
+Settings › Sync & Storage › *Reset prerendered LaTeX equations*.
 
 **Solve-All progress rail** (`js/solve-all-nav.js`, wide screens only, at
 least 12 cards on show): tick marks every N problems, a "you are here" segment and a
@@ -909,7 +931,7 @@ thread on tap.
   of them was unpublished, saved again, or joined by another (compared as
   one stamp of every `id@updated_at`). While offline mode runs, both come
   from the offline download.
-- **"📘 See solution"** is shown but disabled in Random N until the score is
+- **"📘 Solution"** is shown but disabled in Random N until the score is
   revealed (so a solution cannot replace the attempt), and only on problems
   with a published solution; usable from the start in Solve-All, and on every
   card of an attempt review (Stats), retired `DEL` problems included: their

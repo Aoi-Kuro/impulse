@@ -268,7 +268,7 @@ function renderAttemptReview(attempt) {
           </button>
           <button class="solution-btn" data-quiz="${a.quiz_num}" data-problem="${_escAttr(a.problem_id)}" style="display:none;"
             title="Worked solution for ${problemLabel(a.quiz_num, a.problem_id)}"
-            onclick="openSolution(${a.quiz_num}, '${idArg}')">📘 See solution</button>
+            onclick="openSolution(${a.quiz_num}, '${idArg}')">📘 Solution</button>
         </div>`;
 
     if (!p) {

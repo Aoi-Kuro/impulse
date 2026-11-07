@@ -750,11 +750,11 @@ function render() {
       <div class="answer-row">
         ${answerInputHtml(`ans-${i}`)}
       </div>
-      <div class="feedback" id="fb-${i}"></div>
+      <div class="card-result"><div class="feedback" id="fb-${i}"></div></div>
       <div class="card-check-row rq-locked" id="forum-row-${i}" style="display:none;">
         <button class="forum-problem-btn" id="rq-forum-btn-${i}" title="Forum thread for ${pLabel}"
           onclick="openForumForProblem(${p._quizNum || selectedQuizNum}, '${p.id}')">
-          💬 <span id="rq-forum-total-${i}"></span>
+          💬 <span class="forum-tab-label">Discuss</span> <span id="rq-forum-total-${i}"></span>
           <span class="forum-problem-btn-badge" id="rq-forum-badge-${i}" style="display:none;"></span>
           <span class="forum-problem-btn-at" id="rq-forum-at-${i}" style="display:none;">@</span>
         </button>
@@ -765,9 +765,11 @@ function render() {
              published solution, and the locked row with it. -->
         <button class="solution-btn" data-quiz="${p._quizNum || selectedQuizNum}" data-problem="${p.id}" style="display:none;"
           disabled title="Available after Check answers"
-          onclick="openSolution(${p._quizNum || selectedQuizNum}, '${p.id}')">📘 See solution</button>
+          onclick="openSolution(${p._quizNum || selectedQuizNum}, '${p.id}')">📘 Solution</button>
+        ${typeof mistakeButtonHtml === 'function' ? mistakeButtonHtml(p._quizNum || selectedQuizNum, p.id) : ''}
       </div>
     `;
+    if (typeof placeCardParts === 'function') placeCardParts(card);
     container.appendChild(card);
 
     const ansInput = card.querySelector(`#ans-${i}`);
@@ -827,9 +829,10 @@ function checkAll() {
 
     fb.classList.add("show", pts === 1 ? "correct-fb" : pts === 0.9 ? "partial-fb" : "wrong-fb");
     fb.innerHTML = answerFeedbackHtml(res, p, true);
+    if (typeof showMistakeHit === 'function') showMistakeHit(fb, ansEl.value, p, p._quizNum || selectedQuizNum, true);
 
     breakdown.push({ id: p.id, pts, quizNum: p._quizNum || selectedQuizNum });
-    const stored = answerPartsToStore(ansEl.value);
+    const stored = splitAnswer(ansEl.value);
     answers.push({
       problem_id: p.id,
       quiz_num: p._quizNum || selectedQuizNum,
@@ -1084,7 +1087,7 @@ function buildSolveAllSnapshot() {
     // {ans, unit} shape progress always had (split from the one field)
     const ansEl = document.getElementById('sa-ans-' + idx);
     if (ansEl) {
-      const { value, unit } = answerPartsToStore(ansEl.value);
+      const { value, unit } = splitAnswer(ansEl.value);
       answersById[p.id] = { ans: value, unit };
     } else if (solveAllAnswers[p.id]) {
       // Card not rendered yet (cards stream in in batches): send the saved
@@ -1133,7 +1136,7 @@ function applySolveAllMerge(serverSnapshot) {
     resetCardVisuals(idx);
     restoreSolveAllCard(idx, p, newStatus, solveAllAnswers[p.id]);
     if (newStatus === 'correct') {
-      document.getElementById('sa-btnrow-' + idx)?.querySelectorAll('.btn-retry, .btn-see-answer').forEach(el => el.remove());
+      card.querySelectorAll('.btn-retry, .btn-see-answer').forEach(el => el.remove());
     }
   });
 
@@ -1182,7 +1185,7 @@ function regradeSolveAllState() {
     const ansEl = document.getElementById('sa-ans-' + idx);
     let answer = solveAllAnswers[p.id];
     if (ansEl) {
-      const { value, unit } = answerPartsToStore(ansEl.value);
+      const { value, unit } = splitAnswer(ansEl.value);
       answer = { ans: value, unit };
     }
     if (!_saFailsRegrade(p, answer)) return;
@@ -1215,7 +1218,7 @@ function applySolveAllReset() {
     const card = document.getElementById('sa-card-' + idx);
     if (!card) return;
     resetCardVisuals(idx);
-    document.getElementById('sa-btnrow-' + idx)?.querySelectorAll('.btn-retry, .btn-see-answer').forEach(el => el.remove());
+    card.querySelectorAll('.btn-retry, .btn-see-answer').forEach(el => el.remove());
     const btn = document.getElementById('sa-check-btn-' + idx);
     if (btn) { btn.textContent = 'Check'; btn.classList.remove('checked'); btn.disabled = false; }
   });
@@ -1470,35 +1473,8 @@ function renderSolveAll() {
       subEl.classList.toggle('show', hasUncached);
     }
     runWithLoadingScreen(screen, container, () => buildSolveAllCards(container), cacheTypesetBatch)
-      .then(finalizeFreshMathCache);
-  });
-}
-
-// Manual "Rerender Equations" action: forces every problem in the current
-// Solve-All set to be re-typeset from scratch, discarding (and then
-// replacing) whatever's in the persistent render cache for them. This is
-// a lighter fix than clearing the whole cache — it only touches the set
-// that's actually on screen — and reuses the exact same loading-screen /
-// chunked-typesetting pipeline as a normal open, so the familiar loading
-// bar plays and answered/checked progress is restored afterward exactly
-// as it is on any other rebuild (see buildSolveAllCards).
-function rerenderSolveAllEquations() {
-  const btn = document.querySelector('.btn-rerender-eqs');
-  if (btn) btn.disabled = true;
-
-  initMathCache().then(() => {
-    for (const p of solveAllProblems) deleteCachedMathHTML(mathCacheKeyFor(p));
-
-    const container = document.getElementById('solveAllContainer');
-    const screen = document.getElementById('solveAllLoadingScreen');
-    const subEl  = document.getElementById('solveAllLoadingSub');
-    // Every card is a guaranteed cache miss now, so this pass always
-    // re-typesets the full set — show the "first time" hint accordingly.
-    if (subEl) subEl.classList.add('show');
-
-    runWithLoadingScreen(screen, container, () => buildSolveAllCards(container), cacheTypesetBatch)
       .then(finalizeFreshMathCache)
-      .finally(() => { if (btn) btn.disabled = false; });
+      .then(() => { if (typeof prepareCardMotion === 'function') prepareCardMotion(container); });
   });
 }
 
@@ -1551,7 +1527,7 @@ async function cacheTypesetBatch(batch) {
 }
 
 // Safety net, run once after the whole card-building pass finishes (see
-// renderSolveAll/rerenderSolveAllEquations). extractCssForHtml is called
+// renderSolveAll). extractCssForHtml is called
 // per-batch, immediately after that batch's own typesetting — real
 // testing found that MathJax's dynamic stylesheet can still lag a frame
 // behind at that exact point even with the frame tick renderMathInBatches
@@ -1580,6 +1556,7 @@ async function finalizeFreshMathCache() {
 // animation (see runWithLoadingScreen in math-render.js for why that
 // matters). Returns a promise so the caller can wait for it to finish.
 function buildSolveAllCards(container, batchSize = 12) {
+  if (typeof releaseCardMotion === 'function') releaseCardMotion(container);
   container.innerHTML = '';
 
   // Every card restored from cache carries its own CSS bundled with its
@@ -1629,11 +1606,14 @@ function buildSolveAllCards(container, batchSize = 12) {
             <div class="answer-row">
               ${answerInputHtml(`sa-ans-${i}`)}
             </div>
-            <div class="feedback" id="sa-fb-${i}"></div>
+            <div class="card-result">
+              <div class="feedback" id="sa-fb-${i}"></div>
+              <div class="card-fold"><div class="card-fold-text"></div></div>
+            </div>
             <div class="card-check-row" id="sa-btnrow-${i}">
               <button class="forum-problem-btn" id="sa-forum-btn-${i}" title="Forum thread for ${problemLabel(p._quizNum || selectedQuizNum, p.id)}"
                 onclick="openForumForProblem(${p._quizNum || selectedQuizNum}, '${p.id}')">
-                💬 <span id="sa-forum-total-${i}"></span>
+                💬 <span class="forum-tab-label">Discuss</span> <span id="sa-forum-total-${i}"></span>
                 <span class="forum-problem-btn-badge" id="sa-forum-badge-${i}" style="display:none;"></span>
                 <span class="forum-problem-btn-at" id="sa-forum-at-${i}" style="display:none;">@</span>
               </button>
@@ -1642,11 +1622,13 @@ function buildSolveAllCards(container, batchSize = 12) {
                    quiz, where it only appears once scores are revealed). -->
               <button class="solution-btn" data-quiz="${p._quizNum || selectedQuizNum}" data-problem="${p.id}" style="display:none;"
                 title="Worked solution for ${problemLabel(p._quizNum || selectedQuizNum, p.id)}"
-                onclick="openSolution(${p._quizNum || selectedQuizNum}, '${p.id}')">📘 See solution</button>
+                onclick="openSolution(${p._quizNum || selectedQuizNum}, '${p.id}')">📘 Solution</button>
+              ${typeof mistakeButtonHtml === 'function' ? mistakeButtonHtml(p._quizNum || selectedQuizNum, p.id) : ''}
               <button class="check-problem-btn" id="sa-check-btn-${i}" onclick="checkSingleProblem(${i})">Check</button>
             </div>
           `;
 
+          if (typeof placeCardParts === 'function') placeCardParts(card);
           frag.appendChild(card);
 
           // `i` is declared once, outside this for-loop, and shared across
@@ -1726,7 +1708,7 @@ function restoreSolveAllCard(i, p, status, savedAnswer) {
     markAnswerInput(ansEl, 0.9);
     fb.classList.add('partial-fb');
     fb.innerHTML = `✓ Value correct, but unit needs fixing <span class="pts-badge pts-partial">+0.9 pt</span>`;
-    btn.textContent = '↺ Try again'; btn.disabled = false;
+    btn.textContent = '↺ Retry'; btn.disabled = false;
     syncSeeAnswerButton(i);
 
   } else if (status === 'wrong') {
@@ -1736,7 +1718,8 @@ function restoreSolveAllCard(i, p, status, savedAnswer) {
     markAnswerInput(ansEl, 0);
     fb.classList.add('wrong-fb');
     fb.innerHTML = `✗ Wrong answer <span class="pts-badge pts-zero">+0 pt</span>`;
-    btn.textContent = '↺ Try again'; btn.disabled = false;
+    if (typeof showMistakeHit === 'function') showMistakeHit(fb, saved, p, p._quizNum || selectedQuizNum);
+    btn.textContent = '↺ Retry'; btn.disabled = false;
     syncSeeAnswerButton(i);
 
   } else if (status === 'revealed') {
@@ -1747,9 +1730,11 @@ function restoreSolveAllCard(i, p, status, savedAnswer) {
     markAnswerInput(ansEl, 0);
     fb.classList.add('wrong-fb');
     fb.innerHTML = solveAllAnswerHidden.has(i) ? hiddenAnswerFeedbackHtml() : revealedFeedbackHtml(p);
-    btn.textContent = '↺ Try again'; btn.classList.remove('checked'); btn.disabled = false;
+    if (typeof showMistakeHit === 'function') showMistakeHit(fb, saved, p, p._quizNum || selectedQuizNum);
+    btn.textContent = '↺ Retry'; btn.classList.remove('checked'); btn.disabled = false;
     syncSeeAnswerButton(i);
   }
+  syncCardFold(i);
 }
 
 function resetCardVisuals(i) {
@@ -1761,12 +1746,14 @@ function resetCardVisuals(i) {
   markAnswerInput(ansEl, null);
   fb.classList.remove('show', 'correct-fb', 'partial-fb', 'wrong-fb');
   fb.innerHTML = '';
+  if (typeof clearMistakeHit === 'function') clearMistakeHit(card);
+  if (typeof clearCardResult === 'function') clearCardResult(card);
   ansEl.disabled = false;
   ansEl.value = '';
 }
 
 // A wrong answer in Solve them all briefly lights up the card's
-// "📘 See solution" button (css/solutions.css, .solution-btn-hint), a nudge
+// "📘 Solution" button (css/solutions.css, .solution-btn-hint), a nudge
 // toward it. Nothing when the problem has no solution (button hidden).
 function hintSolutionButton(row) {
   const sol = row && row.querySelector('.solution-btn');
@@ -1818,8 +1805,14 @@ function checkSingleProblem(i) {
     btn.textContent = '✓ Correct';
     btn.classList.add('checked');
     btn.disabled = true;
+    if (typeof flashCheckResult === 'function') flashCheckResult(btn, 'right');
     // Remove any old retry/see-answer buttons
-    btnRow.querySelectorAll('.btn-retry, .btn-see-answer').forEach(el => el.remove());
+    card.querySelectorAll('.btn-retry').forEach(el => el.remove());
+    removeSeeButton(card);
+    smoothCardChange(card, () => {
+      if (typeof clearMistakeHit === 'function') clearMistakeHit(card);
+      syncCardFold(i);
+    });
 
   } else {
     // ── Wrong or partial: allow retry ──────────────────────────────────────
@@ -1829,7 +1822,9 @@ function checkSingleProblem(i) {
     // merge (_saStatusRank, js/solve-all-sync.js), so going back to them
     // would only be undone by the next sync.
     solveAllChecked.set(i, wasRevealed ? 'revealed' : resultType);
-    if (resultType === 'wrong') hintSolutionButton(btnRow);
+    if (resultType === 'wrong' && typeof flashCheckResult === 'function') flashCheckResult(btn, 'wrong');
+    const hintsMistake = typeof mistakeWillHint === 'function' && mistakeWillHint(ansEl.value, p, p._quizNum || selectedQuizNum);
+    if (resultType === 'wrong' && !hintsMistake) hintSolutionButton(btnRow);
 
     // Settings > Study > "Reveal wrong answer instantly" — a genuinely
     // wrong answer (not partial-credit unit slip-ups, which still get a
@@ -1846,13 +1841,17 @@ function checkSingleProblem(i) {
     fb.innerHTML = answerFeedbackHtml(res, p, wasRevealed && !solveAllAnswerHidden.has(i));
 
     // Update check button label but keep it active for retry
-    btn.textContent = '↺ Try again';
+    btn.textContent = '↺ Retry';
     btn.classList.remove('checked');
     btn.disabled = false;
     // Re-enable the field for retry
     ansEl.disabled = false;
 
     syncSeeAnswerButton(i);
+    smoothCardChange(card, () => {
+      if (typeof showMistakeHit === 'function') showMistakeHit(fb, ansEl.value, p, p._quizNum || selectedQuizNum, true);
+      syncCardFold(i);
+    });
   }
 
   updateStickyScore();
@@ -1862,8 +1861,11 @@ function checkSingleProblem(i) {
 
 // The feedback line of a card whose answer was revealed, and of one whose
 // answer was hidden again.
+function revealedLineHtml(p) {
+  return `👁 Correct answer ≈ <strong>${fmt(p.answer)}</strong> ${fmtUnit(p.units)}`;
+}
 function revealedFeedbackHtml(p) {
-  return `👁 Correct answer ≈ <strong>${fmt(p.answer)}</strong> ${fmtUnit(p.units)} <span class="pts-badge pts-zero">+0 pt</span>`;
+  return `${revealedLineHtml(p)} <span class="pts-badge pts-zero">+0 pt</span>`;
 }
 function hiddenAnswerFeedbackHtml() {
   return `👁 Correct answer hidden <span class="pts-badge pts-zero">+0 pt</span>`;
@@ -1872,18 +1874,42 @@ function hiddenAnswerFeedbackHtml() {
 // The card's answer button, added if missing: "See correct answer", or
 // "Hide correct answer" while a revealed answer is on show.
 function syncSeeAnswerButton(i) {
-  const btnRow = document.getElementById('sa-btnrow-' + i);
-  const btn    = document.getElementById('sa-check-btn-' + i);
-  if (!btnRow || !btn) return;
-  let seeBtn = btnRow.querySelector('.btn-see-answer');
+  const card = document.getElementById('sa-card-' + i);
+  const btn  = document.getElementById('sa-check-btn-' + i);
+  if (!card || !btn) return;
+  let seeBtn = card.querySelector('.btn-see-answer');
   if (!seeBtn) {
     seeBtn = document.createElement('button');
-    seeBtn.className = 'btn-see-answer';
-    btnRow.insertBefore(seeBtn, btn);
+    seeBtn.className = 'btn-see-answer see-entering';
+    seeBtn.addEventListener('animationend', () => seeBtn.classList.remove('see-entering'), { once: true });
+    seeBtn.innerHTML = SEE_ANSWER_HTML;
+    btn.before(seeBtn);
+    placeCardParts(card);
   }
   const shown = solveAllChecked.get(i) === 'revealed' && !solveAllAnswerHidden.has(i);
-  seeBtn.textContent = shown ? 'Hide correct answer' : 'See correct answer';
+  const label = shown ? 'Hide correct answer' : 'See correct answer';
+  seeBtn.querySelector('.see-label').textContent = label;
+  seeBtn.title = label;
+  seeBtn.setAttribute('aria-label', label);
+  seeBtn.classList.toggle('open', shown);
   seeBtn.onclick = () => (shown ? hideRevealedAnswer(i) : revealAnswer(i));
+}
+
+// The box under the field (Inline and Tabs): what's left to fix in the answer,
+// and the correct answer while it's on show.
+function syncCardFold(i) {
+  const card = document.getElementById('sa-card-' + i);
+  const fold = card && card.querySelector('.card-fold');
+  if (!fold) return;
+  const status = solveAllChecked.get(i);
+  const p = solveAllProblems[i];
+  const lines = [];
+  if (status && status !== 'correct') {
+    const notice = answerNoticeHtml(gradeAnswer(document.getElementById('sa-ans-' + i).value, p), p, status === 'revealed');
+    if (notice) lines.push(notice);
+    if (status === 'revealed' && !solveAllAnswerHidden.has(i)) lines.push(revealedLineHtml(p));
+  }
+  setCardFold(fold, lines.map(line => `<div>${line}</div>`).join(''));
 }
 
 // "Hide correct answer": takes the answer off the card again. The card
@@ -1891,8 +1917,11 @@ function syncSeeAnswerButton(i) {
 function hideRevealedAnswer(i) {
   const fb = document.getElementById('sa-fb-' + i);
   solveAllAnswerHidden.add(i);
+  const p = solveAllProblems[i];
   if (fb) fb.innerHTML = hiddenAnswerFeedbackHtml();
+  if (typeof showMistakeHit === 'function') showMistakeHit(fb, document.getElementById('sa-ans-' + i).value, p, p._quizNum || selectedQuizNum);
   syncSeeAnswerButton(i);
+  smoothCardChange(fb.closest('.problem-card'), () => syncCardFold(i));
 }
 
 // "See correct answer": shows the answer under the field without locking
@@ -1905,7 +1934,6 @@ function revealAnswer(i) {
   const ansEl  = document.getElementById('sa-ans-' + i);
   const fb     = document.getElementById('sa-fb-' + i);
   const btn    = document.getElementById('sa-check-btn-' + i);
-  const btnRow = document.getElementById('sa-btnrow-' + i);
 
   solveAllChecked.set(i, 'revealed');
   solveAllAnswerHidden.delete(i);
@@ -1919,14 +1947,16 @@ function revealAnswer(i) {
   fb.classList.remove('correct-fb', 'partial-fb', 'wrong-fb');
   fb.classList.add('show', 'wrong-fb');
   fb.innerHTML = revealedFeedbackHtml(p);
+  if (typeof showMistakeHit === 'function') showMistakeHit(fb, ansEl.value, p, p._quizNum || selectedQuizNum);
 
-  btn.textContent = '↺ Try again';
+  btn.textContent = '↺ Retry';
   btn.classList.remove('checked');
   btn.disabled = false;
 
   // Now "Hide correct answer"
-  btnRow.querySelectorAll('.btn-retry').forEach(el => el.remove());
+  card.querySelectorAll('.btn-retry').forEach(el => el.remove());
   syncSeeAnswerButton(i);
+  smoothCardChange(card, () => syncCardFold(i));
 
   updateStickyScore();
   saveSolveAllProgress();

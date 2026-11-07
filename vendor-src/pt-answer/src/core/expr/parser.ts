@@ -15,9 +15,10 @@
  *   or, xor, and
  *   relational   == != < > <= >=   (two operands: an operator; more: a chain)
  *   + -          (a following "x%" adds/subtracts a percentage of the left side)
- *   * / % mod
- *   implicit *   2pi, 2(3), (1+2)(3+4), 2 sqrt(2), (1+2)3
- *   "rule 2"     number / number symbol → (number / number) symbol: 1/2pi = pi/2
+ *   * / % mod  and implicit * at the same level, left to right, as in
+ *                qtype_formulas: 2pi, 2(3), (1+2)3, 1.5 10^3, x/2pi = (x/2)pi.
+ *                mathjs differs here: it binds implicit * tighter and has no
+ *                number after a number.
  *   unary %      50% → 50/100
  *   unary        - + ~ not
  *   ^            right-associative, unary allowed in the exponent: 2^-3
@@ -92,12 +93,6 @@ const operator = (op: string, fn: string, args: Node[], implicit = false, isPerc
   implicit,
   isPercentage,
 });
-const isConstant = (n: Node): boolean => n.type === 'ConstantNode';
-const isOperator = (n: Node): boolean => n.type === 'OperatorNode';
-// mathjs "rule 2" applies after a number, or a signed number: 1/2x, -1/2x.
-const rule2Start = (n: Node): boolean =>
-  isConstant(n) ||
-  (isOperator(n) && (n.args as Node[]).length === 1 && isConstant((n.args as Node[])[0]!) && '-+~'.includes(n.op as string));
 
 class Parser {
   private index = 0;
@@ -355,53 +350,19 @@ class Parser {
   }
 
   private multiplyDivide(): Node {
-    let node = this.implicitMultiplication();
-    const names: Record<string, string> = { '*': 'multiply', '.*': 'dotMultiply', '/': 'divide', './': 'dotDivide', '%': 'mod', mod: 'mod' };
-    while (Object.hasOwn(names, this.token)) {
-      const name = this.token;
-      this.next(true);
-      node = operator(name, names[name]!, [node, this.implicitMultiplication()]);
-    }
-    return node;
-  }
-
-  private implicitMultiplication(): Node {
-    let node = this.rule2();
-    let last = node;
-    for (;;) {
-      const symbol = this.tokenType === 'symbol';
-      // a number only multiplies implicitly after something that isn't a number: (2+3)2, 3!2
-      const number = this.tokenType === 'number' && !isConstant(last) && (!isOperator(last) || last.op === '!');
-      if (!(symbol || number || this.token === '(')) break;
-      last = this.rule2();
-      node = operator('*', 'multiply', [node, last], true);
-    }
-    return node;
-  }
-
-  // "number / number symbol" binds as (number / number) symbol
-  private rule2(): Node {
     let node = this.unaryPercentage();
-    let last = node;
-    while (this.token === '/' && rule2Start(last)) {
-      const beforeSlash = this.save();
-      this.next(true);
-      if (this.tokenType !== 'number') {
-        this.restore(beforeSlash);
-        break;
-      }
-      const atNumber = this.save();
-      this.next(true);
-      if (this.isType('symbol') || this.is('(') || this.is('in')) {
-        this.restore(atNumber);
-        last = this.unaryPercentage();
-        node = operator('/', 'divide', [node, last]);
+    const names: Record<string, string> = { '*': 'multiply', '.*': 'dotMultiply', '/': 'divide', './': 'dotDivide', '%': 'mod', mod: 'mod' };
+    for (;;) {
+      if (Object.hasOwn(names, this.token)) {
+        const name = this.token;
+        this.next(true);
+        node = operator(name, names[name]!, [node, this.unaryPercentage()]);
+      } else if (this.tokenType === 'symbol' || this.tokenType === 'number' || this.token === '(') {
+        node = operator('*', 'multiply', [node, this.unaryPercentage()], true);
       } else {
-        this.restore(beforeSlash);
-        break;
+        return node;
       }
     }
-    return node;
   }
 
   // "50%" is 50/100; "50 % 3" stays the modulo operator
