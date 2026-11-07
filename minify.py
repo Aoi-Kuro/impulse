@@ -223,6 +223,30 @@ def _css_bundle(out, page_rel, refs, problems):
         parts.append(css)
     return '\n'.join(parts) + '\n'
 
+# What only Safe Exam Browser needs is listed in js/lockdown.js rather than in a
+# page, so everyone else never downloads it. Called before the pages are
+# bundled, because lockdown.js is itself inside one of their bundles.
+LOCKDOWN_LOADER = 'js/lockdown.js'
+LOCKDOWN_LIST = re.compile(r'\[\s*"css/lockdown-session\.css"[^\]]*\]')
+
+def bundle_lockdown(out, problems):
+    path = os.path.join(out, LOCKDOWN_LOADER)
+    code = open(path, encoding='utf-8').read()
+    m = LOCKDOWN_LIST.search(code)
+    if not m:
+        problems.append(f'{LOCKDOWN_LOADER}: the list of lockdown session files was not found')
+        return []
+    refs = json.loads(m.group(0))
+    css = [r for r in refs if r.endswith('.css')]
+    js = [r for r in refs if r.endswith('.js')]
+    made = [
+        (_write_bundle(out, 'lockdown', 'css', _css_bundle(out, 'index.html', css, problems)), css),
+        (_write_bundle(out, 'lockdown', 'js', _js_bundle(out, 'index.html', js, problems)), js),
+    ]
+    with open(path, 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write(code[:m.start()] + json.dumps([rel for rel, _ in made]) + code[m.end():])
+    return made
+
 def bundle_page(out, page_rel, name, problems):
     path = os.path.join(out, page_rel)
     html = open(path, encoding='utf-8').read()
@@ -625,6 +649,7 @@ def main():
 
         bundles = []
         if not problems:
+            bundles += bundle_lockdown(out, problems)
             for page_rel, name in BUNDLE_PAGES.items():
                 if os.path.exists(os.path.join(out, page_rel)):
                     bundles += bundle_page(out, page_rel, name, problems)

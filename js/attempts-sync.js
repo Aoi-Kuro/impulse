@@ -299,6 +299,7 @@ async function syncAttempts() {
         entered_unit: x.entered_unit,
         points: x.points
       })),
+      locked: a.locked === true,
       attempted_at: a.date
     }));
     // Every attempt this device will hold once the push lands (synced ones
@@ -372,6 +373,7 @@ async function syncAttempts() {
         score: row.score,
         maxScore: row.max_score,
         answers: row.answers || [],
+        locked: row.locked === true,
         synced: true
       }));
     // Anything still local-only after a successful round trip is kept ONLY

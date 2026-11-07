@@ -611,6 +611,12 @@ export default {
       });
     }
 
+    // A PIN means the person thinks this name is already theirs. Falling
+    // through to a new claim would turn a typo at login into an empty account.
+    if (pin !== undefined) {
+      return Response.json({ ok: false, error: 'not_found' }, { status: 404 });
+    }
+
     // ── Case 1: brand new claim ─────────────────────────────────────────────
     if (await nicknameIsFlagged(rawNickname)) {
       return Response.json({ ok: false, error: 'flagged_nickname' }, { status: 422 });

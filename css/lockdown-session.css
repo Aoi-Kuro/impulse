@@ -1,0 +1,38 @@
+/* Loaded only inside Safe Exam Browser (js/lockdown.js), where html.lockdown is
+   set and the site shrinks to the random quiz: anything that could show
+   answers, or lead away from the quiz, is hidden. */
+
+html.lockdown #lockdownExitBtn { display: inline-block; margin-left: 0.3rem; color: var(--wrong); opacity: 1; }
+html.lockdown .lockdown-only { display: block; }
+html.lockdown .lockdown-only.btn { display: inline-block; }
+
+html.lockdown .mode-switch-label,
+html.lockdown .mode-switch-section > .mode-switch-row,
+html.lockdown .landing-box .stats-launch-btn:not(.lockdown-only),
+html.lockdown .forum-launch-wrap,
+html.lockdown .landing-identity-wrap,
+html.lockdown .landing-box > p:not(.landing-sub),
+html.lockdown .changelog-trigger-wrap,
+html.lockdown .changelog-panel,
+html.lockdown #settingsBtn,
+html.lockdown #manualBtn,
+html.lockdown #cabinetLink,
+html.lockdown #forumFabWrap,
+html.lockdown .forum-problem-btn,
+html.lockdown .mistake-btn,
+html.lockdown #recentAttemptsPanel {
+  display: none !important;
+}
+
+/* Solutions open after Check answers. With Discuss gone, a problem without one
+   has nothing left in its row. */
+html.lockdown .card-check-row:not(:has(.solution-btn:not([style*="none"]))) {
+  display: none !important;
+}
+
+.lockdown-result-note {
+  margin: 1rem 0 0.8rem;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 0.85rem;
+}

@@ -82,6 +82,7 @@ const SETTINGS_SEARCH_KEYWORDS = {
   selectLastUsedQuiz: 'last used quiz, last quiz, previous quiz, recent quiz, remember quiz, remember set, continue, resume, where i left off, latest quiz, current quiz, default quiz, quiz 1, first quiz, start page, selected quiz, preselect, automatically select, last set, newest set, latest set',
   cumulativeDefaultOn: 'cumulative, cumulative quiz, all quizzes, previous quizzes, review all, mixed, combined, single set, default mode, everything so far, final exam, midterm, comprehensive',
   hideTopicWhileActive: 'topic, topics, topic label, hide topic, chapter, category, subject, hint, spoiler, spoilers, give away, blind, exam conditions, label, tag, hide hint',
+  quizStartMode: 'lockdown, lockdown browser, safe exam browser, seb, exam browser, ordinary, ask, remember, do not ask, start quiz, starting a quiz, random quiz',
   lockSolveAllOrder: 'order, lock order, order picker, skip picker, skip question, problems order, question order, solve all, entire set, sequence, fixed order, remember order, dont ask, always same order, picker',
   solveAllOrder: 'ordered, shuffled, shuffle, random order, randomize, randomise, randomize problems, shuffle problems, shuffle questions, problems, questions, in order, sequential, numbered order, mix, mixed, scramble, entire set, solve all, order',
   showSolveAllNavRail: 'progress rail, line progress, progress line, progress bar, sidebar, side bar, scroll indicator, scrollbar, navigation, ticks, you are here, minimap, entire set, solve all, wide screen, desktop',

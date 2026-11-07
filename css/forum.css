@@ -373,7 +373,7 @@
 .stats-modal-btn.danger { border-color: var(--wrong); color: var(--wrong); }
 .stats-modal-btn.danger:hover { background: var(--wrong); color: var(--chrome-light); }
 
-/* ── "Getting Started!" screen (index.html #gettingStartedModalBackdrop,
+/* ── Getting Started screen (index.html #gettingStartedModalBackdrop,
    js/forum.js openGettingStartedModal/toggleGsFaq) ──
    Reuses .stats-modal-box's card skin but widens/heightens it — the FAQ
    list needs more room than a plain confirm dialog — and caps its own
@@ -386,23 +386,31 @@
   text-align: left;
 }
 .gs-modal-box .stats-modal-title { text-align: center; }
-.gs-modal-desc {
-  text-align: center;
-  margin-bottom: 1.2rem;
-}
-.gs-modal-desc strong { color: var(--text); }
-.gs-start-row { margin-bottom: 1.5rem; }
-.gs-start-btn { flex: 1; padding: 0.7rem 1.1rem; font-size: 0.85rem; }
+.gs-start-row { flex-wrap: wrap; margin-bottom: 1rem; }
+.gs-start-btn { flex: 1 1 8rem; padding: 0.7rem 1.1rem; font-size: 0.85rem; }
 
-.gs-faq-heading {
+.gs-faq-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: none;
+  border: none;
+  color: var(--muted);
   font-family: var(--mono);
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 0.5rem;
+  padding: 0.4rem;
+  cursor: pointer;
 }
+.gs-faq-toggle:hover { color: var(--accent); }
+.gs-faq.open .gs-faq-toggle { margin-bottom: 0.5rem; }
+.gs-faq.open .gs-faq-toggle .gs-faq-caret { transform: rotate(90deg); color: var(--accent); }
+.gs-faq-list { display: none; }
+.gs-faq.open .gs-faq-list { display: block; }
 .gs-faq-item {
   border-top: 1px solid var(--border);
 }
@@ -442,6 +450,14 @@
   max-height: 220px;
   padding: 0 0.1rem 0.8rem;
 }
+
+.forum-claim-hint {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+#forumClaimModalDesc:empty { display: none; }
 
 .forum-composer-scope-row {
   display: flex;

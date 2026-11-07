@@ -91,6 +91,7 @@ CREATE TABLE public.quiz_attempts (
   answers jsonb NOT NULL DEFAULT '[]'::jsonb,
   attempted_at timestamp with time zone NOT NULL,
   synced_at timestamp with time zone NOT NULL DEFAULT now(),
+  locked boolean NOT NULL DEFAULT false,
   CONSTRAINT quiz_attempts_pkey PRIMARY KEY (id),
   CONSTRAINT quiz_attempts_identity_id_fkey FOREIGN KEY (identity_id) REFERENCES public.identities(id)
 );

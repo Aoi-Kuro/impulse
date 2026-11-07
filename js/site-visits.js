@@ -25,6 +25,7 @@ function getSiteDeviceId() {
 }
 
 function recordSiteVisit() {
+  if (isLockdownSession()) return; // each session there is a throwaway browser, not a new visitor
   if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_PUBLISHABLE_KEY === 'undefined') return;
   // The editor's Full preview loads the site in an overlay; that is not a
   // reader's visit (flag set by js/solutions.js).

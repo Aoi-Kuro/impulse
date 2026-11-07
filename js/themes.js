@@ -319,6 +319,8 @@ let _nudgePrevTheme = null;
 let _nudgeActive = false;
 
 function themeNudgeSuppressed(){
+  // Inside Safe Exam Browser it would change the theme in the middle of a quiz.
+  if (isLockdownSession()) return true;
   return typeof getSetting === 'function' &&
     (getSetting('notifications', 'hideThemeNudge') === true || getSetting('notifications', 'goSilent') === true);
 }

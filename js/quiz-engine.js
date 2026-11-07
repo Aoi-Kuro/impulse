@@ -1266,6 +1266,7 @@ function _startRandomOrderSample() {
 }
 
 function openSolveAllModal() {
+  setChoiceView('order');
   fadeInScreen(document.getElementById('choicePage'), 380);
   _startRandomOrderSample(); // after fadeInScreen un-hides the page, or tick() stops at once
 }
@@ -2187,7 +2188,7 @@ function fadeInScreen(el, duration) {
 // so starting a quiz needs one to exist first — same identity system the
 // forum already uses (js/forum.js), not a separate account system. A
 // device that's never claimed a name sees the "Getting Started!" screen
-// first (js/forum.js openGettingStartedModal — what a nickname is, why
+// first (js/forum.js openGettingStartedModal — new or returning, plus why
 // it's needed, an FAQ), and only after tapping through that gets the
 // claim modal itself, in its 'create' mode. startSelected() only actually
 // proceeds once a name is resolved (or immediately, if one's already
@@ -2204,8 +2205,11 @@ function startSelected() {
     setTimeout(startSelected, 50);
     return;
   }
-  if (!getForumNickname()) {
-    openGettingStartedModal(() => openForumClaimModal('create', '', () => startSelected()));
+  // Safe Exam Browser has no identity to claim against, and its attempts
+  // reach the normal browser another way (see js/lockdown.js), so that
+  // session skips the gate.
+  if (!getForumNickname() && !isLockdownSession()) {
+    openGettingStartedModal(() => startSelected());
     return;
   }
   try { localStorage.setItem(LAST_QUIZ_KEY, String(selectedQuizNum)); } catch (e) { /* private mode / quota */ }
@@ -2234,28 +2238,33 @@ function startSelected() {
         openSolveAllModal();
       }
     } else {
-      const appPage = document.getElementById('appPage');
-      appPage.classList.add('visible');
-      initTopics();
-      newQuiz();
-      // Settings > Study > "Full screen for Random N" — entered the moment
-      // Random N mode actually opens; checkAll() (above) leaves it again
-      // the instant scores are revealed. Wrapped in a try/catch and a
-      // .catch() on the promise since some browsers refuse this outside a
-      // sufficiently direct user gesture, or if the person already denied
-      // it once — either way, failing silently just means staying in the
-      // normal window instead, never a broken quiz.
-      const fullscreenRandomNOn = (typeof getSetting === 'function')
-        ? getSetting('study', 'fullscreenRandomN') === true
-        : _readStudySettingRaw('fullscreenRandomN', true);
-      if (fullscreenRandomNOn) {
-        try {
-          const req = document.documentElement.requestFullscreen();
-          if (req && typeof req.catch === 'function') req.catch(() => {});
-        } catch (e) { /* Fullscreen API unavailable — just stay windowed */ }
-      }
+      openQuizStart();
     }
   });
+}
+
+// A Random N attempt, once the way of taking it is settled (js/lockdown.js).
+function startRandomQuiz() {
+  const appPage = document.getElementById('appPage');
+  appPage.classList.add('visible');
+  initTopics();
+  newQuiz();
+  // Settings > Study > "Full screen for Random N" — entered the moment
+  // Random N mode actually opens; checkAll() (above) leaves it again
+  // the instant scores are revealed. Wrapped in a try/catch and a
+  // .catch() on the promise since some browsers refuse this outside a
+  // sufficiently direct user gesture, or if the person already denied
+  // it once — either way, failing silently just means staying in the
+  // normal window instead, never a broken quiz.
+  const fullscreenRandomNOn = (typeof getSetting === 'function')
+    ? getSetting('study', 'fullscreenRandomN') === true
+    : _readStudySettingRaw('fullscreenRandomN', true);
+  if (fullscreenRandomNOn) {
+    try {
+      const req = document.documentElement.requestFullscreen();
+      if (req && typeof req.catch === 'function') req.catch(() => {});
+    } catch (e) { /* Fullscreen API unavailable — just stay windowed */ }
+  }
 }
 
 // ─── "Leave this attempt?" guard ─────────────────────────────────────────────
@@ -2498,7 +2507,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '13.4.3';
+const CURRENT_VERSION = '14.0.0';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.

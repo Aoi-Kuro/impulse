@@ -1100,6 +1100,11 @@ body.light .tp-section, body.light .attempt-topics-panel { --tp-ci-color: #000; 
   white-space: nowrap;
 }
 /* Mode badge */
+.mode-lock {
+  margin-left: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
 .mode-badge {
   display: inline-block;
   font-family: var(--mono);

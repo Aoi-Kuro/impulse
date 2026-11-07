@@ -209,6 +209,7 @@ interface IncomingAttempt {
   max_score: number;
   answers: IncomingAnswer[];
   attempted_at: string; // ISO date string
+  locked?: boolean; // taken in lockdown mode; older clients don't send it
 }
 
 function isPlainString(v: unknown, maxLen: number): v is string {
@@ -230,6 +231,7 @@ function validateAttempt(a: unknown): a is IncomingAttempt {
   if (typeof x.score !== "number" || x.score < 0) return false;
   if (typeof x.max_score !== "number" || x.max_score < 0) return false;
   if (typeof x.attempted_at !== "string" || Number.isNaN(Date.parse(x.attempted_at))) return false;
+  if (x.locked !== undefined && typeof x.locked !== "boolean") return false;
   if (!Array.isArray(x.answers) || x.answers.length > MAX_ANSWERS_PER_ATTEMPT) return false;
   for (const ans of x.answers) {
     if (!ans || typeof ans !== "object") return false;
@@ -317,6 +319,7 @@ export default {
         max_score: a.max_score,
         answers: a.answers,
         attempted_at: a.attempted_at,
+        locked: a.locked === true,
       }));
       const { error: insertErr } = await admin
         .from("quiz_attempts")
@@ -373,7 +376,7 @@ export default {
     // as "redownload everything" for corrupted-local-data recovery.
     const { data: rows, error: selectErr } = await admin
       .from("quiz_attempts")
-      .select("attempt_hash, quiz_num, mode, duration_seconds, score, max_score, answers, attempted_at")
+      .select("attempt_hash, quiz_num, mode, duration_seconds, score, max_score, answers, attempted_at, locked")
       .eq("identity_id", identityId)
       .order("attempted_at", { ascending: true });
 

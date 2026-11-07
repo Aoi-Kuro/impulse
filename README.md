@@ -47,6 +47,7 @@ The procedure is described in [Deploying a new course](#deploying-a-new-course).
   - [Banners and the update checker](#banners-and-the-update-checker)
   - [Remote settings (`site-version.json`)](#remote-settings-site-versionjson)
   - [Smaller modules](#smaller-modules)
+- [Lockdown mode (Safe Exam Browser)](#lockdown-mode-safe-exam-browser)
 - [Solutions editor (`/editor`)](#solutions-editor-editor)
   - [Access](#access)
   - [Access levels](#access-levels)
@@ -138,10 +139,13 @@ impulse/
 │                            deploys it (and netlify/) with the Netlify CLI
 ├── netlify/edge-functions/
 │   └── share.ts             /s/<key>: a shared solution's link preview
+├── seb/                     Safe Exam Browser configs, one per host, and
+│                            quit.html, where leaving lockdown lands
 ├── LICENSE                  GNU AGPL v3 (shown on the Copyright screen)
 ├── vendor-src/              Sources of vendor/ builds (not deployed)
 │   └── pt-answer/           Answer engine: source, build.py, tests
 ├── tools/                   Not deployed
+│   ├── seb/make_config.py   Writes seb/*.seb
 │   └── figures/             Generator of course/figures/ (Python):
 │       ├── svgkit.py        Tiny SVG drawing kit, theme colour names
 │       ├── quiz1.py .. quiz4.py  One function per redrawn image + FIGURES table
@@ -184,6 +188,9 @@ impulse/
 │   ├── data/tips.js         Rotating top-bar tip strings
 │   ├── answer-check.js      Answer field: grading rules, preview box
 │   ├── card-layout.js       Problem card layouts: Inline, Tabs, Legacy
+│   ├── lockdown.js          Lockdown mode: the choice, collecting attempts
+│   ├── lockdown-session.js  Loaded only in Safe Exam Browser: saving, exit
+│   ├── calculator.js        Loaded only in Safe Exam Browser: calculator
 │   ├── stats.js             Attempt log, chart, table, problems overview,
 │   │                        attempt review, Forum & Site panel
 │   ├── stats-export.js      Export to PDF / Excel / CSV / TXT
@@ -247,6 +254,9 @@ impulse/
 │   ├── figure.css           Solution figures (shared with the editor)
 │   ├── solutions.css        "Solution" button + Solution screen
 │   ├── card-layouts.css     Looks of the Inline and Tabs card layouts
+│   ├── lockdown.css         Lockdown screens
+│   ├── lockdown-session.css Loaded only in SEB: hides the rest of the site
+│   ├── calculator.css       Loaded only in SEB: calculator
 │   └── problem-flags.css    Flag button on problem cards + its C1/C2 window
 │
 ├── images/                  Framework images (not course-specific)
@@ -615,7 +625,8 @@ attempts.
 2. **All stylesheets** load as normal blocking `<link>`s. They are not
    deferred: the hidden screens and modals are only hidden by those files, so
    deferring them caused a flash of unstyled markup.
-3. **Tier 1 scripts** (plain tags, in order): `course-config.js`,
+3. **Tier 1 scripts** (plain tags, in order): `course-config.js`, `lockdown.js`
+   (which adds the session files inside Safe Exam Browser),
    `site-config.js` → `banner-manager.js`, `theme-colors.js`, `themes.js`, `splash.js`,
    `easter.js` → `course/quizzes/quiz1..4.js` → `data/changelog.js`,
    `data/tips.js` → `quizzes.js` → `vendor/pt-answer`, `answer-check.js` →
@@ -874,8 +885,12 @@ flagging and nickname changes go through Edge Functions.
   "Your PIN"). Five wrong PINs lock the identity for 15 minutes. The same identity can
   be linked to several devices (restore with nickname + PIN), renamed, or
   exited on one device. New and renamed nicknames pass OpenAI moderation. A
-  **Getting Started** modal (with FAQ) is shown before the first quiz Start on a
-  device without a nickname, and leads into the claim modal.
+  **Getting Started** modal is shown before the first quiz Start on a device
+  without a nickname, and by the 👤 beside the logo, which then carries on to
+  Stats: *I'm new* asks for a name, *I have an account* for a name and PIN, with
+  the FAQ folded below. Back returns to it. Enter in the name field moves on to
+  an empty PIN field rather than submitting. Logging in with a name nobody owns
+  returns `not_found` rather than claiming it.
 - **Composer**: LaTeX with `$...$`/`$$...$$`, a live hover preview, an
   insert-equation modal with a quick grid, and **LaTeX shorthand**: `&x squared&`
   (inline) or `&&...&&` (display) is converted to real LaTeX server-side by
@@ -1231,7 +1246,7 @@ saved values over `SETTINGS_DEFAULTS`. `getSetting(tab, key)` /
 |---|---|
 | **Display** | *Main screen*: Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme). *Animations and figures*: Reduce motion (sub, independent of it: Off / XX% with ▲▼ arrows, 10–40% — reduce motion automatically while the battery is below that and not charging; `navigator.getBattery()`, Chromium only, blocked elsewhere) · Figure size slider (50–200%, scales problem images, redrawn figures and solution figures) · Default animation speed slider (0.25–5×; the speed chip under a figure multiplies it) · Repeat one-shot animations (they go round again until ⏸, which then finishes the round) · Play looped animations only once (one cycle, then they stop by themselves) · Hide animation control buttons (the play button and speed chip, so animated figures stay still) · Logo animation (the logo cube's tumble, `js/logo-tumble.js`) · Hide field lines by default. *Extra*: Show floating forum button · Show running line (top-bar tips) |
 | **Notifications** | Hide update reminder (sub: Update anyway outside quiz mode) · Hide try-new-theme reminder · Hide bug report reminder · Go silent — hides every badge and banner and mutes push (sub: Turn off automatically after 24 hours) |
-| **Study** | Redrawn figures (on: theme-coloured SVGs, off: original images) · Show live timer · Reset filter on page load · Automatically stop after 50 minutes · Full screen for Random N (sub: Don't show full-screen reminder) · Select last used quiz by default (on) · Select cumulative by default · Hide topic while active · Solve-All: Lock order + Order · Line progress (rail) · Show progress window (sticky score) · Reveal wrong answer instantly |
+| **Study** | Redrawn figures (on: theme-coloured SVGs, off: original images) · Starting a quiz (Ask, Ordinary or Lockdown) · Show live timer · Reset filter on page load · Automatically stop after 50 minutes · Full screen for Random N (sub: Don't show full-screen reminder) · Select last used quiz by default (on) · Select cumulative by default · Hide topic while active · Solve-All: Lock order + Order · Line progress (rail) · Show progress window (sticky score) · Reveal wrong answer instantly |
 | **Sync & Storage** | Sync settings on this device (on by default; never synced itself) · Go offline (24 h) · Cache & storage tools · Backup |
 | **Search** | A search box; matching settings appear under it as their real rows, with a link to their own tab (`js/settings-search.js`) |
 
@@ -1397,7 +1412,7 @@ and the full-screen reminder queue first-come-first-served. API: `register`,
   bring the new version can't loop.
 - **Bug-report nudge** ("Report on Telegram"): at most once a day, after 10
   minutes of use. The third ✕ turns on "Hide bug report reminder".
-- **Theme nudge**: once, suggesting a preset. The third ✕ turns on "Hide try
+- **Theme nudge**: once, suggesting a preset. Never inside Safe Exam Browser, where it would change the theme mid-quiz. The third ✕ turns on "Hide try
   new theme reminder". Both counts start over then.
 
 ### Remote settings (`site-version.json`)
@@ -1512,7 +1527,9 @@ Safari and Firefox were not covered.
   `[text, condition, mandatory?]`. Conditions: `""` always, `M`/`D`/`E`/`N`
   (morning/day/evening/night), `P` (near π time or π day), plus date codes for
   holidays defined in `COND_ACTIVE`. `mandatory: 1` guarantees the line is shown
-  once on its day. Tapping the badge rolls a new line.
+  once on its day. Tapping the badge rolls a new line. After 60 s with no
+  activity the bounce eases to a stop, and any activity eases it back, so an
+  idle menu leaves the GPU alone.
 - **Manual** (`js/manual.js` + `course/manual.json`): an array of sections
   `{ id, icon, title, subsections: [{ id, title, html }] }` with inline LaTeX,
   shown as a collapsible tree and a content pane. A fallback notice appears
@@ -1525,7 +1542,10 @@ Safari and Firefox were not covered.
   real play buttons.
 - **Changelog** (`js/changelog.js`): the panel under the landing box, the
   charge-canvas button with the version badge, a "⚡ field lines" cursor effect
-  (toggleable; can be off by default via Settings) and a GitHub link.
+  (toggleable; can be off by default via Settings) and a GitHub link. Its
+  animation loop runs on the main screen only, the charge redraws at 30 fps, and
+  the full-screen overlay stays hidden unless lines are drawn. With reduced
+  motion the charge holds still and the splash doesn't bounce.
 - **Easter egg** (`js/easter.js`): Pi Hour (3:14 AM/PM) and Pi Day (14 March).
 - **Figure attribution** (`js/fig-attribution.js`): tap-to-toggle `.fig-attr`
   (i) badges inside problem text; Escape or an outside tap closes them.
@@ -1535,6 +1555,65 @@ Safari and Firefox were not covered.
   "Copyright" link under the changelog button; the statements from
   `#licenseScreen` in `index.html`, then the full `LICENSE` text, fetched on
   first use (see [License](#license)).
+
+---
+
+## Lockdown mode (Safe Exam Browser)
+
+An optional way to take a random quiz. Starting one shows a choice on
+`#choicePage`: *Ordinary* is the normal quiz, and *Lockdown browser* opens
+[Safe Exam Browser](https://safeexambrowser.org) (SEB) with
+`seb/<hostname>.seb`, which shows the site full screen and blocks other apps and
+sites. *Remember* saves the answer in `study.quizStartMode`, which Settings >
+Study can change back. Devices SEB doesn't run on skip the choice. Inside SEB,
+`js/lockdown.js` sets `html.lockdown` and `css/lockdown-session.css` hides
+everything except the quiz.
+
+Only `js/lockdown.js` and `css/lockdown.css` load for everyone. The files in
+`LOCKDOWN_SESSION_FILES` load only inside SEB, and `minify.py` packs them into
+one bundle of each, so other visitors never download them.
+
+- **Is SEB installed?** A page can't tell, and losing focus proves nothing:
+  Windows' "Get an app" popup takes it too. So the link is followed at once, and
+  help with *Install* and *Enter lockdown* appears after 10 s, long enough for
+  SEB to start, or sooner through *I don't have it installed*. The site, loaded
+  inside SEB, sends `opened` on the ticket's Realtime channel, and only that (or
+  a collected attempt) takes the normal browser back to the menu.
+
+- **Configs:** `python tools/seb/make_config.py` rewrites `seb/*.seb`. A new host
+  goes in that script's `HOSTS` and in `LOCKDOWN_HOSTS` in `js/lockdown.js`.
+- **Trying it locally:** run `python -m http.server 8000` on port 8000 exactly,
+  open `http://localhost:8000/`, and choose Lockdown browser. Save your work first: SEB
+  takes over the screen, full screen with no taskbar. To leave, use the exit
+  icon in the top bar, or Ctrl+Q if the site won't load (no quit password).
+- **Stats:** SEB is a separate browser with no identity, so attempts travel
+  through a drop-off. The normal browser puts a random ticket in the SEB link
+  (after a second `?`, which is how SEB passes values to the start URL), SEB
+  leaves each attempt under it with the `lockdown-dropoff` Edge Function, and a
+  database trigger pings the ticket's Realtime channel so the normal browser
+  collects it at once. A polling fallback runs only while a ticket has no live
+  channel and is still waiting (15 minutes unless SEB reported opening), and
+  otherwise a ticket is read at most every 30 minutes, on load or focus.
+  The browser keeps a ticket for 8 days, longer than the 7 the server keeps an
+  attempt, so a ticket can't expire while its attempt is still waiting. From there the usual sync takes over. Needs migrations 016 and
+  018 and that function.
+- **Manual:** inside SEB only the page on writing answers remains
+  (`lockdownManualSections`), reached by the ⓘ beside each answer box. Solutions
+  open after *Check answers* as usual; forum polling and the visit counter are off.
+- **Calculator:** the button by the theme controls opens a floating scientific
+  calculator (`js/calculator.js`), which keeps its state while hidden. `CalcEngine`
+  has no DOM. Typed keys reach it only while it has focus.
+- **Limits:** tickets are made up by the browser, so anyone can create them. A
+  ticket holds 20 attempts, the table 5,000 rows, and rows go after 7 days.
+  When full, only lockdown saves fail until the table clears.
+- **Marking:** collected attempts get `locked: true`, stored in
+  `quiz_attempts.locked` (migration 017). Stats shows a small lock beside the
+  mode. It is a label from the client, like the score, not proof.
+- **Look:** the same link carries the colour theme, day or night mode, custom
+  colours and font, since SEB can't read the normal browser's storage.
+- **Not a security check:** nothing verifies SEB's keys, and grading stays in the
+  browser. The Config Key is a checksum of the settings, and these `.seb` files
+  are public, so it could not prove a session really ran in SEB anyway.
 
 ---
 
@@ -2013,6 +2092,9 @@ about 5 minutes of read-only site. The tools it uses are in `superbase/dev/`.
 | `013_solution_levels_and_alternatives.sql` | `solution_editors.level` (0 observer … 4 full; existing editors set to 4), several solutions per problem (`problem_solutions.id` primary key, `owner_id`, `created_at`, `is_default`; one per author per problem), the triggers that keep exactly one default per problem, status `review`, and `solution_reviews` (pending edits and review notes; no policies). Deploy together with the `solutions-admin` that uses it. |
 | `014_solution_author_id.sql` | `problem_solutions.author_id`: the credit as an editor id (`author`/`author_link` stay as a copy of that editor's name and link). The 009 trigger now matches by id, so renaming an editor carries over to their solutions (and to `saved_by`); a trigger re-links `author_id` when `author` is changed without it. Run before deploying the `solutions-admin` that writes it. |
 | `015_forum_view_security_invoker.sql` | `forum_messages_public` reads with the visitor's rights (`security_invoker`), fixing Supabase's "Security Definer View" warning; visitors may read `identities.id`, `nickname`, `avatar_svg` (never `pin_hash`/`pin_salt`), only for people who have posted. |
+| `016_lockdown_dropoffs.sql` | `lockdown_dropoffs`: finished lockdown attempts waiting for the normal browser (RLS on, no policies). |
+| `017_quiz_attempts_locked.sql` | `quiz_attempts.locked`, the lock beside an attempt in Stats. Run before deploying the `sync-quiz-attempts` that reads it. |
+| `018_lockdown_dropoffs_realtime.sql` | Trigger pinging `lockdown:<ticket>` when an attempt lands, so it's collected at once. |
 
 **Tables**
 
@@ -2025,6 +2107,7 @@ about 5 minutes of read-only site. The tools it uses are in `superbase/dev/`.
 | `site_visits` / `site_device_sightings` | Visit counters (`record-visit`). |
 | `device_bans` / `identity_bans` | Rolling red-flag counters and escalating posting bans. |
 | `quiz_attempts` / `quiz_attempts_counter` | Synced Random N attempt log + increment-only counters (deleting an attempt never lowers the totals). |
+| `lockdown_dropoffs` | Lockdown attempts waiting under a ticket: deleted once collected, and after 7 days otherwise. Only `lockdown-dropoff` reaches it. |
 | `solve_all_progress` | Per identity, per quiz, per mode Solve-All status map (`data: null` = reset tombstone). |
 | `push_subscriptions` | Web Push subscriptions by device / identity. |
 | `device_secrets` | Salted + peppered hash of each device's secret. No policies. |
@@ -2061,6 +2144,7 @@ stand between the public key and the database. Request bodies carry
 | `check-ban.ts` | Whether the calling device/identity is banned. |
 | `record-visit.ts` | Log a page visit. |
 | `sync-quiz-attempts.ts` | Push/pull attempts. With a matching `known_fingerprint` it answers `unchanged` (confirmed hashes only) instead of the full list; a client without one always gets the full list. |
+| `lockdown-dropoff.ts` | Carries lockdown attempts from Safe Exam Browser to the student's normal browser, under a random ticket. No device or identity. |
 | `delete-quiz-attempt.ts` | Delete one synced attempt. |
 | `sync-solve-all.ts` | Pull, push or reset (tombstone) Solve-All progress. |
 | `sync-settings.ts` | Push changed settings and get back the merged set in one call; with no changes and a matching `known_rev` it answers `unchanged`. Clamps future timestamps to server time and returns `server_now` for the client's clock offset. |
@@ -2178,7 +2262,9 @@ Course-scoped keys start with `STORAGE_PREFIX` (shown as `<p>`).
 | localStorage | `<p>_deploy_msg_seen` | Version and text of the last `DEPLOY_MESSAGE` handled (shown or skipped). |
 | localStorage | `<p>-problem-flags` | Problem flags: `{ "q1_P55": 1 \| 2 }` (1 = C1, 2 = C2). |
 | localStorage | `<p>-fig-anim-speed` | Animated figures' speed: `0.5`, `1` or `2`. |
+| localStorage | `<p>_lockdown_tickets` | Lockdown tickets this browser still reads: `[{ id, createdAt, opened, collected, checkedAt }]`, for 8 days. |
 | sessionStorage | `<p>_splash_seen` | Splash lines shown recently in this tab (not repeated). |
+| sessionStorage | `<p>_lockdown_ticket` | Inside Safe Exam Browser: the ticket from the link, kept across reloads. |
 | localStorage | `<p>-editor-key`, `-editor-drafts`, `-editor-history`, `-editor-last`, `-editor-sidebar`, `-editor-split`, `-editor-wrap`, `-editor-server-mock` | Editor state (the last one only with `store-mock.js`). |
 | localStorage | `<p>-solutions-index` | Published-solution index (`{at, rows}`), shared by all tabs; refetched once it is 30 minutes old (`poll.solutions`). |
 | localStorage | `<p>-site-config`, `<p>-purge-id` | Last remote settings seen in `site-version.json`; last `purge_id` acted on. |
@@ -2279,7 +2365,7 @@ forum, paused sync, a cache refill for a new `purge_id`.
 1. **The repository is duplicated** into a new one for the course (each course
    is a fully separate repository/site, not a branch).
 2. **A new Supabase project is created**, Realtime is enabled, and every file
-   in `superbase/migrations/` is run **in order** (000 → 015), or `ALL.sql` alone.
+   in `superbase/migrations/` is run **in order** (000 → 018), or `ALL.sql` alone.
    `forum_messages` is added to the `supabase_realtime` publication.
 3. **The Edge Functions are deployed** from `superbase/edge-functions/` with the
    auth settings above, and the project's secrets are set: `OPENAI_API_KEY`,

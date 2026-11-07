@@ -46,6 +46,9 @@
     bell: '<path d="M6 9.5a6 6 0 0 1 12 0c0 5.5 2.5 7.5 2.5 7.5h-17S6 15 6 9.5Z"/><path d="M10 20.5a2.1 2.1 0 0 0 4 0"/>',
     'bell-off': '<path d="M6 9.5a6 6 0 0 1 12 0c0 5.5 2.5 7.5 2.5 7.5h-17S6 15 6 9.5Z"/><path d="M10 20.5a2.1 2.1 0 0 0 4 0M3 3l18 18"/>',
     block: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    calculator: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8.5 7h7"/><circle cx="9" cy="12" r=".6" fill="currentColor"/><circle cx="12" cy="12" r=".6" fill="currentColor"/><circle cx="15" cy="12" r=".6" fill="currentColor"/><circle cx="9" cy="16" r=".6" fill="currentColor"/><circle cx="12" cy="16" r=".6" fill="currentColor"/><circle cx="15" cy="16" r=".6" fill="currentColor"/>',
+    exit: '<path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M9.5 12H20"/><path d="m16 8 4 4-4 4"/>',
     globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3Z"/>',
     pin: '<path d="M9 3h6l-.8 6.2L17 12v2H7v-2l2.8-2.8Z"/><path d="M12 14v7.5"/>',
     download: '<path d="M12 3v10M8 9.2l4 4 4-4"/><path d="M3 14.5h5l1.5 2.5h5l1.5-2.5h5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/>',
@@ -82,7 +85,7 @@
     '✅': 'check', '⬇': 'down', '⬆': 'up', '🚀': 'rocket', 'ℹ': 'info',
     '⚖': 'scale', '🔗': 'link', '🐛': 'bug', '⛶': 'fullscreen', '🎛': 'sliders',
     '⏸': 'pause', '📐': 'ruler', '🖼': 'image', '✍': 'pen', '💾': 'save',
-    '🧰': 'toolbox', '❌': 'close', '👤': 'user',
+    '🧰': 'toolbox', '❌': 'close', '👤': 'user', '🔒': 'lock', '🚪': 'exit', '🧮': 'calculator',
   };
 
   const EMOJI_RE = new RegExp('(' + Object.keys(EMOJI_ICON).join('|') + ')[\\uFE0E\\uFE0F]?', 'gu');

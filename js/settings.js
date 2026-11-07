@@ -108,6 +108,9 @@ const SETTINGS_DEFAULTS = {
     resetFilterOnLoad: false,
     autoStopAt50Min: false,
     fullscreenRandomN: true,
+    // 'ask' | 'ordinary' | 'lockdown': how a Random N attempt starts, set by
+    // the choice screen's "Remember" (js/lockdown.js).
+    quizStartMode: 'ask',
     // The 10-second "you're in full screen" banner: hidden unless turned on.
     hideFullscreenReminder: true,
     hideTopicWhileActive: false,
@@ -1414,6 +1417,9 @@ function renderSettingsStudyTab() {
   const lockOrderOn     = getSetting('study', 'lockSolveAllOrder') === true;
   const lockedOrder     = getSetting('study', 'solveAllLockedOrder') === 'unordered' ? 'unordered' : 'ordered';
   const navRailOn       = getSetting('study', 'showSolveAllNavRail') !== false;
+  const quizStart       = getSetting('study', 'quizStartMode');
+  const quizStartBtn = (value, label) => `<button type="button" class="settings-choice-btn${quizStart === value ? ' active' : ''}" data-start="${value}"
+                  onclick="setSetting('study', 'quizStartMode', '${value}'); syncQuizStartActive('${value}');">${label}</button>`;
 
   return `
     <div class="settings-row" data-row-key="redrawnFigures">
@@ -1429,6 +1435,16 @@ function renderSettingsStudyTab() {
     </div>
 
     <div class="settings-section-header">Random Quiz</div>
+
+    <div class="settings-row" data-row-key="quizStartMode">
+      <div class="settings-row-label">
+        <div class="settings-row-title">Starting a quiz</div>
+        <div class="settings-row-desc">Ask each time, or always start in this browser or in the lockdown browser.</div>
+      </div>
+      <div class="settings-choice-group">
+        ${quizStartBtn('ask', 'Ask')}${quizStartBtn('ordinary', 'Ordinary')}${quizStartBtn('lockdown', 'Lockdown')}
+      </div>
+    </div>
 
     <div class="settings-row" data-row-key="showLiveTimer">
       <div class="settings-row-label">
@@ -1670,6 +1686,12 @@ function syncFullscreenHintSubBlock(fullscreenOn) {
   row.classList.toggle('settings-row-blocked', !fullscreenOn);
   const input = row.querySelector('input[type="checkbox"]');
   if (input) input.disabled = !fullscreenOn;
+}
+
+function syncQuizStartActive(value) {
+  document.querySelectorAll('[data-row-key="quizStartMode"] .settings-choice-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.start === value);
+  });
 }
 
 function syncSolveAllOrderBlock(lockOrderOn) {

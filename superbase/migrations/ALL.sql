@@ -1,14 +1,14 @@
 -- ============================================================================
--- ALL — migrations 000 to 015 folded into one script.
+-- ALL — migrations 000 to 018 folded into one script.
 --
 -- Builds a completely empty Supabase project straight into the end state
--- that running 000, 001, ..., 015 in order produces. Every table is created
+-- that running 000, 001, ..., 018 in order produces. Every table is created
 -- in its FINAL shape (columns added by later ALTERs are part of the CREATE),
 -- and every function is its LAST definition. One-off data fixes from the
 -- migrations (backfilling saved_by, owner_id, author_id, level = 4, ...) are
 -- left out: on an empty database they have nothing to update.
 --
--- Use EITHER this file OR 000-015, never both. The numbered files remain the
+-- Use EITHER this file OR 000-018, never both. The numbered files remain the
 -- history and explanation of each piece; look there for the "why".
 --
 -- Run once, in the SQL Editor of a new, empty project. After it, still do
@@ -126,6 +126,7 @@ CREATE TABLE public.quiz_attempts (
   answers jsonb NOT NULL DEFAULT '[]'::jsonb,
   attempted_at timestamp with time zone NOT NULL,
   synced_at timestamp with time zone NOT NULL DEFAULT now(),
+  locked boolean NOT NULL DEFAULT false,
   CONSTRAINT quiz_attempts_pkey PRIMARY KEY (id),
   CONSTRAINT quiz_attempts_identity_id_fkey FOREIGN KEY (identity_id) REFERENCES public.identities(id)
 );
@@ -711,6 +712,36 @@ ALTER TABLE public.settings_sync ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.solution_editors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.problem_solutions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.solution_reviews ENABLE ROW LEVEL SECURITY;
+
+-- Migration 016: lockdown drop-offs. No policies: only the Edge Function reaches it.
+CREATE TABLE IF NOT EXISTS public.lockdown_dropoffs (
+  ticket text NOT NULL,
+  attempt_hash text NOT NULL,
+  attempt jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT lockdown_dropoffs_pkey PRIMARY KEY (ticket, attempt_hash)
+);
+CREATE INDEX IF NOT EXISTS lockdown_dropoffs_created_at_idx
+  ON public.lockdown_dropoffs (created_at);
+ALTER TABLE public.lockdown_dropoffs ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, DELETE ON public.lockdown_dropoffs TO service_role;
+
+-- Migration 018: live ping when a lockdown attempt lands.
+CREATE OR REPLACE FUNCTION public._lockdown_dropoffs_notify_ticket()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  PERFORM realtime.send('{}'::jsonb, 'changed', 'lockdown:' || NEW.ticket, false);
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS lockdown_dropoffs_notify_ticket ON public.lockdown_dropoffs;
+CREATE TRIGGER lockdown_dropoffs_notify_ticket
+  AFTER INSERT ON public.lockdown_dropoffs
+  FOR EACH ROW EXECUTE FUNCTION public._lockdown_dropoffs_notify_ticket();
 
 CREATE POLICY "Public can read messages" ON public.forum_messages
   FOR SELECT TO anon USING (true);

@@ -65,6 +65,8 @@ async function loadManualData() {
   } catch (e) {
     MANUAL_SECTIONS = MANUAL_FALLBACK_SECTIONS;
   }
+  // Only defined inside Safe Exam Browser (js/lockdown-session.js).
+  if (typeof lockdownManualSections === 'function') MANUAL_SECTIONS = lockdownManualSections(MANUAL_SECTIONS);
   return MANUAL_SECTIONS;
 }
 

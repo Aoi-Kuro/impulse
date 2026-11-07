@@ -177,6 +177,9 @@
      before <title>, so the title below is replaced the moment it's parsed
      and the tab never shows the placeholder. See its own header. ── -->
 <script src="js/course-config.js"></script>
+<!-- Sets html.lockdown before the page paints, so nothing flashes inside Safe
+     Exam Browser. See its own header. -->
+<script src="js/lockdown.js"></script>
 <!-- Placeholder for crawlers that don't run JS; the tab shows APP_NAME
      ("Impulse" / "Flux") from course-config.js. -->
 <title>Impulse</title>
@@ -235,6 +238,8 @@
 <link rel="stylesheet" href="css/card-layouts.css">
 <!-- Flags on problem cards (js/problem-flags.js) -->
 <link rel="stylesheet" href="css/problem-flags.css">
+<!-- Lockdown mode (js/lockdown.js) -->
+<link rel="stylesheet" href="css/lockdown.css">
 <!-- TeX fonts: dvisvgm writes figure glyphs as private-use codepoints in
      Computer Modern, so without this every label inside a figure is blank. -->
 <link rel="stylesheet" href="vendor/tikzjax/fonts.css">
@@ -515,6 +520,7 @@
 
 <!-- Theme toggle -->
 <div class="theme-toggle-wrap">
+  <button class="palette-icon-btn" id="calcToggleBtn" onclick="window.toggleCalculator&&toggleCalculator()" title="Calculator" aria-label="Calculator">🧮</button>
   <button class="palette-icon-btn" id="settingsBtn" onclick="window.toggleSettingsScreen&&toggleSettingsScreen()" title="Settings">⚙️</button>
   <button class="palette-icon-btn" id="manualBtn" onclick="window.toggleManualScreen&&toggleManualScreen()" title="User Manual">📖</button>
   <button class="palette-icon-btn" id="paletteBtn" onclick="toggleThemePanel(event)" title="Color themes">🎨</button>
@@ -523,6 +529,7 @@
     <div class="toggle-knob"></div>
   </div>
   <button type="button" class="theme-icon" onclick="setThemeMode(true)" title="Day mode">☀️</button>
+  <button class="palette-icon-btn" id="lockdownExitBtn" onclick="requestExitLockdown()" title="Exit lockdown" aria-label="Exit lockdown">🚪</button>
 </div>
 
 <!-- Theme picker panel -->
@@ -579,6 +586,7 @@
     </div>
 
     <button class="landing-start-btn" onclick="startSelected()">Start</button>
+    <button class="stats-launch-btn lockdown-only" onclick="exitLockdown()">Exit lockdown</button>
     <button class="stats-launch-btn" onclick="openStatsScreen()">📊 Stats</button>
     <div class="forum-launch-wrap">
       <button class="forum-launch-btn" onclick="openForumScreen()">💬 Forum</button>
@@ -586,7 +594,7 @@
       <span class="forum-at-badge" id="forumUnreadAtBadge" title="Someone tagged you">@</span>
     </div>
     <p style="margin-top:1.4rem;font-family:var(--mono);font-size:0.75rem;color:var(--muted);letter-spacing:0.05em;">
-      made by <a href="https://t.me/Aoi_Kuro" target="_blank" style="color:var(--accent);text-decoration:none;">@Aoi_Kuro</a> · Fall 2026
+      made by <a href="https://t.me/Aoi_Kuro" target="_blank" style="color:var(--accent);text-decoration:none;">@Aoi_Kuro</a> · Summer–Fall 2026
     </p>
 
     <!-- ── Changelog trigger button (electromagnetic charge UI) ── -->
@@ -614,9 +622,42 @@
   </div>
 </div>
 
-<!-- ── Solve-all choice page ── -->
-<div id="choicePage" class="hidden">
-  <div class="landing-box">
+<!-- ── Choice page: one screen, three views picked by data-view ──
+     order    — Entire Set: the order of the problems
+     start    — Random N: ordinary, or lockdown in Safe Exam Browser
+     lockdown — Safe Exam Browser opening, with help if it doesn't
+     See setChoiceView() in js/lockdown.js. -->
+<div id="choicePage" class="hidden" data-view="order">
+  <div class="landing-box choice-view-start">
+    <h2 class="landing-title" style="margin-bottom:1.4rem;">How do you want to take it?</h2>
+    <div class="modal-choices" style="margin-bottom:0.9rem;">
+      <button class="modal-choice-btn" onclick="chooseQuizStart('ordinary')">Ordinary<br><span class="order-choice-sub">In this browser, no locking</span></button>
+      <button class="modal-choice-btn" onclick="chooseQuizStart('lockdown')">🔒 Lockdown browser<br><span class="order-choice-sub">All functions are blocked</span></button>
+    </div>
+    <label class="quiz-start-remember"><input type="checkbox" id="quizStartRemember"> Remember and don't ask again</label>
+    <button class="choice-back-btn" onclick="closeSolveAllModal()">← Back</button>
+  </div>
+  <div class="landing-box choice-view-lockdown">
+    <div class="lockdown-card" id="lockdownCard">
+      <div class="lockdown-card-head">
+        <span class="lockdown-spinner" aria-hidden="true"></span>
+        <h2 class="lockdown-card-title" id="lockdownStatus">Opening Safe Exam Browser…</h2>
+        <button class="stats-close-btn" onclick="backFromLockdown()" title="Close" aria-label="Close">✕</button>
+      </div>
+      <div class="lockdown-skip-wrap"><div>
+        <button type="button" class="lockdown-skip" onclick="showLockdownHelp()">I don't have it installed</button>
+      </div></div>
+      <div class="lockdown-help" id="lockdownHelp"><div class="lockdown-help-inner">
+        <p class="lockdown-help-text">It may need installing first. Safe Exam Browser is a free, open-source browser made by ETH Zurich for exams, so it's safe to install.</p>
+        <p class="lockdown-help-text">Once it's installed, you can start right away.</p>
+        <div class="lockdown-actions">
+          <a class="btn btn-secondary" href="https://safeexambrowser.org/download_en.html" target="_blank" rel="noopener">Install</a>
+          <button class="btn btn-primary" onclick="openLockdownView()">Enter lockdown</button>
+        </div>
+      </div></div>
+    </div>
+  </div>
+  <div class="landing-box choice-view-order">
     <h2 class="landing-title" style="margin-bottom:1.4rem;">Choose the order</h2>
     <div class="modal-choices" style="margin-bottom:1.5rem;">
       <button class="modal-choice-btn" onclick="startSolveAll('ordered')">In order<br><span class="order-choice-sub">(1, 2, 3...)</span></button>
@@ -647,6 +688,8 @@
   <div class="result-big" id="resultScore"></div>
   <div class="result-label" id="resultMaxScore">Final Score</div>
   <div class="result-breakdown pq-row" id="resultBreakdown"></div>
+  <p class="lockdown-only lockdown-result-note" id="lockdownSaveNote"></p>
+  <button class="btn btn-secondary lockdown-only" onclick="exitLockdown()">Exit lockdown</button>
 </div>
 
 <div class="recent-attempts-panel" id="recentAttemptsPanel">
@@ -1136,15 +1179,16 @@
      js/forum.js for openGettingStartedModal()/toggleGsFaq(). -->
 <div class="stats-modal-backdrop" id="gettingStartedModalBackdrop" onclick="if(event.target===this) closeGettingStartedModal()">
   <div class="stats-modal-box gs-modal-box">
-    <div class="stats-modal-title">Getting Started!</div>
-    <div class="stats-modal-desc gs-modal-desc">
-      To get started, choose a <strong>nickname</strong>. It’s used to label your quiz attempts and forum posts and sync your stats across devices. <strong>Your stats are private </strong>, and your nickname is only visible when you make a forum post.
-    </div>
+    <div class="stats-modal-title">Getting Started</div>
     <div class="stats-modal-actions gs-start-row">
-      <button type="button" class="stats-modal-btn primary gs-start-btn" onclick="proceedFromGettingStarted()">Start</button>
+      <button type="button" class="stats-modal-btn primary gs-start-btn" onclick="chooseGettingStarted('create')">I'm new</button>
+      <button type="button" class="stats-modal-btn gs-start-btn" onclick="chooseGettingStarted('restore')">I have an account</button>
     </div>
-    <div class="gs-faq">
-      <div class="gs-faq-heading">FAQ</div>
+    <div class="gs-faq" id="gsFaq">
+      <button type="button" class="gs-faq-toggle" id="gsFaqToggle" aria-expanded="false" onclick="toggleGsFaqList()">
+        <span>FAQ</span><span class="gs-faq-caret">›</span>
+      </button>
+      <div class="gs-faq-list">
       <div class="gs-faq-item">
         <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
           <span>What is a nickname?</span><span class="gs-faq-caret">›</span>
@@ -1181,14 +1225,16 @@
         </button>
         <div class="gs-faq-a">Enter your existing nickname and PIN there to restore it: your stats and forum identity will carry over instead of starting fresh. You can use the platform simultaneously on both devices, though.</div>
       </div>
+      </div>
     </div>
   </div>
 </div>
 
 <!-- ── Forum: claim / restore nickname modal ──
-     Two modes, set by openForumClaimModal(mode):
-       'restore' — person clicks "Already claimed a nickname on another
-                   device?" — both fields editable.
+     Modes, set by openForumClaimModal(mode):
+       'create'  — "I'm new": just a name, the server hands back a PIN.
+       'restore' — "I have an account", or "Already claimed a nickname on
+                   another device?" — both fields editable.
        'verify'  — auto-claim on Send found the typed name already taken;
                    nickname is prefilled/locked, only the PIN is needed,
                    and on success the pending message is sent automatically. -->
@@ -1198,15 +1244,16 @@
     <div class="stats-modal-desc" id="forumClaimModalDesc">
       Enter the nickname and the 5-digit PIN you saved when you first claimed it.
     </div>
-    <input type="text" id="forumClaimNicknameInput" class="forum-name-input" placeholder="Nickname" maxlength="40" style="margin-bottom:0.5rem;" oninput="this.value = this.value.replace(/\s+/g, '')" onkeydown="if(event.key==='Enter'){event.preventDefault();submitForumClaimModal();}">
+    <input type="text" id="forumClaimNicknameInput" class="forum-name-input" placeholder="Nickname" maxlength="40" style="margin-bottom:0.5rem;" oninput="this.value = this.value.replace(/\s+/g, '')" onkeydown="if(event.key==='Enter'){event.preventDefault();forumClaimNicknameEnter();}">
     <div id="forumClaimPinRow">
       <input type="text" id="forumClaimPinInput" class="forum-name-input forum-pin-input" placeholder="5-digit PIN" maxlength="5" inputmode="numeric" pattern="[0-9]*" onkeydown="if(event.key==='Enter'){event.preventDefault();submitForumClaimModal();}">
     </div>
+    <div class="forum-claim-hint" id="forumClaimPinHint">Your PIN is on any device you're logged in on: Stats → ⚙︎ next to your name → Your PIN.</div>
     <div class="forum-composer-status" id="forumClaimModalStatus"></div>
     <button type="button" class="forum-identity-link-btn" id="forumClaimModalRestoreLink" style="display:none;" onclick="openForumClaimModal('restore', document.getElementById('forumClaimNicknameInput').value.trim(), forumClaimModalOnSuccess)">Already claimed a name on another device?</button>
     <div class="stats-modal-actions">
-      <button class="stats-modal-btn" onclick="closeForumClaimModal()">Cancel</button>
-      <button class="stats-modal-btn primary" onclick="submitForumClaimModal()">Claim</button>
+      <button class="stats-modal-btn" id="forumClaimModalCancel" onclick="cancelForumClaimModal()">Cancel</button>
+      <button class="stats-modal-btn primary" id="forumClaimModalSubmit" onclick="submitForumClaimModal()">Claim</button>
     </div>
   </div>
 </div>

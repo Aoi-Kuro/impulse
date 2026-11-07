@@ -37,6 +37,13 @@ function _isValidStoredAttempt(a) {
     && Array.isArray(a.answers);
 }
 
+// The small lock beside the mode of an attempt taken in lockdown mode.
+function lockdownMark(attempt) {
+  return attempt.locked
+    ? '<span class="mode-lock" role="img" title="Taken in lockdown mode" aria-label="Taken in lockdown mode">🔒</span>'
+    : '';
+}
+
 function loadStats() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STATS_KEY));
@@ -109,7 +116,7 @@ async function recordAttemptFromQuiz(score, maxScore, mode, answers, dur) {
   const hash = await computeAttemptHash(identityName, selectedQuizNum, mode, attemptedAt, score, maxScore, answers);
 
   const stats = loadStats();
-  stats.push({
+  const attempt = {
     hash,
     quizNum: selectedQuizNum,
     mode,
@@ -119,9 +126,12 @@ async function recordAttemptFromQuiz(score, maxScore, mode, answers, dur) {
     maxScore,
     answers,
     synced: false
-  });
+  };
+  stats.push(attempt);
   saveStats(stats);
   renderStats();
+  // Safe Exam Browser has no identity to sync with (see js/lockdown.js).
+  if (isLockdownSession()) dropOffLockdownAttempt(attempt);
   // Best-effort immediate sync — if there's no connection this just leaves
   // the attempt's synced:false as it already was, with the "not synced"
   // badge/Sync button covering the rest (see renderTable/syncAttempts).
@@ -226,7 +236,7 @@ function renderAttemptReview(attempt) {
 
   metaEl.innerHTML = `
     <span class="review-meta-item"><span class="review-meta-label">Quiz</span>#${attempt.quizNum} · ${quizName}</span>
-    <span class="review-meta-item"><span class="review-meta-label">Mode</span>${attempt.mode === 'cumulative' ? `Sets 1–${attempt.quizNum}` : 'Single Set'}</span>
+    <span class="review-meta-item"><span class="review-meta-label">Mode</span><span style="white-space:nowrap">${attempt.mode === 'cumulative' ? `Sets 1–${attempt.quizNum}` : 'Single Set'}${lockdownMark(attempt)}</span></span>
     <span class="review-meta-item"><span class="review-meta-label">Date</span>${dateStr} ${timeStr}</span>
     <span class="review-meta-item"><span class="review-meta-label">Duration</span>${fmtDuration(attempt.duration)}</span>
     <span class="review-meta-item"><span class="review-meta-label">Score</span>${attempt.score}/${attempt.maxScore}</span>`;
@@ -753,7 +763,7 @@ function renderTable() {
           #${a.quizNum} · ${name}
         </span>
       </td>
-      <td><span class="mode-badge ${a.mode}">${a.mode === 'cumulative' ? `Sets 1–${a.quizNum}` : 'Single'}</span></td>
+      <td style="white-space:nowrap"><span class="mode-badge ${a.mode}">${a.mode === 'cumulative' ? `Sets 1–${a.quizNum}` : 'Single'}</span>${lockdownMark(a)}</td>
       <td style="white-space:nowrap;color:var(--muted)">
         ${dateStr} <span style="opacity:0.6">${timeStr}</span>
         ${a.synced ? '' : '<div class="attempt-not-synced">not synced</div>'}
@@ -1298,18 +1308,16 @@ function renderSfpIdentity(nickname) {
 }
 
 // "Getting started" item in the settings gear dropdown — shown only while
-// unregistered (see renderSfpIdentity above). Reuses the same "Getting
-// Started!" info screen the main Start button shows a brand-new device
-// (openGettingStartedModal, js/forum.js), then chains straight into the
-// nickname-claim modal exactly like startSelected() does in
-// js/quiz-engine.js, except on success it refreshes this panel instead of
-// launching a quiz.
+// unregistered (see renderSfpIdentity above). Reuses the same Getting Started
+// screen the main Start button shows a brand-new device
+// (openGettingStartedModal, js/forum.js), except on success it refreshes this
+// panel instead of launching a quiz.
 function openSfpGettingStarted() {
-  if (typeof openGettingStartedModal !== 'function' || typeof openForumClaimModal !== 'function') return;
-  openGettingStartedModal(() => openForumClaimModal('create', '', () => {
+  if (typeof openGettingStartedModal !== 'function') return;
+  openGettingStartedModal(() => {
     renderSfpIdentity((typeof getForumNickname === 'function') ? getForumNickname() : '');
     if (typeof pollStatsPanel === 'function') pollStatsPanel();
-  }));
+  });
 }
 
 // ── Settings gear dropdown (Change nickname / Your PIN / Exit) ──────────────

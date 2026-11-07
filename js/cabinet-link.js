@@ -1,5 +1,6 @@
 // ── Personal cabinet button ──────────────────────────────────────────────────
-// A 👤 button right of the logo, on every screen, that opens Stats. Shares
+// A 👤 button right of the logo, on every screen, that opens Stats (after the
+// Getting Started screen, for someone not signed in). Shares
 // the Editorial link's look and placement (.editor-quick-link, see
 // js/editor-access.js): when both are shown the cabinet is first and the
 // Editorial link sits right of it, and during a Random N attempt both slide
@@ -75,10 +76,21 @@
     })();
   }
 
+  function openCabinet() {
+    if (typeof confirmLeaveRandomQuiz === 'function') confirmLeaveRandomQuiz(goToStats);
+    else goToStats();
+  }
+
   a.addEventListener('click', (e) => {
     e.preventDefault();
     if (typeof openStatsScreen !== 'function') return;
-    if (typeof confirmLeaveRandomQuiz === 'function') confirmLeaveRandomQuiz(goToStats);
-    else goToStats();
+    // Signed out, a personal cabinet has nothing to show: sign in first, then
+    // carry on to Stats. getForumNickname is in js/forum.js, which loads late.
+    if (typeof getForumNickname === 'function' && !getForumNickname()) {
+      if (isOpen('statsScreen')) openSfpGettingStarted();
+      else openGettingStartedModal(openCabinet);
+      return;
+    }
+    openCabinet();
   });
 })();

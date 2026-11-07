@@ -1371,29 +1371,37 @@ let forumPendingPinToShow = null;
 // omitted, closing the modal is the only effect (e.g. the "Already claimed
 // a nickname on another device?" link, which isn't resuming anything).
 // ── Composer: "Getting Started!" screen ──────────────────────────────────────
-// Shown once before openForumClaimModal('create', ...) — see startSelected()
-// in js/quiz-engine.js, the only caller. Purely informational (what a
-// nickname is/why it's needed, an FAQ) so a person doesn't hit a bare
-// "enter a nickname" field with zero context the very first time they open
-// the app. gettingStartedOnNext holds what to do once they tap Start here —
-// same handoff pattern as forumClaimModalOnSuccess above.
-let gettingStartedOnNext = null;
+// The first thing a person without a nickname sees: new or returning, with the
+// FAQ folded away. Callers pass what to do once they're signed in (start the
+// quiz, refresh the Stats panel), which goes on to the claim modal. Back from
+// there comes here again.
+let gettingStartedOnSuccess = null;
 
-function openGettingStartedModal(onNext) {
-  gettingStartedOnNext = onNext || null;
+function openGettingStartedModal(onSuccess) {
+  gettingStartedOnSuccess = onSuccess || null;
+  setGsFaqListOpen(false);
   document.getElementById('gettingStartedModalBackdrop')?.classList.add('visible');
 }
 
 function closeGettingStartedModal() {
   document.getElementById('gettingStartedModalBackdrop')?.classList.remove('visible');
-  gettingStartedOnNext = null;
+  gettingStartedOnSuccess = null;
 }
 
-function proceedFromGettingStarted() {
-  const onNext = gettingStartedOnNext;
-  gettingStartedOnNext = null;
-  document.getElementById('gettingStartedModalBackdrop')?.classList.remove('visible');
-  if (onNext) onNext();
+// mode: 'create' (I'm new) or 'restore' (I have an account).
+function chooseGettingStarted(mode) {
+  const onSuccess = gettingStartedOnSuccess;
+  closeGettingStartedModal();
+  openForumClaimModal(mode, '', onSuccess, () => openGettingStartedModal(onSuccess));
+}
+
+function setGsFaqListOpen(open) {
+  document.getElementById('gsFaq')?.classList.toggle('open', open);
+  document.getElementById('gsFaqToggle')?.setAttribute('aria-expanded', String(open));
+}
+
+function toggleGsFaqList() {
+  setGsFaqListOpen(!document.getElementById('gsFaq')?.classList.contains('open'));
 }
 
 // Simple single-open accordion for the FAQ list — expanding one item
@@ -1409,10 +1417,13 @@ function toggleGsFaq(btn) {
 
 let forumClaimModalMode = 'restore';
 let forumClaimModalOnSuccess = null;
+let forumClaimModalOnBack = null;
 
-function openForumClaimModal(mode, prefillNickname, onSuccess) {
+// onBack (optional): turns Cancel into a Back button that runs it.
+function openForumClaimModal(mode, prefillNickname, onSuccess, onBack) {
   forumClaimModalMode = mode;
   forumClaimModalOnSuccess = onSuccess || null;
+  forumClaimModalOnBack = onBack || null;
   const backdrop  = document.getElementById('forumClaimModalBackdrop');
   const title     = document.getElementById('forumClaimModalTitle');
   const desc      = document.getElementById('forumClaimModalDesc');
@@ -1421,15 +1432,21 @@ function openForumClaimModal(mode, prefillNickname, onSuccess) {
   const pinInput  = document.getElementById('forumClaimPinInput');
   const statusEl  = document.getElementById('forumClaimModalStatus');
   const restoreLink = document.getElementById('forumClaimModalRestoreLink');
+  const pinHint   = document.getElementById('forumClaimPinHint');
+  const submitBtn = document.getElementById('forumClaimModalSubmit');
+  const cancelBtn = document.getElementById('forumClaimModalCancel');
   if (!backdrop) return;
 
   if (statusEl) { statusEl.textContent = ''; statusEl.classList.remove('forum-composer-status-error'); }
   if (pinInput) pinInput.value = '';
-  if (restoreLink) restoreLink.style.display = mode === 'create' ? '' : 'none';
+  if (restoreLink) restoreLink.style.display = mode === 'create' && !onBack ? '' : 'none';
+  if (pinHint) pinHint.style.display = mode === 'restore' || mode === 'verify' ? '' : 'none';
+  if (submitBtn) submitBtn.textContent = { create: "Let's go", restore: 'Log in', verify: 'Log in' }[mode] || 'Claim';
+  if (cancelBtn) cancelBtn.textContent = onBack ? 'Back' : 'Cancel';
 
   if (mode === 'create') {
-    if (title) title.textContent = 'Choose a name';
-    if (desc) desc.textContent = 'This is how attempts and forum posts are labeled, and lets your stats sync to your other devices.';
+    if (title) title.textContent = 'Choose a nickname';
+    if (desc) desc.textContent = '';
     if (nickInput) { nickInput.value = ''; nickInput.disabled = false; }
     if (pinRow) pinRow.style.display = 'none';
   } else if (mode === 'verify') {
@@ -1449,8 +1466,8 @@ function openForumClaimModal(mode, prefillNickname, onSuccess) {
     if (nickInput) { nickInput.value = prefillNickname || ''; nickInput.disabled = false; }
     if (pinRow) pinRow.style.display = '';
   } else {
-    if (title) title.textContent = 'Restore your nickname';
-    if (desc) desc.textContent = 'Enter the nickname and the 5-digit PIN you saved when you first claimed it.';
+    if (title) title.textContent = 'Log in';
+    if (desc) desc.textContent = '';
     // Prefill with whatever the person already typed elsewhere (the main
     // composer's name field, or the create-modal's nickname field when this
     // is reached via its own restore link below) so they don't have to type
@@ -1460,12 +1477,29 @@ function openForumClaimModal(mode, prefillNickname, onSuccess) {
   }
 
   backdrop.classList.add('visible');
-  setTimeout(() => (mode !== 'create' ? pinInput : nickInput)?.focus(), 50);
+  setTimeout(() => (mode === 'create' || !nickInput?.value ? nickInput : pinInput)?.focus(), 50);
 }
 
 function closeForumClaimModal() {
   document.getElementById('forumClaimModalBackdrop')?.classList.remove('visible');
   forumClaimModalOnSuccess = null;
+  forumClaimModalOnBack = null;
+}
+
+// Enter in the name field: on to the PIN if that's still to fill in, so a
+// login doesn't fail on a PIN nobody has had the chance to type.
+function forumClaimNicknameEnter() {
+  const nick = document.getElementById('forumClaimNicknameInput');
+  const pinRow = document.getElementById('forumClaimPinRow');
+  const pin = document.getElementById('forumClaimPinInput');
+  if (nick.value.trim() && pinRow.style.display !== 'none' && !pin.value.trim()) pin.focus();
+  else submitForumClaimModal();
+}
+
+function cancelForumClaimModal() {
+  const onBack = forumClaimModalOnBack;
+  closeForumClaimModal();
+  if (onBack) onBack();
 }
 
 async function submitForumClaimModal() {
@@ -1519,7 +1553,10 @@ async function submitForumClaimModal() {
       // A 'create' attempt landing on an already-claimed name — fall
       // through into 'verify' in place (same modal, same onSuccess),
       // exactly like the composer's own auto-claim-on-send does.
-      openForumClaimModal('verify', nickname, forumClaimModalOnSuccess);
+      openForumClaimModal('verify', nickname, forumClaimModalOnSuccess, forumClaimModalOnBack);
+    } else if (data && data.error === 'not_found') {
+      statusEl.textContent = 'No account with that name. Check the spelling.';
+      statusEl.classList.add('forum-composer-status-error');
     } else if (data && data.error === 'wrong_pin') {
       statusEl.textContent = 'Incorrect PIN.';
       statusEl.classList.add('forum-composer-status-error');
@@ -3827,6 +3864,7 @@ async function forumCountsByProblemKey() {
 // _ensureForumRealtime near getForumClient() above.
 
 function startForumProblemCountsPolling() {
+  if (isLockdownSession()) return; // no forum in Safe Exam Browser
   if (_forumProblemCountsActive) return;
   _forumProblemCountsActive = true;
   _ensureForumRealtime();
@@ -3986,7 +4024,7 @@ function forumBodyMentionsName(body, ownNameLower) {
 }
 
 async function pollForumUnread() {
-  if (forumScreenOpen) return; // badge is irrelevant while already looking at the forum
+  if (forumScreenOpen || isLockdownSession()) return; // badge is irrelevant while already looking at the forum
   const client = getForumClient();
   if (!client) return;
 
@@ -4204,7 +4242,7 @@ function onForumListScroll() {
 function initForumPollingWatcher() {
   const landing = document.getElementById('landingScreen');
   const wrap    = document.getElementById('forumFabWrap');
-  if (!landing) return;
+  if (!landing || isLockdownSession()) return; // no forum in Safe Exam Browser
 
   const sync = () => {
     const onMainScreen = !landing.classList.contains('hidden');

@@ -1,0 +1,143 @@
+/* Lockdown calculator (js/calculator.js): flat boxes on a thin grid, in the
+   site's colours. Loaded only inside Safe Exam Browser. Below the top bar and
+   every popup, above the quiz. */
+
+html.lockdown #calcToggleBtn {
+  display: inline-block;
+  margin-right: 0.3rem;
+  padding: 0.2rem;
+  border-radius: calc(6px * var(--radius-mult));
+  color: var(--accent2);
+  opacity: 1;
+}
+html.lockdown #calcToggleBtn.active { background: color-mix(in srgb, var(--accent2) 20%, transparent); }
+
+#calculator {
+  position: fixed;
+  top: calc(var(--top-bar-h, 3rem) + 10px);
+  right: 16px;
+  z-index: 850;
+  width: min(330px, calc(100vw - 16px));
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--shadow) 45%, transparent);
+  outline: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+  transition: opacity 0.16s ease, transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.2s;
+}
+#calculator.open {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition-delay: 0s;
+}
+#calculator:focus-visible { border-color: var(--accent); }
+#calculator.dragging { transition: none; user-select: none; }
+
+.calc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.45rem 0.4rem 0.8rem;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+#calculator.dragging .calc-head { cursor: grabbing; }
+.calc-title { color: var(--text); font-family: var(--sans); font-size: 0.86rem; font-weight: 600; }
+.calc-close { padding: 0.2rem 0.45rem; font-size: 0.72rem; }
+
+.calc-screen {
+  position: relative;
+  padding: 0.45rem 0.8rem 0.55rem;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  text-align: right;
+}
+.calc-status {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.8rem;
+  display: flex;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.05em;
+}
+.calc-memory { color: var(--accent); }
+.calc-history {
+  min-height: 1rem;
+  padding-left: 4rem;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1rem;
+  white-space: nowrap;
+  direction: rtl;
+  text-overflow: ellipsis;
+  unicode-bidi: plaintext;
+}
+.calc-display {
+  margin-top: 0.15rem;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 1.55rem;
+  font-weight: 600;
+  line-height: 1.9rem;
+  white-space: nowrap;
+}
+.calc-display.long { font-size: 1.15rem; }
+.calc-display.error { color: var(--wrong); font-size: 1.15rem; }
+
+.calc-keys {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-top: 1px solid var(--border);
+}
+.calc-key {
+  height: 2.5rem;
+  padding: 0;
+  background: var(--surface);
+  border: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  touch-action: manipulation;
+}
+/* The keypad's digits sit on the page colour, apart from the functions. */
+.calc-key[data-key="0"], .calc-key[data-key="1"], .calc-key[data-key="2"],
+.calc-key[data-key="3"], .calc-key[data-key="4"], .calc-key[data-key="5"],
+.calc-key[data-key="6"], .calc-key[data-key="7"], .calc-key[data-key="8"],
+.calc-key[data-key="9"], .calc-key[data-key="."], .calc-key[data-key="sign"] {
+  background: var(--bg);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.calc-key:hover { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+.calc-key:active { background: color-mix(in srgb, var(--accent) 30%, var(--surface)); }
+.calc-key-op { color: var(--accent); font-size: 1.02rem; }
+.calc-key-mem, .calc-key-mode { color: var(--muted); }
+.calc-key-clear { color: var(--wrong); }
+.calc-key-equals {
+  grid-column: span 2;
+  background: var(--accent);
+  color: var(--on-accent, var(--chrome-dark));
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.calc-key-equals:hover, .calc-key-equals:active { background: var(--accent); opacity: 0.88; }
+
+@media (prefers-reduced-motion: reduce) {
+  #calculator { transition: none; transform: none; }
+}
