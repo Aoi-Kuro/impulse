@@ -323,7 +323,11 @@ function _ensureForumRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_messages' }, (payload) => {
       if (payload && payload.eventType === 'INSERT' && payload.new) _forumNoteMessageAt(payload.new.created_at || new Date().toISOString());
       _forumRealtimeWake();
-    });
+    })
+    // post-message.ts says when Gemini is done with a question, answered or
+    // not, so a "thinking" row with no answer coming can end right away.
+    .on('broadcast', { event: 'gemini-done' }, (msg) => forumGeminiServerDone(msg && msg.payload))
+    .on('broadcast', { event: 'gemini-stream' }, (msg) => forumGeminiStream(msg && msg.payload));
   _forumRealtimeChannel = channel;
   channel.subscribe((status) => {
     // A channel already dropped by _forumDropRealtimeChannel reports its
@@ -1030,13 +1034,663 @@ function forumInsertOptimisticRow(row) {
   const list = document.getElementById('forumMessageList');
   if (!list) return;
   if (list.querySelector('.forum-status')) list.innerHTML = '';
-  list.insertBefore(row, list.firstChild);
+  list.insertBefore(row, forumListTopAnchor(list));
+  forumRevealRow(row);
+}
+
+// ── Smooth row motion ───────────────────────────────────────────────────────
+// Every change at the top of the list used to land in a single frame: a new
+// row pushed everything below it down by its full height at once, and a row
+// whose body changed (LaTeX shorthand converted, math typeset) snapped to its
+// new height. These helpers make the list move instead: a new row unfolds
+// from zero height, a row that changes height stretches to it. Each waits
+// for the row's MathJax pass first (row._typeset, set by renderForumMessage),
+// so the height it animates to is the final one, and raw "$...$" is never
+// shown on the way.
+const FORUM_ROW_MOTION_MS = 280;
+
+function forumReduceMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+// Resolves once the row's math is typeset (capped, so a stuck MathJax never
+// holds a row back), plus two frames: one for MathJax's stylesheet to apply,
+// one so the layout work that causes is done before an animation starts
+// (started any earlier, its first painted frame lands half way through).
+function forumRowTypeset(row, capMs = 500) {
+  const done = row && row._typeset ? row._typeset : Promise.resolve();
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+  return Promise.race([done, new Promise((r) => setTimeout(r, capMs))]).then(frame).then(frame);
+}
+
+// Typesets and measures a row off screen at the list's width, so the row it
+// replaces can stay on screen meanwhile. Resolves with the row's height.
+function forumStageRow(row, list) {
+  const sizer = document.createElement('div');
+  sizer.className = list.className;
+  sizer.setAttribute('aria-hidden', 'true');
+  sizer.style.cssText = `position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;width:${list.getBoundingClientRect().width}px`;
+  sizer.append(row, document.createElement('div')); // so the row isn't :last-child
+  document.body.appendChild(sizer);
+  // A long cap: the row being replaced stays on screen meanwhile, so waiting
+  // for a long answer's math costs nothing, and swapping early would let the
+  // height jump once MathJax finishes.
+  return forumRowTypeset(row, 8000).then(() => {
+    const h = row.offsetHeight;
+    row.remove();
+    sizer.remove();
+    return h;
+  });
+}
+
+// The first child of the list that new rows go in front of: Gemini's
+// "thinking" rows always stay above everything, because the answer they
+// stand in for will be the newest message once it lands.
+function forumListTopAnchor(list) {
+  let el = list.firstChild;
+  while (el && el.dataset && el.dataset.geminiWait) el = el.nextSibling;
+  return el;
+}
+
+// Whether the top of the list, where new rows land, is on screen. Changes
+// there animate; above the reader's view they happen at once, with the scroll
+// position adjusted so what they are reading stays put.
+function forumListNearTop() {
+  const list = document.getElementById('forumMessageList');
+  if (!list) return window.scrollY < 40;
+  return list.getBoundingClientRect().top >= 0;
+}
+
+// Height changes step once per painted frame instead of following the clock.
+// While the page is busy (MathJax typesetting a long thread blocks the main
+// thread for 100-500 ms at a time, mostly right after the forum opens), a
+// clock-driven animation skips to its end during the stall and the row jumps
+// anyway; this one just pauses there and carries on, so no frame moves more
+// than a small step. ~17 frames for FORUM_ROW_MOTION_MS on a 60 Hz screen.
+// A newer tween on the same element supersedes an older one (resolves false).
+function forumTweenHeight(el, fromH, toH, ms, onStep) {
+  const frames = Math.max(2, Math.round(ms / 16.7));
+  const token = (el._tween = (el._tween || 0) + 1);
+  el._tweening = true;
+  el.style.overflow = 'hidden';
+  el.style.height = fromH + 'px';
+  return new Promise((resolve) => {
+    let i = 0;
+    const step = () => {
+      if (el._tween !== token) { resolve(false); return; }
+      i += 1;
+      const t = Math.min(1, i / frames);
+      const k = 1 - Math.pow(1 - t, 3); // ease-out
+      el.style.height = (fromH + (toH - fromH) * k) + 'px';
+      if (onStep) onStep(k);
+      if (t < 1) { requestAnimationFrame(step); return; }
+      el.style.height = '';
+      el.style.overflow = '';
+      el._tweening = false;
+      resolve(true);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+function forumStopTween(el) {
+  el._tween = (el._tween || 0) + 1;
+  el._tweening = false;
+}
+
+function forumMotionMs(dh) {
+  return Math.min(700, FORUM_ROW_MOTION_MS + Math.abs(dh) * 0.6);
+}
+
+// A row just put into the list unfolds from nothing to its natural height.
+// A confirmation that lands mid-unfold (forumUpgradePendingRow) waits for it.
+function forumRevealRow(row) {
+  row.classList.remove('forum-message-enter');
+  if (forumReduceMotion()) return Promise.resolve();
+  const s = row.style;
+  const fold = () => { s.overflow = 'hidden'; s.height = '0px'; s.paddingTop = '0px'; s.paddingBottom = '0px'; s.borderBottomWidth = '0px'; s.opacity = '0'; };
+  const unfold = () => { s.height = ''; s.paddingTop = ''; s.paddingBottom = ''; s.borderBottomWidth = ''; s.opacity = ''; s.overflow = ''; };
+  fold();
+  row._revealing = true;
+  const finish = (done) => {
+    row._revealing = false;
+    if (row._pendingUpgrade) {
+      const msg = row._pendingUpgrade;
+      row._pendingUpgrade = null;
+      if (row.isConnected) { forumUpgradePendingRow(row, msg); return; }
+    }
+    if (done) forumSettleLate(row);
+  };
+  return forumRowTypeset(row).then(() => {
+    unfold();
+    if (!row.isConnected) { finish(false); return; }
+    const cs = getComputedStyle(row);
+    const pt = parseFloat(cs.paddingTop) || 0, pb = parseFloat(cs.paddingBottom) || 0, bw = parseFloat(cs.borderBottomWidth) || 0;
+    const h = row.offsetHeight;
+    fold(); // back to nothing before the next paint; the tween takes it from here
+    return forumTweenHeight(row, 0, h, FORUM_ROW_MOTION_MS, (k) => {
+      s.paddingTop = pt * k + 'px'; s.paddingBottom = pb * k + 'px'; s.borderBottomWidth = bw * k + 'px';
+      s.opacity = String(Math.min(1, k * 1.5));
+    }).then((done) => {
+      if (done) unfold();
+      finish(done);
+    });
+  });
+}
+
+// For a row shown before its math finished typesetting (the wait is capped):
+// hold its height, and once MathJax is done, ease to the real one instead of
+// letting the row snap.
+function forumSettleLate(row) {
+  if (!row._typeset || row._typesetDone || !row.isConnected || forumReduceMotion()) return;
+  const lockH = row.offsetHeight;
+  const token = (row._tween = (row._tween || 0) + 1);
+  row.style.height = lockH + 'px';
+  row.style.overflow = 'hidden';
+  row._typeset
+    .then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+    .then(() => {
+      if (row._tween !== token) return; // something else took over this row
+      row.style.height = '';
+      if (!row.isConnected) { row.style.overflow = ''; return; }
+      const toH = row.offsetHeight;
+      if (Math.abs(toH - lockH) <= 0.5) { row.style.overflow = ''; return; }
+      forumTweenHeight(row, lockH, toH, forumMotionMs(toH - lockH));
+    });
+}
+
+// A row on its way out folds to nothing, then is removed.
+function forumCollapseRow(row) {
+  if (!row.isConnected) return Promise.resolve();
+  if (forumReduceMotion() || !forumListNearTop()) { forumRemoveKeepingView(row); return Promise.resolve(); }
+  const cs = getComputedStyle(row);
+  const pt = parseFloat(cs.paddingTop) || 0, pb = parseFloat(cs.paddingBottom) || 0, bw = parseFloat(cs.borderBottomWidth) || 0;
+  const s = row.style;
+  return forumTweenHeight(row, row.offsetHeight, 0, FORUM_ROW_MOTION_MS + 60, (k) => {
+    s.paddingTop = pt * (1 - k) + 'px'; s.paddingBottom = pb * (1 - k) + 'px'; s.borderBottomWidth = bw * (1 - k) + 'px';
+    s.opacity = String(1 - k);
+  }).then((done) => { if (done) row.remove(); });
+}
+
+// Removing a row above the reader's view would pull the page up under them.
+function forumRemoveKeepingView(row) {
+  const keep = !forumListNearTop();
+  const before = document.documentElement.scrollHeight;
+  row.remove();
+  if (keep) window.scrollBy(0, document.documentElement.scrollHeight - before);
+}
+
+// Puts `next` in place of `prev` and stretches it from prev's height to its
+// own, with the body fading in. Used when a pending row is confirmed with a
+// different body (LaTeX shorthand converted) and when Gemini's answer takes
+// the place of its "thinking" row: the author line stays put, and only the
+// text and the height change.
+function forumMorphRow(prev, next, { fadeBody = true, fromH = null, stage = fadeBody, stagedH = null } = {}) {
+  next.classList.remove('forum-message-enter');
+  if (!prev.isConnected) return Promise.resolve();
+  if (forumReduceMotion() || !forumListNearTop()) {
+    // Off screen (or no motion): no animation, but still typeset first, so
+    // raw "$...$" never shows if the reader scrolls back up mid-way.
+    const go = () => {
+      if (!prev.isConnected) return;
+      const before = document.documentElement.scrollHeight;
+      const off = !forumListNearTop();
+      forumStopTween(prev);
+      prev.replaceWith(next);
+      if (off) window.scrollBy(0, document.documentElement.scrollHeight - before);
+    };
+    if (stagedH === null && stage) return forumStageRow(next, prev.parentNode).then(go);
+    go();
+    return Promise.resolve();
+  }
+  const body = next.querySelector('.forum-message-body');
+  // New text: typeset it off screen first, with the old row still showing,
+  // then swap at the old height. Same text (already typeset): swap now, in
+  // this same task, so code right after this call finds the new row.
+  const swap = (stagedH) => {
+    if (!prev.isConnected) return Promise.resolve();
+    if (fromH === null) fromH = prev.offsetHeight;
+    forumStopTween(prev);
+    if (fadeBody && body) body.style.opacity = '0';
+    prev.replaceWith(next);
+    const toH = stagedH !== null ? stagedH : next.offsetHeight;
+    const waits = [];
+    if (Math.abs(toH - fromH) > 0.5) waits.push(forumTweenHeight(next, fromH, toH, forumMotionMs(toH - fromH)));
+    if (fadeBody && body) {
+      body.style.opacity = '';
+      waits.push(body.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: 'ease-out' }).finished.catch(() => {}));
+    }
+    return Promise.all(waits).then(() => forumSettleLate(next));
+  };
+  if (stagedH !== null) return swap(stagedH);
+  return stage ? forumStageRow(next, prev.parentNode).then(swap) : swap(null);
+}
+
+// ── "Gemini is thinking" rows ───────────────────────────────────────────────
+// post-message.ts answers an @gemini message in the background, often 20-50 s
+// later. Until the answer lands, a placeholder row from Gemini sits at the
+// top of the list (where the answer will appear), cycling short status words
+// and counting seconds, so the question doesn't look ignored. Everyone whose
+// feed shows the question sees it, not only the asker. It ends one of three
+// ways: the answer arrives and the row turns into it (forumLiveTick); the
+// server says it is done without posting (moderation, or Gemini chose not to
+// reply: the "gemini-done" broadcast, see post-message.ts); or nothing comes
+// for FORUM_GEMINI_WAIT_MAX_MS. In the last two it says so briefly and folds.
+const FORUM_GEMINI_WAIT_MAX_MS = 120000;
+const FORUM_GEMINI_MENTION_RE = /(?:^|\s)@gemini\b/i;
+const forumGeminiWaits = new Map();   // question id -> { el, startedAt, timer, ending }
+const forumGeminiEnded = new Set();   // question ids whose wait is over, never shown again
+const forumGeminiLocalStart = new Map(); // own questions: id -> Date.now() when the send was confirmed
+
+const FORUM_GEMINI_PHRASES = [
+  [0, ['Thinking', 'Reading your message', 'Looking at the thread']],
+  [8, ['Processing', 'Working through the physics', 'Fungulating', 'Crunching the numbers', 'Checking the units', 'Sketching it out']],
+  [30, ['Hard one, still on it', 'Double-checking the answer', 'Writing it up', 'Almost there']],
+];
+
+function forumGeminiPhrase(elapsedS, step) {
+  let pool = FORUM_GEMINI_PHRASES[0][1];
+  for (const [from, list] of FORUM_GEMINI_PHRASES) if (elapsedS >= from) pool = list;
+  return pool[step % pool.length];
+}
+
+// Whether post-message.ts will (probably) answer this message: an explicit
+// @gemini, or a question asked in reply to one of Gemini's own messages
+// (a "thanks!" in reply to Gemini usually gets no answer by design, so only
+// replies with a "?" count).
+function forumTriggersGemini(msg, known) {
+  if (!msg || msg.device_id === FORUM_GEMINI_BOT_DEVICE_ID || msg.flag_status === 'deleted') return false;
+  if (FORUM_GEMINI_MENTION_RE.test(msg.body || '')) return true;
+  if (!msg.reply_to_id) return false;
+  const parent = known.find((m) => m.id === msg.reply_to_id);
+  const parentIsGemini = parent ? parent.device_id === FORUM_GEMINI_BOT_DEVICE_ID : msg.reply_to_author_name === 'Gemini';
+  return parentIsGemini && (msg.body || '').includes('?');
+}
+
+function forumGeminiStartedAt(msg) {
+  const w = forumGeminiWaits.get(msg.id);
+  if (w) return w.startedAt;
+  if (forumGeminiLocalStart.has(msg.id)) return forumGeminiLocalStart.get(msg.id);
+  const t = Date.parse(msg.created_at);
+  return Number.isFinite(t) ? Math.min(t, Date.now()) : Date.now();
+}
+
+function forumBuildGeminiThinkingRow(question) {
+  const row = renderForumMessage({
+    id: 'gemini-wait-' + question.id,
+    created_at: new Date().toISOString(),
+    author_name: 'Gemini',
+    device_id: FORUM_GEMINI_BOT_DEVICE_ID,
+    body: '',
+    scope: question.scope,
+    problem_key: question.problem_key,
+    reply_to_id: question.id,
+    reply_to_author_name: question.author_name,
+    reply_to_body: question.body,
+    reply_to_flag_status: null,
+  }, { pending: true, noEnter: true });
+  delete row.dataset.msgId;
+  row.dataset.geminiWait = String(question.id);
+  row.classList.add('forum-gemini-thinking');
+  row.setAttribute('aria-live', 'polite');
+  const body = row.querySelector('.forum-message-body');
+  body.textContent = '';
+  const line = document.createElement('div');
+  line.className = 'forum-message-line forum-gemini-thinking-line';
+  const phrase = document.createElement('span');
+  phrase.className = 'forum-gemini-phrase';
+  const dots = document.createElement('span');
+  dots.className = 'forum-gemini-dots';
+  dots.setAttribute('aria-hidden', 'true');
+  dots.append(document.createElement('i'), document.createElement('i'), document.createElement('i'));
+  line.append(phrase, dots);
+  body.appendChild(line);
+  return row;
+}
+
+// The status words under the streamed text: the model's own thought headline
+// when post-message.ts sends one, "Writing" once answer text is showing, the
+// generic rotating words otherwise.
+function forumGeminiSetPhrase(w, text) {
+  const phraseEl = w.el.querySelector('.forum-gemini-phrase');
+  if (!phraseEl || phraseEl.textContent === text || phraseEl.dataset.next === text) return;
+  if (!phraseEl.textContent || forumReduceMotion()) { phraseEl.textContent = text; return; }
+  phraseEl.dataset.next = text;
+  phraseEl.classList.add('is-swapping');
+  setTimeout(() => {
+    // A long notice can wrap onto a second line: ease the row's height.
+    const row = w.el;
+    const fromH = row.offsetHeight;
+    phraseEl.textContent = phraseEl.dataset.next || text;
+    delete phraseEl.dataset.next;
+    phraseEl.classList.remove('is-swapping');
+    const toH = row.offsetHeight;
+    if (Math.abs(toH - fromH) > 0.5 && row.isConnected && forumListNearTop() && !forumReduceMotion() && !row._tweening && !row._revealing) {
+      forumTweenHeight(row, fromH, toH, 260);
+    }
+  }, 220);
+}
+
+// What the status line says now: a model-switch notice for a few seconds,
+// then "Writing" once answer text shows, else the model's thought headline,
+// else the generic words.
+function forumGeminiStatusText(w, elapsedS) {
+  if (w.notice && Date.now() < w.noticeUntil) return w.notice;
+  if (w.text) return 'Writing';
+  return w.thought || forumGeminiPhrase(elapsedS, Math.floor(elapsedS / 3));
+}
+
+function forumGeminiTick(id) {
+  const w = forumGeminiWaits.get(id);
+  if (!w || w.ending) return;
+  const elapsedS = Math.floor((Date.now() - w.startedAt) / 1000);
+  if (Date.now() - w.startedAt >= FORUM_GEMINI_WAIT_MAX_MS) {
+    forumEndGeminiWait(id, "Gemini couldn't answer this time.");
+    return;
+  }
+  const time = w.el.querySelector('.forum-message-time');
+  if (time) time.textContent = elapsedS + 's';
+  forumGeminiSetPhrase(w, forumGeminiStatusText(w, elapsedS));
+}
+
+// ── Streamed answer text ────────────────────────────────────────────────────
+// post-message.ts broadcasts "gemini-stream" while Gemini writes: the answer
+// so far (whole lines/sentences only, never half an equation) and the latest
+// thought headline. The text grows above the status line of the thinking row.
+// Updates are applied one at a time (w.chain), always rendering the newest
+// text; lines already shown stay as they are, a line that grew is swapped for
+// its longer version once typeset, and new lines fade in while the row
+// stretches to fit.
+function forumGeminiStream(payload) {
+  const id = payload && Number(payload.message_id);
+  const w = id && forumGeminiWaits.get(id);
+  if (!w || w.ending) return;
+  if (payload.seq && w.seq && payload.seq <= w.seq) return;
+  w.seq = payload.seq || 0;
+  if (payload.thought && payload.thought !== w.thought) w.thought = payload.thought;
+  if (payload.attempt !== w.attempt) w.attempt = payload.attempt; // a retry starts its text afresh
+  // "Gemini 3.6 Flash is busy, switching to Gemini 3.5 Flash Lite…"
+  if (payload.notice) { w.notice = payload.notice; w.noticeUntil = Date.now() + 6000; w.thought = ''; }
+  const text = stripMarkdownArtifacts(payload.text || '');
+  if (text !== w.text) {
+    w.text = text;
+    forumGeminiPrepare(w);
+  }
+  forumGeminiSetPhrase(w, forumGeminiStatusText(w, Math.floor((Date.now() - w.startedAt) / 1000)));
+}
+
+// Gemini writes a whole answer in a second or two, so it arrives in a few big
+// pieces; shown as they come, that is one small block, then dozens of lines
+// at once. Instead each piece is typeset in one go, hidden inside the row
+// (every MathJax call costs ~100+ ms, and right after the forum opens it
+// queues behind the whole thread), and the typeset lines are then shown one
+// every FORUM_GEMINI_LINE_MS: faster than anyone reads, but it flows in, and
+// raw "$...$" never shows.
+const FORUM_GEMINI_LINE_MS = 100;
+
+function forumGeminiSplit(text) {
+  return text ? text.split(/\r\n|\r|\n/) : [];
+}
+
+// The row's visible streamed lines (box) and its hidden staging area, where
+// lines wait typeset until their turn. The body is position:relative, so the
+// stage takes no room.
+function forumGeminiBoxes(w) {
+  const body = w.el.querySelector('.forum-message-body');
+  let box = body.querySelector(':scope > .forum-gemini-stream');
+  let stage = body.querySelector(':scope > .forum-gemini-stage');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'forum-gemini-stream';
+    body.insertBefore(box, body.firstChild);
+  }
+  if (!stage) {
+    stage = document.createElement('div');
+    stage.className = 'forum-gemini-stage';
+    stage.setAttribute('aria-hidden', 'true');
+    body.appendChild(stage);
+  }
+  return { box, stage };
+}
+
+// Builds and typesets (one MathJax call) the lines of w.text not prepared yet.
+function forumGeminiPrepare(w) {
+  w.prepChain = (w.prepChain || Promise.resolve()).then(async () => {
+    if (!w.el.isConnected || w.ending) return;
+    const { stage } = forumGeminiBoxes(w);
+    const target = forumGeminiSplit(w.text || '');
+    const have = w.lines || [];
+    let keep = 0;
+    while (keep < have.length && keep < target.length && have[keep].text === target[keep]) keep++;
+    if (keep === have.length && keep === target.length) return;
+    const ownName = getForumIdentityName().trim().toLowerCase();
+    const fresh = target.slice(keep).map((text) => {
+      const el = document.createElement('div');
+      el.className = 'forum-message-line';
+      renderForumLineWithMentions(el, text, ownName);
+      stage.appendChild(el);
+      return { text, el };
+    });
+    if (fresh.length) {
+      await Promise.race([renderMathIn(stage), new Promise((r) => setTimeout(r, 6000))]);
+      await new Promise((r) => requestAnimationFrame(() => r()));
+    }
+    // Lines that were dropped or replaced (grew, or a retry) leave the stage.
+    have.slice(keep).forEach((l) => { if (l.el.parentNode === stage) l.el.remove(); });
+    w.lines = have.slice(0, keep).concat(fresh);
+    forumGeminiPump(w);
+  }).catch(() => {});
+  return w.prepChain;
+}
+
+// Brings the visible lines in step with the prepared ones, one change at a
+// time: a new line every FORUM_GEMINI_LINE_MS (fading in, the row
+// stretching), a line that grew is swapped for its longer self at once, and
+// lines a retry made obsolete are dropped.
+function forumGeminiPump(w) {
+  if (w.pumping) return w.pumping;
+  w.pumping = (async () => {
+    for (;;) {
+      const row = w.el;
+      if (!row.isConnected || w.ending) break;
+      const { box } = forumGeminiBoxes(w);
+      const lines = w.lines || [];
+      const vis = [...box.children];
+      let i = 0;
+      while (i < vis.length && i < lines.length && vis[i] === lines[i].el) i++;
+      if (i === vis.length && i === lines.length) break;
+
+      const animate = forumListNearTop() && !forumReduceMotion();
+      const beforeDoc = document.documentElement.scrollHeight;
+      const fromH = row.offsetHeight; // mid-tween, the height on screen now
+      forumStopTween(row);
+      row.style.height = '';
+      row.style.overflow = '';
+      let added = null;
+      if (i < vis.length) {
+        if (i < lines.length) vis[i].replaceWith(lines[i].el); // grew
+        else vis.slice(i).forEach((el) => el.remove());       // a retry dropped them
+      } else {
+        added = lines[i].el;
+        box.appendChild(added);
+      }
+      if (!animate) {
+        if (!forumListNearTop()) window.scrollBy(0, document.documentElement.scrollHeight - beforeDoc);
+      } else {
+        const toH = row.offsetHeight;
+        // Not awaited: the next line may come while this one still settles;
+        // its tween takes over from wherever this one got to.
+        if (Math.abs(toH - fromH) > 0.5) forumTweenHeight(row, fromH, toH, Math.min(360, 180 + Math.abs(toH - fromH) * 0.4));
+        if (added) added.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 240, easing: 'ease-out' });
+      }
+      if (added) await new Promise((r) => setTimeout(r, FORUM_GEMINI_LINE_MS));
+    }
+    w.pumping = null;
+  })().catch(() => { w.pumping = null; });
+  return w.pumping;
+}
+
+// Resolves once every line of w.text is prepared and shown.
+async function forumGeminiDrain(w) {
+  for (let i = 0; i < 50; i++) {
+    await (w.prepChain || Promise.resolve());
+    await (w.pumping || Promise.resolve());
+    const { box } = forumGeminiBoxes(w);
+    const lines = w.lines || [];
+    const vis = [...box.children];
+    const done = vis.length === lines.length && vis.every((el, k) => el === lines[k].el)
+      && lines.map((l) => l.text).join('\n') === forumGeminiSplit(w.text || '').join('\n');
+    if (done || !w.el.isConnected) return;
+  }
+}
+
+// Takes streamed text off a row that won't become an answer (held back by
+// moderation, declined, failed), shrinking it to its status line.
+function forumGeminiDropStream(w) {
+  const row = w.el;
+  const stage = row.querySelector('.forum-gemini-stage');
+  if (stage) stage.remove();
+  const box = row.querySelector('.forum-gemini-stream');
+  if (!box) return Promise.resolve();
+  if (!row.isConnected || forumReduceMotion() || !forumListNearTop()) { forumRemoveKeepingView(box); return Promise.resolve(); }
+  const fromH = row.offsetHeight;
+  box.remove();
+  const toH = row.offsetHeight;
+  return forumTweenHeight(row, fromH, toH, 360);
+}
+
+// Ends a wait that produced no answer: any streamed text goes, a short note
+// says why, then the row folds.
+function forumEndGeminiWait(id, note) {
+  const w = forumGeminiWaits.get(id);
+  forumGeminiEnded.add(id);
+  if (!w) return;
+  w.ending = true;
+  clearInterval(w.timer);
+  if (!w.el.isConnected) { forumGeminiWaits.delete(id); return; }
+  w.el.classList.add('is-ended');
+  const time = w.el.querySelector('.forum-message-time');
+  if (time) time.textContent = '';
+  (w.chain || Promise.resolve()).then(() => forumGeminiDropStream(w)).then(() => {
+    forumGeminiSetPhrase(w, note);
+    setTimeout(() => {
+      forumCollapseRow(w.el).then(() => { if (forumGeminiWaits.get(id) === w) forumGeminiWaits.delete(id); });
+    }, 2600);
+  });
+}
+
+// Gemini's answer arrived: its row takes the thinking row's place. When the
+// answer was already streamed in, its text is (nearly) all on screen, so the
+// row is swapped without fading the body; only the height eases.
+function forumResolveGeminiWait(answerRow, answerMsg) {
+  const id = answerMsg.reply_to_id;
+  const w = forumGeminiWaits.get(id);
+  forumGeminiEnded.add(id);
+  if (!w) return false;
+  clearInterval(w.timer);
+  forumGeminiWaits.delete(id);
+  if (!w.el.isConnected) return false;
+  const streamed = !!w.text;
+  if (!streamed) {
+    w.ending = true;
+    forumMorphRow(w.el, answerRow, { fadeBody: true, stage: true });
+    return true;
+  }
+  // The rest of the answer is revealed line by line first, while the saved
+  // row is typeset off screen; then it takes the thinking row's place.
+  w.text = stripMarkdownArtifacts(answerMsg.body || '');
+  const staged = forumStageRow(answerRow, w.el.parentNode);
+  forumGeminiPrepare(w);
+  Promise.all([forumGeminiDrain(w), staged]).then(([, stagedH]) => {
+    w.ending = true;
+    if (w.el.isConnected) forumMorphRow(w.el, answerRow, { fadeBody: false, stagedH });
+  });
+  return true;
+}
+
+// The server's "gemini-done" broadcast (post-message.ts): Gemini finished
+// with this question. If it posted, the answer is on its way through the
+// usual live update; if it didn't, the wait ends now, saying why.
+const FORUM_GEMINI_END_NOTES = {
+  declined: 'Gemini decided not to answer this one.',
+  moderated: "Gemini's answer was held back by moderation.",
+};
+function forumGeminiServerDone(payload) {
+  const id = payload && Number(payload.message_id);
+  if (!id || !forumGeminiWaits.has(id)) return;
+  if (payload.posted) {
+    _forumRealtimeWake();
+    setTimeout(() => {
+      if (forumGeminiWaits.has(id) && !forumGeminiWaits.get(id).ending) forumEndGeminiWait(id, "Gemini couldn't answer this time.");
+    }, 12000);
+  } else {
+    // Older servers send no reason; their only "not posted" case was a decline.
+    const reason = payload.reason || 'declined';
+    forumEndGeminiWait(id, FORUM_GEMINI_END_NOTES[reason] || "Gemini couldn't answer this time.");
+  }
+}
+
+// Brings the thinking rows in line with what the list shows: one for each
+// question on screen that is still waiting, newest first, at the very top.
+function forumSyncGeminiThinking(known) {
+  const list = document.getElementById('forumMessageList');
+  if (!list) return;
+  if (forumSearchActive || !list.querySelector(':scope > [data-msg-id]')) {
+    for (const w of forumGeminiWaits.values()) if (w.el.isConnected && !w.ending) w.el.remove();
+    return;
+  }
+  const msgs = known || forumMessageCache[forumCacheKey()] || [];
+  const answered = new Set(msgs.filter((m) => m.device_id === FORUM_GEMINI_BOT_DEVICE_ID && m.reply_to_id).map((m) => m.reply_to_id));
+  const now = Date.now();
+  const want = msgs.filter((m) => !forumGeminiEnded.has(m.id) && !answered.has(m.id)
+    && forumTriggersGemini(m, msgs)
+    && now - forumGeminiStartedAt(m) < FORUM_GEMINI_WAIT_MAX_MS)
+    .sort((a, b) => b.id - a.id);
+  const wantIds = new Set(want.map((m) => m.id));
+
+  for (const [id, w] of forumGeminiWaits) {
+    if (answered.has(id)) { clearInterval(w.timer); forumGeminiWaits.delete(id); forumGeminiEnded.add(id); if (w.el.isConnected) w.el.remove(); }
+    else if (!wantIds.has(id) && !w.ending && w.el.isConnected) w.el.remove(); // other feed, or search
+  }
+
+  want.forEach((m, i) => {
+    let w = forumGeminiWaits.get(m.id);
+    const isNew = !w;
+    if (isNew) {
+      w = { el: forumBuildGeminiThinkingRow(m), startedAt: forumGeminiStartedAt(m), timer: null, ending: false };
+      forumGeminiWaits.set(m.id, w);
+      w.timer = setInterval(() => forumGeminiTick(m.id), 1000);
+      forumGeminiTick(m.id);
+    }
+    if (list.children[i] === w.el) return;
+    const wasShown = w.el.isConnected;
+    const nearTop = forumListNearTop();
+    const before = document.documentElement.scrollHeight;
+    list.insertBefore(w.el, list.children[i] || null);
+    if (!wasShown && nearTop) forumRevealRow(w.el);
+    else if (!wasShown) window.scrollBy(0, document.documentElement.scrollHeight - before);
+  });
+}
+
+// Whether the feed on screen already includes a message posted to this
+// scope/problem, so sending it needs no switch of filter (and no reload).
+function forumFeedShows(scope, problemKey) {
+  if (forumFilter === 'all') return true;
+  if (scope === 'global') return forumFilter === 'global';
+  if (forumFilter === 'global' || !problemKey || !problemKey.startsWith(forumFilter + '_')) return false;
+  return !forumFilterProblemId || problemKey === `${forumFilter}_${forumFilterProblemId}`;
 }
 
 function forumRevertOptimisticSend(tempId, originalBody) {
   const list = document.getElementById('forumMessageList');
   const row = list && list.querySelector(`[data-msg-id="${tempId}"]`);
-  if (row) row.remove();
+  if (row) {
+    forumStopTween(row);
+    row._revealing = false;
+    row._pendingUpgrade = null;
+    row.style.height = ''; row.style.paddingTop = ''; row.style.paddingBottom = ''; row.style.borderBottomWidth = ''; row.style.opacity = '';
+    forumCollapseRow(row);
+  }
   const bodyInput = document.getElementById('forumBodyInput');
   if (bodyInput) {
     bodyInput.value = originalBody;
@@ -1061,9 +1715,13 @@ function forumRevertOptimisticSend(tempId, originalBody) {
 // content is unchanged (the server rewrote the body only when LaTeX
 // shorthand was converted — that case still gets a fresh body).
 function forumUpgradePendingRow(pendingRow, finalMsg) {
+  // Still unfolding (forumRevealRow): the reveal does this when it ends.
+  if (pendingRow._revealing) { pendingRow._pendingUpgrade = finalMsg; return; }
   const fresh = renderForumMessage(finalMsg, { noEnter: true });
+  const fromH = pendingRow.offsetHeight; // before any of its nodes move into `fresh`
 
-  if (pendingRow.dataset.msgBody === finalMsg.body && !forumHasLatexShorthand(finalMsg.body)) {
+  const sameBody = pendingRow.dataset.msgBody === finalMsg.body && !forumHasLatexShorthand(finalMsg.body);
+  if (sameBody) {
     const oldBody = pendingRow.querySelector('.forum-message-body');
     const newBody = fresh.querySelector('.forum-message-body');
     if (oldBody && newBody) newBody.replaceWith(oldBody);
@@ -1079,7 +1737,10 @@ function forumUpgradePendingRow(pendingRow, finalMsg) {
     if (oldAvatar && newAvatar) newAvatar.replaceWith(oldAvatar);
   }
 
-  pendingRow.replaceWith(fresh);
+  // Same text: only the icons change, so the row keeps its height (a tiny
+  // difference still eases). New text (shorthand converted to LaTeX): the
+  // row keeps its old height until the equation is typeset, then stretches.
+  forumMorphRow(pendingRow, fresh, { fadeBody: !sameBody, fromH });
 }
 
 // The optimistic row (if any) that a just-fetched server message is the
@@ -1090,6 +1751,11 @@ function forumFindPendingRowFor(list, msg) {
   const rows = list.querySelectorAll('[data-msg-id^="pending-"]');
   for (const row of rows) {
     if (row.dataset.msgBody === msg.body && row.dataset.msgAuthorName === msg.author_name) return row;
+  }
+  // The server rewrites LaTeX shorthand, so that body never matches: take
+  // our own pending row that had shorthand, oldest first.
+  for (const row of [...rows].reverse()) {
+    if (row.dataset.msgAuthorName === msg.author_name && forumHasLatexShorthand(row.dataset.msgBody || '')) return row;
   }
   return null;
 }
@@ -1115,8 +1781,8 @@ function forumResolveOptimisticSend(tempId, serverMessage, replySnapshot) {
     if (alreadyLive) {
       // A live-poll tick (forumLiveTick) already fetched and rendered this
       // message while we were still waiting on our own response — just
-      // drop the placeholder, there's nothing left to insert.
-      if (pendingRow) pendingRow.remove();
+      // drop the placeholder (folding, not vanishing), nothing left to insert.
+      if (pendingRow) forumCollapseRow(pendingRow);
     } else if (pendingRow) {
       forumUpgradePendingRow(pendingRow, finalMsg);
     }
@@ -1130,6 +1796,10 @@ function forumResolveOptimisticSend(tempId, serverMessage, replySnapshot) {
   if (cache && !cache.some(m => String(m.id) === String(finalMsg.id))) {
     cache.unshift(finalMsg);
   }
+  // An @gemini question gets its "thinking" row as soon as it is confirmed,
+  // timed from now (this device saw it posted), not from the server clock.
+  if (!forumGeminiWaits.has(finalMsg.id)) forumGeminiLocalStart.set(finalMsg.id, Date.now());
+  forumSyncGeminiThinking(cache || [finalMsg]);
 }
 
 async function submitForumMessage(opts = {}) {
@@ -1201,10 +1871,15 @@ async function submitForumMessage(opts = {}) {
   // showing it optimistically, so the placeholder lands in the feed the
   // person is actually looking at. A no-op (skips the reload) in the
   // common case of posting under whatever you're already viewing.
-  const filterKeyBefore = forumFilter + '|' + forumFilterProblemId;
-  syncForumFilterFromComposerScope();
-  if (filterKeyBefore !== (forumFilter + '|' + forumFilterProblemId)) {
-    await loadForumInitial();
+  // Only when the feed on screen wouldn't show it: "All" shows everything,
+  // and switching away from it on every first post replaced the whole list
+  // with "Loading messages…" for a moment.
+  if (!forumFeedShows(scope, problem_key)) {
+    const filterKeyBefore = forumFilter + '|' + forumFilterProblemId;
+    syncForumFilterFromComposerScope();
+    if (filterKeyBefore !== (forumFilter + '|' + forumFilterProblemId)) {
+      await loadForumInitial();
+    }
   }
 
   // Snapshot everything the placeholder (and, on success, the final row)
@@ -3261,6 +3936,7 @@ function renderForumMessage(msg, opts = {}) {
   }
 
   content.appendChild(meta);
+  let quoteTypeset = null;
   if (msg.reply_to_id) {
     const quote = document.createElement('div');
     quote.className = 'forum-reply-quote';
@@ -3269,11 +3945,13 @@ function renderForumMessage(msg, opts = {}) {
       : `↩ ${msg.reply_to_author_name}: ${forumReplyQuoteSnippet(msg.reply_to_body)}`;
     quote.addEventListener('click', () => jumpForumToMessage(msg.reply_to_id));
     content.appendChild(quote);
-    renderMathIn(quote);
+    quoteTypeset = renderMathIn(quote);
   }
   content.appendChild(body);
   row.appendChild(content);
-  if (msg.flag_status !== 'deleted') renderMathIn(body);
+  // Kept so forumRevealRow/forumMorphRow can wait for the final height.
+  row._typeset = Promise.all([quoteTypeset, msg.flag_status !== 'deleted' ? renderMathIn(body) : null])
+    .then(() => { row._typesetDone = true; });
 
   // Fade/slide-in instead of the row just snapping into place — applies to
   // every freshly-created row (initial load, "load older", and live-poll
@@ -3336,6 +4014,7 @@ function renderForumMessageList(list, data) {
 
   list.innerHTML = '';
   list.appendChild(frag);
+  forumSyncGeminiThinking(data);
 }
 
 function setForumStatus(text, isError = false) {
@@ -4143,7 +4822,7 @@ async function forumLiveTick() {
   if (freshMsgs.length === 0 && changedMsgs.length === 0) return;
 
   const list = document.getElementById('forumMessageList');
-  if (!list || !list.firstChild || !list.firstChild.dataset || !list.firstChild.dataset.msgId) {
+  if (!list || !list.querySelector(':scope > [data-msg-id]')) {
     // Nothing sensible to update in place (empty state, error state, etc.) —
     // just let the next full reload (filter switch, reopen) pick this up.
     return;
@@ -4156,25 +4835,37 @@ async function forumLiveTick() {
     if (row) row.replaceWith(renderForumMessage(msg));
   });
 
-  if (freshMsgs.length === 0) return;
+  if (freshMsgs.length === 0) { forumSyncGeminiThinking(data); return; }
 
-  const nearTop = window.scrollY < 40;
+  const nearTop = forumListNearTop();
   const prevScrollHeight = document.documentElement.scrollHeight;
   const prevScrollY      = window.scrollY;
 
-  const frag = document.createDocumentFragment();
+  const added = [];
   freshMsgs.forEach(msg => {
     // Our own just-sent message arriving via the poll before the send
     // response does: adopt the pending row in place instead of inserting a
     // second copy beside it.
     const pendingRow = forumFindPendingRowFor(list, msg);
-    if (pendingRow) forumUpgradePendingRow(pendingRow, msg);
-    else frag.appendChild(renderForumMessage(msg));
+    if (pendingRow) { forumUpgradePendingRow(pendingRow, msg); return; }
+    const row = renderForumMessage(msg, { noEnter: nearTop });
+    // Gemini's answer to a question whose "thinking" row is showing turns
+    // that row into the answer, in place.
+    if (msg.device_id === FORUM_GEMINI_BOT_DEVICE_ID && msg.reply_to_id && forumResolveGeminiWait(row, msg)) return;
+    // By id, not simply on top: a message that arrives in the same tick as
+    // Gemini's answer (which took its thinking row's place) may be older.
+    let before = forumListTopAnchor(list);
+    while (before) {
+      const id = before.dataset && before.dataset.msgId;
+      if (id && !id.startsWith('pending-') && Number(id) < msg.id) break;
+      before = before.nextSibling;
+    }
+    list.insertBefore(row, before);
+    added.push(row);
   });
-  list.insertBefore(frag, list.firstChild);
 
   if (nearTop) {
-    window.scrollTo(0, 0); // pin to the very top as new rows keep landing there
+    added.forEach((row) => forumRevealRow(row));
   } else {
     // Keep whatever the reader was looking at in the same visual spot. The
     // page (not the list) is what scrolls now, so measure against the whole
@@ -4183,6 +4874,7 @@ async function forumLiveTick() {
     forumPendingNewCount += freshMsgs.length;
     showForumNewMsgsPill();
   }
+  forumSyncGeminiThinking(data);
 }
 
 function showForumNewMsgsPill() {
@@ -4221,7 +4913,7 @@ const FORUM_INFINITE_SCROLL_THRESHOLD_PX = 600;
 // qualifying scroll tick without extra guards here).
 function onForumListScroll() {
   if (!forumScreenOpen) return; // the listener below is on window, so guard against firing while browsing the quiz
-  if (window.scrollY < 40 && forumPendingNewCount > 0) {
+  if (forumListNearTop() && forumPendingNewCount > 0) {
     forumPendingNewCount = 0;
     hideForumNewMsgsPill();
   }

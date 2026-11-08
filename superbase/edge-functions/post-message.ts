@@ -808,12 +808,130 @@ async function isDailyQuotaExhausted(res: Response): Promise<boolean> {
   }
 }
 
-// 20s timeout per attempt; a network error/timeout is returned as a synthetic
-// 504 so it flows through the same retry/fallback path as a real 5xx.
-async function callGeminiOnce(model: string, systemInstruction: string, parts: Record<string, unknown>[]): Promise<Response> {
+// ── Streaming ────────────────────────────────────────────────────────────────
+// Each attempt streams (streamGenerateContent, SSE), so the forum can show the
+// answer while it is written: every ~0.8 s the text so far, cut back to the
+// last whole line or sentence with no half-open $...$, goes out as a
+// "gemini-stream" broadcast (js/forum.js shows it in the thinking row). The
+// primary model is also asked for thought summaries, whose latest headline
+// replaces the row's generic "Thinking" words. Moderation still checks the
+// whole answer once it is complete (maybePostGeminiReply); if it is held back,
+// the client takes the streamed text off screen. Thought parts never count as
+// answer text.
+
+type GeminiProgress = (attempt: number, fullText: string, thoughts: string) => void;
+
+// Text that is safe to show mid-stream: up to the last line break or sentence
+// end where every $...$ and $$...$$ is closed. Never the no-reply sentinel.
+function geminiStreamableText(full: string): string {
+  const head = full.trimStart();
+  if (head.startsWith("[") && (GEMINI_NO_REPLY_SENTINEL.startsWith(head.slice(0, GEMINI_NO_REPLY_SENTINEL.length)) || head.startsWith(GEMINI_NO_REPLY_SENTINEL))) return "";
+  const balanced = (t: string) => {
+    const u = t.replace(/\\\$/g, "");
+    if ((u.match(/\$\$/g) || []).length % 2) return false;
+    return (u.replace(/\$\$/g, "").match(/\$/g) || []).length % 2 === 0;
+  };
+  for (let i = full.length - 1; i > 0; i--) {
+    const c = full[i];
+    const cut = c === "\n" ? i : (/[.!?:]/.test(c) && /\s/.test(full[i + 1] ?? "") ? i + 1 : -1);
+    if (cut > 0 && balanced(full.slice(0, cut))) return full.slice(0, cut).trimEnd();
+  }
+  return "";
+}
+
+// The newest headline of the thought summaries ("**Setting up the integral**").
+function geminiThoughtHeadline(thoughts: string): string {
+  const bold = [...thoughts.matchAll(/\*\*([^*\n]{3,80})\*\*/g)];
+  if (bold.length) return bold[bold.length - 1][1].trim();
+  const lines = thoughts.split("\n").map((l) => l.trim()).filter(Boolean);
+  return lines.length ? lines[lines.length - 1].slice(0, 80) : "";
+}
+
+// Throttled "gemini-stream" broadcasts for one question. `flush` waits for the
+// ones already sent, so none of them can land after the answer itself.
+function makeGeminiStreamer(admin: any, messageId: number) {
+  let sent = { attempt: 0, text: "", thought: "" };
+  let next: { attempt: number; text: string; thought: string } | null = null;
+  let lastAt = 0;
+  let timer: number | null = null;
+  let chain: Promise<unknown> = Promise.resolve();
+  let seq = 0;
+  const push = () => {
+    timer = null;
+    if (!next) return;
+    const p = next;
+    next = null;
+    if (p.attempt === sent.attempt && p.text === sent.text && p.thought === sent.thought) return;
+    sent = p;
+    lastAt = Date.now();
+    const payload = { message_id: messageId, seq: ++seq, attempt: p.attempt, text: p.text, thought: p.thought };
+    chain = chain.then(() => broadcastForum(admin, "gemini-stream", payload));
+  };
+  const progress: GeminiProgress = (attempt, fullText, thoughts) => {
+    next = { attempt, text: geminiStreamableText(fullText), thought: geminiThoughtHeadline(thoughts) };
+    const wait = 800 - (Date.now() - lastAt);
+    if (attempt !== sent.attempt || wait <= 0) {
+      if (timer) clearTimeout(timer);
+      push();
+    } else if (!timer) {
+      timer = setTimeout(push, wait);
+    }
+  };
+  // A status line for the people waiting ("X is busy, switching to Y"),
+  // sent at once. `nextAttempt` is the attempt about to start: its text
+  // replaces whatever the failed one had shown.
+  const notice = (nextAttempt: number, text: string) => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    next = null;
+    sent = { attempt: nextAttempt, text: "", thought: "" };
+    lastAt = Date.now();
+    const payload = { message_id: messageId, seq: ++seq, attempt: nextAttempt, text: "", thought: "", notice: text };
+    chain = chain.then(() => broadcastForum(admin, "gemini-stream", payload));
+  };
+  // The whole answer once Gemini has finished, so the thinking row shows all
+  // of it while moderation and the insert run (streaming cuts at sentences,
+  // and the last stretch is often written between two broadcasts).
+  const complete = (attempt: number, text: string) => {
+    if (!geminiStreamableText(text + "\n")) return; // empty, or the no-reply sentinel
+    if (timer) { clearTimeout(timer); timer = null; }
+    next = { attempt, text: text.trim(), thought: sent.thought };
+    push();
+  };
+  const flush = async () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    next = null;
+    await chain;
+  };
+  return { progress, notice, complete, flush };
+}
+
+// "gemini-3.6-flash" -> "Gemini 3.6 Flash", for the notices above.
+function geminiModelLabel(model: string): string {
+  return model.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
+// One attempt, streamed. A non-OK HTTP answer is returned as is; a streamed
+// one is gathered and handed back as a Response shaped like generateContent's
+// (thought parts left out), so callGemini's retry/fallback logic is unchanged.
+// A network error, a stall (nothing for 30 s) or 75 s in all is returned as a
+// synthetic 504, so it flows through the same retry/fallback path as a 5xx.
+async function callGeminiOnce(
+  model: string,
+  systemInstruction: string,
+  parts: Record<string, unknown>[],
+  attempt = 0,
+  progress: GeminiProgress | null = null,
+  withThoughts = true
+): Promise<Response> {
+  // gemini-3.5-flash-lite rejects any thinkingConfig (see callGeminiLatexAssist).
+  const thoughts = withThoughts && model === GEMINI_MODEL_PRIMARY;
+  const ctrl = new AbortController();
+  const total = setTimeout(() => ctrl.abort(), 75000);
+  let idle = setTimeout(() => ctrl.abort(), 30000);
+  const bump = () => { clearTimeout(idle); idle = setTimeout(() => ctrl.abort(), 30000); };
   try {
-    return await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
       {
         method: "POST",
         headers: {
@@ -823,13 +941,62 @@ async function callGeminiOnce(model: string, systemInstruction: string, parts: R
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemInstruction }] },
           contents: [{ role: "user", parts }],
+          ...(thoughts ? { generationConfig: { thinkingConfig: { includeThoughts: true } } } : {}),
         }),
-        signal: AbortSignal.timeout(20000),
+        signal: ctrl.signal,
       }
     );
+    if (!res.ok) {
+      // Never let the thought summaries cost an answer: a 400 with them on is
+      // retried once without.
+      if (thoughts && res.status === 400) {
+        console.warn("Gemini refused includeThoughts, retrying without:", (await res.text()).slice(0, 300));
+        clearTimeout(total);
+        clearTimeout(idle);
+        return await callGeminiOnce(model, systemInstruction, parts, attempt, progress, false);
+      }
+      return res;
+    }
+    let text = "";
+    let thoughtText = "";
+    let finishReason: string | null = null;
+    let blockReason: string | null = null;
+    let buf = "";
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bump();
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+        let ev: any;
+        try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+        const cand = ev?.candidates?.[0];
+        for (const p of cand?.content?.parts ?? []) {
+          if (typeof p?.text !== "string") continue;
+          if (p.thought) thoughtText += p.text;
+          else text += p.text;
+        }
+        if (cand?.finishReason) finishReason = cand.finishReason;
+        if (ev?.promptFeedback?.blockReason) blockReason = ev.promptFeedback.blockReason;
+        progress?.(attempt, text, thoughtText);
+      }
+    }
+    return Response.json({
+      candidates: [{ content: { parts: [{ text }] }, finishReason }],
+      ...(blockReason ? { promptFeedback: { blockReason } } : {}),
+    });
   } catch (err) {
-    console.error("callGeminiOnce network/timeout:", err);
+    console.error("callGeminiOnce network/timeout/stream error:", err);
     return new Response(String(err), { status: 504 });
+  } finally {
+    clearTimeout(total);
+    clearTimeout(idle);
   }
 }
 
@@ -873,13 +1040,17 @@ async function callGemini(
     parts.push({ inlineData: { mimeType: problemImage.mimeType, data: problemImage.data } });
   }
 
+  const streamer = makeGeminiStreamer(admin, msgId);
+  let attempt = 0;
+  const once = (m: string) => callGeminiOnce(m, GEMINI_SYSTEM_INSTRUCTIONS, parts, ++attempt, streamer.progress);
   try {
     const resolved = await resolveGeminiModel(admin);
     let model = resolved.model;
     if (resolved.reason) {
       console.warn(`Gemini MODEL SWAP: using ${model} instead of ${GEMINI_MODEL_PRIMARY} (${resolved.reason} cooldown active)`);
+      streamer.notice(attempt + 1, `${geminiModelLabel(GEMINI_MODEL_PRIMARY)} is busy, answering with ${geminiModelLabel(model)}…`);
     }
-    let res = await callGeminiOnce(model, GEMINI_SYSTEM_INSTRUCTIONS, parts);
+    let res = await once(model);
 
     // 1) Daily quota on the primary -> fallback model for 24h.
     if (!res.ok && model === GEMINI_MODEL_PRIMARY && (await isDailyQuotaExhausted(res))) {
@@ -887,7 +1058,8 @@ async function callGemini(
       await recordDailyQuotaExhaustion(admin);
       console.warn(`Gemini MODEL SWAP: ${GEMINI_MODEL_PRIMARY} -> ${GEMINI_MODEL_FALLBACK} (daily quota exhausted, 24h cooldown set)`);
       model = GEMINI_MODEL_FALLBACK;
-      res = await callGeminiOnce(model, GEMINI_SYSTEM_INSTRUCTIONS, parts);
+      streamer.notice(attempt + 1, `${geminiModelLabel(GEMINI_MODEL_PRIMARY)} is busy, switching to ${geminiModelLabel(model)}…`);
+      res = await once(model);
     }
 
     // 2) Primary overloaded (503 etc.) -> 10 min cooldown and straight to the
@@ -897,15 +1069,17 @@ async function callGemini(
       await setOverloadCooldown(admin);
       console.warn(`Gemini MODEL SWAP: ${GEMINI_MODEL_PRIMARY} -> ${GEMINI_MODEL_FALLBACK} (HTTP ${res.status}, 10 min cooldown set)`);
       model = GEMINI_MODEL_FALLBACK;
-      res = await callGeminiOnce(model, GEMINI_SYSTEM_INSTRUCTIONS, parts);
+      streamer.notice(attempt + 1, `${geminiModelLabel(GEMINI_MODEL_PRIMARY)} is busy, switching to ${geminiModelLabel(model)}…`);
+      res = await once(model);
     }
 
     // 3) Fallback also failing with a 5xx -> one retry (it's fast, so cheap).
     if (!res.ok && model === GEMINI_MODEL_FALLBACK && RETRYABLE_STATUS.has(res.status)) {
       console.warn(`Gemini ${model} returned HTTP ${res.status}, retrying once`);
       await gLog(admin, msgId, "retry_5xx", { model, http_status: res.status });
+      streamer.notice(attempt + 1, `${geminiModelLabel(model)} is busy too, trying it again…`);
       await sleep(1500);
-      res = await callGeminiOnce(model, GEMINI_SYSTEM_INSTRUCTIONS, parts);
+      res = await once(model);
     }
 
     if (!res.ok) {
@@ -918,12 +1092,15 @@ async function callGemini(
       // OUR bug, not overload — those stay silent so the notice never lies.
       const unavailable = RETRYABLE_STATUS.has(res.status) || res.status === 429;
       if (unavailable) console.warn(`Gemini UNAVAILABLE: ${model} failed with HTTP ${res.status} after all fallbacks, no model could answer`);
+      await streamer.flush();
       return { text: null, unavailable };
     }
 
     const data = await res.json();
     const cand = data?.candidates?.[0];
-    const reply = cand?.content?.parts?.map((p: any) => p.text).join("").trim();
+    const reply = cand?.content?.parts?.filter((p: any) => !p.thought).map((p: any) => p.text).join("").trim();
+    if (reply) streamer.complete(attempt, reply);
+    await streamer.flush();
     if (!reply) {
       // 200 OK but no text (SAFETY block, empty candidate...) — previously silent.
       await gLog(admin, msgId, "empty_reply", {
@@ -937,6 +1114,7 @@ async function callGemini(
   } catch (err) {
     console.error("Gemini call failed:", err);
     await gLog(admin, msgId, "exception", { raw: String(err) });
+    await streamer.flush();
     return { text: null, unavailable: false };
   }
 }
@@ -951,7 +1129,7 @@ function geminiUnavailableNotice(taggerName: string): string {
 async function postGeminiUnavailableNotice(
   admin: any,
   humanMsg: { id: number; author_name: string; scope: string; problem_key: string | null }
-) {
+): Promise<boolean> {
   const { error } = await admin.from("forum_messages").insert({
     author_name: GEMINI_BOT_NAME,
     device_id: GEMINI_BOT_DEVICE_ID,
@@ -964,10 +1142,11 @@ async function postGeminiUnavailableNotice(
   if (error) {
     console.error("Gemini unavailable-notice insert error:", error);
     await gLog(admin, humanMsg.id, "notice_insert_error", { raw: JSON.stringify(error) });
-  } else {
-    console.warn(`Gemini unavailable notice posted (reply to message ${humanMsg.id})`);
-    await gLog(admin, humanMsg.id, "unavailable_notice_posted");
+    return false;
   }
+  console.warn(`Gemini unavailable notice posted (reply to message ${humanMsg.id})`);
+  await gLog(admin, humanMsg.id, "unavailable_notice_posted");
+  return true;
 }
 
 // Runs the whole @gemini side-effect: gather context, call Gemini, moderate
@@ -985,8 +1164,8 @@ async function maybePostGeminiReply(
   humanMsg: { id: number; author_name: string; body: string; scope: string; problem_key: string | null },
   forceTrigger: boolean,
   repliedTo: { author_name: string; body: string } | null
-) {
-  if (!forceTrigger && !GEMINI_MENTION_RE.test(humanMsg.body)) return;
+): Promise<GeminiOutcome> {
+  if (!forceTrigger && !GEMINI_MENTION_RE.test(humanMsg.body)) return "error";
 
   await gLog(admin, humanMsg.id, "triggered");
 
@@ -1022,8 +1201,8 @@ async function maybePostGeminiReply(
     humanMsg.id
   );
   if (!reply) {
-    if (unavailable) await postGeminiUnavailableNotice(admin, humanMsg);
-    return;
+    if (!unavailable) return "error";
+    return (await postGeminiUnavailableNotice(admin, humanMsg)) ? "posted" : "error";
   }
 
   // Gemini's explicit "I choose not to reply" signal — see the no-reply
@@ -1037,7 +1216,7 @@ async function maybePostGeminiReply(
   if (normalizedReply === GEMINI_NO_REPLY_SENTINEL || normalizedReply.startsWith(GEMINI_NO_REPLY_SENTINEL)) {
     console.info("Gemini chose not to reply (trivial reply-to, or offensive message).");
     await gLog(admin, humanMsg.id, "no_reply_sentinel", { raw: normalizedReply });
-    return;
+    return "declined";
   }
 
   // No length cap here: MAX_BODY_LEN only bounds human-submitted payloads
@@ -1061,18 +1240,18 @@ async function maybePostGeminiReply(
       const modErrText = await modRes.text();
       console.error("Gemini-reply moderation API error:", modErrText);
       await gLog(admin, humanMsg.id, "mod_error", { http_status: modRes.status, raw: modErrText });
-      return;
+      return "error";
     }
     const modData = await modRes.json();
     if (modData?.results?.[0]?.flagged) {
       console.error("Gemini reply was flagged by moderation, not posted.");
       await gLog(admin, humanMsg.id, "mod_flagged", { raw: trimmedReply });
-      return;
+      return "moderated";
     }
   } catch (err) {
     console.error("Gemini-reply moderation call failed:", err);
     await gLog(admin, humanMsg.id, "mod_error", { raw: String(err) });
-    return;
+    return "error";
   }
 
   const { error: geminiInsertErr } = await admin.from("forum_messages").insert({
@@ -1087,12 +1266,53 @@ async function maybePostGeminiReply(
   if (geminiInsertErr) {
     console.error("Gemini reply insert error:", geminiInsertErr);
     await gLog(admin, humanMsg.id, "insert_error", { raw: JSON.stringify(geminiInsertErr) });
+    return "error";
   } else {
     console.info(
       `Gemini reply posted (problem=${humanMsg.problem_key ?? "none"}, image=${!!problemImage}, solution=${solution ? (solution.stale ? "stale" : "yes") : "no"})`
     );
     await gLog(admin, humanMsg.id, "posted");
+    return "posted";
   }
+}
+
+type GeminiOutcome = "posted" | "declined" | "moderated" | "error";
+
+// A broadcast on the channel every open forum already listens to (js/forum.js,
+// "forum-messages-changes"); with nobody subscribed it is simply dropped.
+async function broadcastForum(admin: any, event: string, payload: Record<string, unknown>) {
+  try {
+    const channel = admin.channel("forum-messages-changes");
+    await channel.send({ type: "broadcast", event, payload });
+    await admin.removeChannel(channel);
+  } catch (err) {
+    console.error(`${event} broadcast failed:`, err);
+  }
+}
+
+// Tells every open forum that Gemini is done with this question, answered or
+// not (js/forum.js, forumGeminiServerDone): its "thinking" row then turns
+// into the answer, or, with no answer coming, says why (`reason`) and folds
+// at once instead of waiting out the client's 2-minute cap.
+async function announceGeminiDone(admin: any, messageId: number, outcome: GeminiOutcome) {
+  await broadcastForum(admin, "gemini-done", { message_id: messageId, posted: outcome === "posted", reason: outcome });
+}
+
+// maybePostGeminiReply plus the "done" broadcast, for messages that trigger it.
+async function runGeminiReply(
+  admin: any,
+  humanMsg: { id: number; author_name: string; body: string; scope: string; problem_key: string | null },
+  forceTrigger: boolean,
+  repliedTo: { author_name: string; body: string } | null
+) {
+  if (!forceTrigger && !GEMINI_MENTION_RE.test(humanMsg.body)) return;
+  let outcome: GeminiOutcome = "error";
+  try {
+    outcome = await maybePostGeminiReply(admin, humanMsg, forceTrigger, repliedTo);
+  } catch (err) {
+    console.error("Gemini reply failed:", err);
+  }
+  await announceGeminiDone(admin, humanMsg.id, outcome);
 }
 
 export default {
@@ -1387,7 +1607,7 @@ export default {
     // often several seconds — instead of confirming right away like any
     // other message, with the side effects landing a beat later.
     EdgeRuntime.waitUntil(Promise.all([
-      maybePostGeminiReply(admin, inserted, replyToIsGemini, replyToParent),
+      runGeminiReply(admin, inserted, replyToIsGemini, replyToParent),
       sendMentionPushNotifications(admin, inserted, myIdentityId, replyToParentIdentityId),
     ]));
 

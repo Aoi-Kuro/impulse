@@ -766,11 +766,14 @@
 }
 .forum-eq-modal-btn.primary:hover { opacity: 0.85; }
 
+/* min-height matches one line exactly, so "Sent." appearing (or being
+   cleared on the next send) doesn't nudge the whole list by a few px. */
 .forum-composer-status {
   font-family: var(--mono);
   font-size: 0.72rem;
+  line-height: 1.35;
   color: var(--muted);
-  min-height: 1em;
+  min-height: 1.35em;
 }
 .forum-composer-status-error { color: var(--wrong); }
 
@@ -833,12 +836,16 @@
    something anchored to *that ancestor's* box instead of the real browser
    viewport — sticky isn't affected by that, so it's the correct tool here,
    not just a stylistic choice. */
+/* Takes no room in the flow (the negative bottom margin equals its own
+   height), so showing or hiding it never shifts the list under the reader;
+   it floats over the first row instead. */
 .forum-new-msgs-pill {
   position: sticky;
   top: 0.6rem;
   z-index: 10;
   width: fit-content;
-  margin: 0 auto 0.6rem;
+  line-height: 1.4;
+  margin: 0 auto calc(-1 * (0.72rem * 1.4 + 0.64rem));
   background: var(--accent);
   color: var(--bg);
   font-family: var(--mono);
@@ -920,6 +927,85 @@
 }
 .forum-message-enter {
   animation: forumMessageEnter 0.3s ease;
+}
+
+/* "Gemini is thinking" row (forumBuildGeminiThinkingRow in forum.js): the
+   same shape as Gemini's answer will have, so the answer can take its place
+   with only the text and the height changing. One line of status words that
+   swap every few seconds, a soft shimmer over them, three bouncing dots, and
+   the seconds so far where the time goes. */
+.forum-gemini-thinking .forum-message-time { font-variant-numeric: tabular-nums; }
+.forum-gemini-thinking-line {
+  display: flex;
+  align-items: flex-end;
+}
+.forum-gemini-phrase { min-width: 0; }
+.forum-gemini-phrase {
+  color: var(--muted);
+  background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 35%, var(--text) 50%, var(--muted) 65%, var(--muted) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: forumGeminiShimmer 2.4s linear infinite;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.forum-gemini-phrase.is-swapping { opacity: 0; transform: translateY(3px); }
+@keyframes forumGeminiShimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: 0% 0; }
+}
+/* Clear of the text (its last letter, the shimmer, the swap's slide). */
+.forum-gemini-dots {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  margin: 0 0 0.42em 0.55rem;
+}
+/* Answer text streamed in so far (forumGeminiRenderStream): lines are built
+   out of flow (absolute) while MathJax works on them. */
+.forum-gemini-stream { position: relative; margin-bottom: 0.25rem; }
+/* Where streamed lines wait, already typeset, for their turn to show
+   (forumGeminiPrepare): full width, so MathJax measures them as they will
+   be shown, but out of the flow and invisible. */
+.forum-gemini-stage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.forum-gemini-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: forumGeminiDot 1.2s ease-in-out infinite;
+}
+.forum-gemini-dots i:nth-child(2) { animation-delay: 0.15s; }
+.forum-gemini-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes forumGeminiDot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30%           { transform: translateY(-3px); opacity: 1; }
+}
+.forum-gemini-thinking .gemini-mark { animation: forumGeminiPulse 1.8s ease-in-out infinite; }
+@keyframes forumGeminiPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(0.86); opacity: 0.75; }
+}
+/* No answer coming: the note stays still and plain until the row folds. */
+.forum-gemini-thinking.is-ended .forum-gemini-phrase {
+  animation: none;
+  -webkit-text-fill-color: var(--muted);
+  font-style: italic;
+}
+.forum-gemini-thinking.is-ended .forum-gemini-dots,
+.forum-gemini-thinking.is-ended .gemini-mark { animation: none; }
+.forum-gemini-thinking.is-ended .forum-gemini-dots { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .forum-gemini-phrase, .forum-gemini-dots i, .forum-gemini-thinking .gemini-mark { animation: none; }
+  .forum-gemini-phrase { -webkit-text-fill-color: var(--muted); }
 }
 
 /* Official Gemini bot avatar — only ever attached to rows whose device_id
