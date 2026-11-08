@@ -23,6 +23,10 @@
 // pings the ticket's Realtime channel the moment an attempt lands (migration
 // 018), so that happens at once; polling is only the fallback.
 //
+// No database, no lockdown: an attempt that can't reach the drop-off is lost
+// when SEB closes. openLockdownView() asks /db-status (js/db-status.js) before
+// opening SEB, and SEB's own Start button goes away if it finds the same.
+//
 // This only shapes the page, it is not a security check: the keys SEB offers
 // are never verified, and grading stays in the browser, as in normal mode.
 
@@ -175,15 +179,34 @@ function chooseQuizStart(choice) {
 // on the ticket's channel, and the page then goes back to the main screen
 // (onLockdownOpened).
 const LOCKDOWN_HELP_DELAY_MS = 10 * 1000;
+const LOCKDOWN_DB_CHECK_MS = 3000;    // past this, go on: the check itself is what's slow
 let _lockdownHelpTimer = 0;
 
 // The card is reset here, not on leaving, so it doesn't collapse while fading.
 // Enter lockdown comes back through here, so the wait starts over.
-function openLockdownView() {
-  document.getElementById('lockdownCard').classList.remove('help');
+async function openLockdownView() {
+  const card = document.getElementById('lockdownCard');
+  const page = document.getElementById('choicePage');
+  card.classList.remove('help', 'db-blocked');
   document.getElementById('lockdownStatus').textContent = 'Opening Safe Exam Browser…';
   showChoiceView('lockdown');
+  await Promise.race([
+    checkDbStatus({ force: true }),
+    new Promise((resolve) => setTimeout(resolve, LOCKDOWN_DB_CHECK_MS)),
+  ]);
+  if (page.classList.contains('hidden') || page.dataset.view !== 'lockdown') return;  // closed meanwhile
+  // Any problem, not only a confirmed one: this is the one thing that can't
+  // take the chance.
+  if (dbProblemText()) {
+    card.classList.add('db-blocked');
+    document.getElementById('lockdownStatus').textContent = 'Lockdown is unavailable';
+    return;
+  }
   enterLockdown();
+}
+
+function takeOrdinaryQuizInstead() {
+  fadeOutScreen(document.getElementById('choicePage'), 280, startRandomQuiz);
 }
 
 function enterLockdown() {

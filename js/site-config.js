@@ -53,6 +53,7 @@ const SITE_POLL = {
   forum_quiet: [900, 60, 21600],     // forum fallback check once nobody has posted for 24 h
   solutions:   [1800, 60, 86400],    // how long one solutions index fetch is reused (js/solutions.js)
   update:      [900, 60, 1800],      // site-version.json check (js/quiz-engine.js)
+  db_status:   [300, 60, 3600],      // database recheck while it is paused or down (js/db-status.js)
 };
 const SITE_OFF_NAMES = ['realtime', 'forum_posting'];
 const SITE_CONFIG_KEY = STORAGE_PREFIX + '-site-config';
@@ -84,8 +85,16 @@ function sitePollMs(name) {
   const v = _siteConfig.poll[name];
   return (v != null ? v : SITE_POLL[name][0]) * 1000;
 }
-function siteOff(name) { return _siteConfig.off.includes(name); }
-function siteSyncPaused() { return _siteConfig.sync_paused; }
+// While the database is paused (js/db-status.js) the site behaves as if
+// "sync_paused" and "off": ["realtime"] were set, whatever the file says.
+let _dbPaused = false;
+function _withDbPause(config) {
+  if (!_dbPaused) return config;
+  const off = config.off.includes('realtime') ? config.off : [...config.off, 'realtime'];
+  return { ...config, sync_paused: true, off };
+}
+function siteOff(name) { return _withDbPause(_siteConfig).off.includes(name); }
+function siteSyncPaused() { return _withDbPause(_siteConfig).sync_paused; }
 
 // setInterval whose period is the "poll" setting `name`. A changed setting
 // re-arms it straight away, so a slower interval doesn't wait out the old one.
@@ -121,13 +130,20 @@ function stopSitePoll(t) {
 // anything differs, for the files that have to react (Realtime, sync pause).
 function applySiteConfig(manifest) {
   const next = _cleanSiteConfig(manifest);
-  const before = _siteConfig;
+  const before = _withDbPause(_siteConfig);
   if (next.purge_id) _applySitePurgeId(next.purge_id);
   if (JSON.stringify(next) === JSON.stringify(before)) return;
   _siteConfig = next;
   try { localStorage.setItem(SITE_CONFIG_KEY, JSON.stringify(next)); } catch (_) {}
   _sitePollTimers.forEach((t) => { if (sitePollMs(t.name) !== t.ms) _armSitePoll(t); });
-  document.dispatchEvent(new CustomEvent('site-config-changed', { detail: { before, after: next } }));
+  document.dispatchEvent(new CustomEvent('site-config-changed', { detail: { before, after: _withDbPause(next) } }));
+}
+
+// A pause starting or ending reaches the same listeners as a change in the file.
+function setSiteDbPaused(paused) {
+  const before = _withDbPause(_siteConfig);
+  _dbPaused = paused;
+  document.dispatchEvent(new CustomEvent('site-config-changed', { detail: { before, after: _withDbPause(_siteConfig) } }));
 }
 
 // Once per browser per value: the id is stored before the worker is asked,

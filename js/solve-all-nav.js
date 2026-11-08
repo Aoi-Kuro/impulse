@@ -30,7 +30,7 @@
 
   let railEl = null, trackEl = null, highlightEl = null, ticksEl = null, flagsEl = null, pointerEl = null, hitzoneEl = null;
   const FLAG_MAGNET_PX = 14;   // how far (vertically) from a flag dot a tap still counts as on it
-  let flagList = [];           // [{ idx, pct, el }], ascending by idx
+  let flagList = [];           // [{ idx, pct, el, card }], ascending by idx
   let nearFlag = null;         // the dot the pointer is within reach of, if any
   let cards = [];      // [{ el, label, top, bottom }], document order, page-relative coordinates
   let tickList = [];   // [{ idx, pct, el }], ascending by idx
@@ -146,30 +146,47 @@
     return list;
   }
 
-  // A dot at the top of each flagged card, like the ticks; redrawn whole on
-  // every flag change (a set has at most a few hundred cards).
-  function renderFlags() {
+  // A dot at the top of each flagged card, like the ticks. Each card keeps
+  // its dot from one call to the next, so flagging (animate: true) pops a
+  // new one in, unflagging shrinks it away and a new colour fades in; the
+  // rest stay put. A rebuild moves them all, without any of that.
+  const FLAG_LEAVE_MS = 260;   // a little over .is-leaving's animation
+  function renderFlags(animate) {
     if (!flagsEl) return;
-    flagsEl.innerHTML = '';
+    const old = new Map(flagList.map((f) => [f.card, f.el]));
     flagList = [];
+    if (nearFlag) nearFlag.el.classList.remove('is-near');
     nearFlag = null;
-    if (!built) return;
-    const range = docBottom - docTop || 1;
-    const frag = document.createDocumentFragment();
-    cards.forEach((c, i) => {
-      const btn = c.el.querySelector('.problem-flag-btn');
-      const colour = btn ? btn.dataset.flag : '0';
-      if (colour !== '1' && colour !== '2') return;
-      const pct = ((c.top - docTop) / range) * 100;
-      const dot = document.createElement('div');
-      dot.className = 'sa-nav-flag';
-      dot.dataset.flag = colour;
-      dot.dataset.label = c.label;
-      dot.style.top = pct.toFixed(3) + '%';
-      frag.appendChild(dot);
-      flagList.push({ idx: i, pct: pct, el: dot });
+    if (built) {
+      const range = docBottom - docTop || 1;
+      cards.forEach((c, i) => {
+        const btn = c.el.querySelector('.problem-flag-btn');
+        const colour = btn ? btn.dataset.flag : '0';
+        if (colour !== '1' && colour !== '2') return;
+        const pct = ((c.top - docTop) / range) * 100;
+        let dot = old.get(c.el);
+        old.delete(c.el);
+        if (!dot) {
+          dot = document.createElement('div');
+          dot.className = 'sa-nav-flag';
+          if (animate) {
+            dot.classList.add('is-entering');
+            dot.addEventListener('animationend', () => dot.classList.remove('is-entering'), { once: true });
+          }
+          flagsEl.appendChild(dot);
+        }
+        dot.dataset.flag = colour;
+        dot.dataset.label = c.label;
+        dot.style.top = pct.toFixed(3) + '%';
+        flagList.push({ idx: i, pct: pct, el: dot, card: c.el });
+      });
+    }
+    // The timer too: with Reduce motion on there is no animation to end.
+    old.forEach((dot) => {
+      if (!animate || !built) { dot.remove(); return; }
+      dot.classList.add('is-leaving');
+      setTimeout(() => dot.remove(), FLAG_LEAVE_MS);
     });
-    flagsEl.appendChild(frag);
   }
 
   // The flag dot nearest clientY, if one is within FLAG_MAGNET_PX of it.
@@ -361,7 +378,7 @@
       if (toggled || (flagged && containerEl.classList.contains('flags-only'))) {
         clearTimeout(containerDebounce);
         containerDebounce = setTimeout(rebuild, 60);
-      } else if (flagged && built) renderFlags();
+      } else if (flagged && built) renderFlags(true);
     }).observe(containerEl, { subtree: true, attributes: true, attributeFilter: ['data-flag', 'class'] });
   }
 })();

@@ -502,7 +502,8 @@ def check_manifest(problems):
 # ── build ───────────────────────────────────────────────────────────────
 # ── Netlify edge functions (--deploy) ───────────────────────────────────
 EDGE_SRC = os.path.join('netlify', 'edge-functions')
-EDGE_COURSE_SLOT = 'JSON.parse("null")'   # in netlify/edge-functions/share.ts
+EDGE_COURSE_SLOT = 'JSON.parse("null")'   # in netlify/edge-functions/
+EDGE_COURSE_FILES = ('share.ts', 'db-status.ts')
 
 
 def _course_block(config, course):
@@ -512,7 +513,7 @@ def _course_block(config, course):
 
 
 def edge_course(problems):
-    """What share.ts needs about this course, from js/course-config.js."""
+    """What the edge functions need about this course, from js/course-config.js."""
     head = re.search(r'<head\b[^>]*\bdata-course="([^"]+)"', _read('index.html'))
     course = head.group(1).lower() if head else None
     block = course and _course_block(_read('js/course-config.js'), course)
@@ -537,15 +538,15 @@ def edge_course(problems):
 
 def stage_edge_functions(stage, problems):
     """Copies netlify/edge-functions/ next to the built site, with this
-    course's values filled into share.ts."""
+    course's values filled into the ones that use them."""
     course = edge_course(problems)
     if not course:
         return
     for f in sorted(os.listdir(os.path.join(SRC, EDGE_SRC))):
         text = _read(os.path.join(EDGE_SRC, f))
-        if f == 'share.ts':
+        if f in EDGE_COURSE_FILES:
             if text.count(EDGE_COURSE_SLOT) != 1:
-                problems.append(f'{EDGE_SRC}/share.ts: expected exactly one {EDGE_COURSE_SLOT} to fill in')
+                problems.append(f'{EDGE_SRC}/{f}: expected exactly one {EDGE_COURSE_SLOT} to fill in')
                 continue
             text = text.replace(EDGE_COURSE_SLOT, 'JSON.parse(' + json.dumps(json.dumps(course, ensure_ascii=False)) + ')')
         dst = os.path.join(stage, EDGE_SRC, f)

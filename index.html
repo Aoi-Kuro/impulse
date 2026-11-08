@@ -364,6 +364,10 @@
      the sync/forum/stats/solutions scripts below, so it loads first. -->
 <script src="js/site-config.js"></script>
 
+<!-- Tells a paused database from an unreachable one. Before anything that
+     talks to Supabase, as it watches their requests. -->
+<script src="js/db-status.js"></script>
+
 <!-- ── Version update notification banner ── -->
 <div id="update-banner" role="status" aria-live="polite">
   <span class="banner-icon">🔔</span>
@@ -585,6 +589,8 @@
       </div>
     </div>
 
+    <!-- Inside Safe Exam Browser only: no database, no lockdown. -->
+    <div class="lockdown-only"><div class="db-offline-box"></div></div>
     <button class="landing-start-btn" onclick="startSelected()">Start</button>
     <button class="stats-launch-btn lockdown-only" onclick="exitLockdown()">Exit lockdown</button>
     <button class="stats-launch-btn" onclick="openStatsScreen()">📊 Stats</button>
@@ -643,6 +649,12 @@
         <span class="lockdown-spinner" aria-hidden="true"></span>
         <h2 class="lockdown-card-title" id="lockdownStatus">Opening Safe Exam Browser…</h2>
         <button class="stats-close-btn" onclick="backFromLockdown()" title="Close" aria-label="Close">✕</button>
+      </div>
+      <div class="lockdown-db-block">
+        <div class="db-offline-box"></div>
+        <div class="lockdown-actions">
+          <button class="btn btn-primary" onclick="takeOrdinaryQuizInstead()">Take it as an ordinary quiz</button>
+        </div>
       </div>
       <div class="lockdown-skip-wrap"><div>
         <button type="button" class="lockdown-skip" onclick="showLockdownHelp()">I don't have it installed</button>
@@ -813,6 +825,7 @@
       </div>
       <button class="stats-close-btn" onclick="closeStatsScreen()" title="Close" aria-label="Close stats">✕</button>
     </div>
+    <div class="db-offline-box"></div>
     <div class="stats-forum-panel" id="statsForumPanel">
       <div class="sfp-title">👥 Forum &amp; Site <span class="sfp-live-dot" id="sfpLiveDot" title="Live" style="display:none;"></span></div>
       <div class="sfp-identity-row" id="sfpIdentityRow">
@@ -925,6 +938,7 @@
          forum button (openForumForProblem, js/forum.js) — a collapsed-by-
          default readout of that problem's own text, so you don't have to
          leave the thread to re-read what's being discussed. -->
+    <div class="db-offline-box"></div>
     <div class="forum-problem-context" id="forumProblemContext" style="display:none;">
       <button type="button" class="forum-problem-context-toggle" id="forumProblemContextToggle" onclick="toggleForumProblemContext()">▸ Show problem</button>
       <div class="forum-problem-context-body" id="forumProblemContextBody" style="display:none;"></div>
@@ -1480,6 +1494,7 @@
 <script src="js/logo-tumble.js"></script>
 <!-- Course name soaked into the cube during a Random N attempt. -->
 <script src="js/logo-wordmark.js"></script>
+<script src="js/logo-offline.js"></script>
 
 <!-- ── Tier 2: everything below is cosmetic/non-critical once the landing
      screen is up (fig-attr tooltips, top-bar scroll/tips, the changelog

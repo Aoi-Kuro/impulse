@@ -1482,3 +1482,14 @@
   .forum-message-avatar img.gemini-mark { width: 15px; height: 15px; }
   .forum-message-body { font-size: 0.84rem; }
 }
+
+
+/* The database is off (js/db-status.js): the box says so, and what needs it
+   goes. Messages this tab already loaded stay readable. */
+html.db-offline #forumComposer,
+html.db-offline #forumFilters,
+html.db-offline #forumSearchBar,
+html.db-offline #forumSearchToggleBtn,
+html.db-offline #forumPushToggleBtn,
+html.db-offline #forumLoadMoreBtn,
+html.db-offline #forumMessageList:has(> .forum-status) { display: none !important; }

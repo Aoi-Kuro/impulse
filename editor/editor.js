@@ -1279,14 +1279,24 @@ function setThemeMode(light) {
     });
   }
 
-  // Filter: hide problems with nothing on them (no dot), and quizzes left
-  // with none. Memory only, like the expanded quizzes.
+  // Filters, memory only like the expanded quizzes, and one at a time: the
+  // funnel hides problems with nothing on them (no dot); "Others" shows only
+  // problems with someone else's solution, whether or not you have one there
+  // too. Quizzes left with none go too.
   let onlyTouched = false;
-  $('edFilter').addEventListener('click', () => {
-    onlyTouched = !onlyTouched;
-    $('edFilter').setAttribute('aria-pressed', String(onlyTouched));
-    $('edList').classList.toggle('only-touched', onlyTouched);
-  });
+  let onlyOthers = false;
+  function setListFilter(touched, others) {
+    onlyTouched = touched;
+    onlyOthers = others;
+    $('edFilter').setAttribute('aria-pressed', String(touched));
+    $('edOthers').setAttribute('aria-pressed', String(others));
+    $('edList').classList.toggle('only-touched', touched);
+    $('edList').classList.toggle('only-others', others);
+  }
+  $('edFilter').addEventListener('click', () => setListFilter(!onlyTouched, false));
+  $('edOthers').addEventListener('click', () => setListFilter(false, !onlyOthers));
+  // A saved solution by someone else; yours there don't matter.
+  const othersOnly = (key) => (serverRows[key] || []).some((e) => !isOwnRow(e));
 
   /* "Mine": the dots, the filter above and Alt+N count only YOUR
      solutions (and what you typed in your own version), so a problem that
@@ -1322,6 +1332,7 @@ function setThemeMode(light) {
     box.querySelectorAll('.ed-group').forEach((h) => {
       const any = box.querySelector(`.ed-item.has[data-quiz="${h.dataset.quiz}"]`);
       h.classList.toggle('empty', !any);
+      h.classList.toggle('no-others', !box.querySelector(`.ed-item.others[data-quiz="${h.dataset.quiz}"]`));
     });
   }
 
@@ -1380,6 +1391,7 @@ function setThemeMode(light) {
     let c = (srv || local) ? ' has' : '';
     if (srv) c += srv.status === 'published' ? ' st-pub' : ' st-draft';
     if (isDirty(key) && localCounts(key)) c += ' dirty';
+    if (othersOnly(key)) c += ' others';
     return c;
   }
   function markItem(key) {
@@ -4625,7 +4637,7 @@ function setThemeMode(light) {
   });
 
   /* ───────────────────────── keyboard navigation ─────────────────────────
-     Alt+↑ / Alt+↓  previous / next problem, in sidebar order. With the
+     Alt+↑ / Alt+↓  previous / next problem, in sidebar order. With a
                     "has work" filter on, only the problems it shows.
      Alt+N          next problem with no work at all (no dot), wrapping
                     around; retired problems are skipped.
@@ -4633,7 +4645,9 @@ function setThemeMode(light) {
      doesn't type "˜"), and never fire while the key gate is up. */
   const untouched = (p) => !dotEntry(p.key) && !(localCounts(p.key) && hasContent(drafts[p.key]));
   function stepProblem(dir) {
-    const pool = onlyTouched ? problems.filter((p) => !untouched(p) || p === cur) : problems;
+    const pool = onlyTouched ? problems.filter((p) => !untouched(p) || p === cur)
+      : onlyOthers ? problems.filter((p) => othersOnly(p.key) || p === cur)
+      : problems;
     const i = pool.indexOf(cur);
     const next = pool[i + dir];
     if (next) select(next.key);

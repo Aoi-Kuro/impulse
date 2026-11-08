@@ -31,6 +31,8 @@ const DEPLOY_MESSAGE = '';
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 const CHANGELOG = [
+  { version: "14.0.1", note: "New splashes.", scope: 0 },
+  { version: "14.0.1", note: "Database-related changes.", scope: 0 },
   { version: "14.0.0", note: "Dozens of UI & UX fixes: new problem cards, common mistake hints, answer checking closer to Moodle, a simpler Getting Started, and far lighter on your GPU.", scope: 0 },
   { version: "14.0.0", note: "Lockdown mode!", scope: 0 },
   { version: "13.4.3", note: "Answer fields in Random quiz are locked after Check answers.", scope: 0 },

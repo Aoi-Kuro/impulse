@@ -75,7 +75,9 @@ body.sb-closed .ed-sidebar { margin-left: calc(var(--sb-w) * -1); }
 .ed-sb-tools { display: inline-flex; gap: .2rem; align-items: center; }
 .ed-filterbtn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
 .ed-list.only-touched .ed-item:not(.has),
-.ed-list.only-touched .ed-group.empty { display: none; }
+.ed-list.only-touched .ed-group.empty,
+.ed-list.only-others .ed-item:not(.others),
+.ed-list.only-others .ed-group.no-others { display: none; }
 .ed-item {
   display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; width: 100%;
   background: none; border: 0; border-left: 3px solid transparent; color: var(--text); cursor: pointer; text-align: left;
@@ -527,6 +529,10 @@ body.state-closed .ed-state { display: none; }
   .ed-preview, .ed-preview-frame, .ed-preview-wait { transition: none; }
 }
 
+.ed-db-offline {
+  position: fixed; left: 1rem; right: 1rem; bottom: 1rem; z-index: 800; margin: 0;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .3);
+}
 .ed-toast {
   position: fixed; left: 50%; bottom: 1.4rem; z-index: 1200;
   transform: translate(-50%, .6rem); opacity: 0; pointer-events: none;

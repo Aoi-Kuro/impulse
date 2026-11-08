@@ -204,7 +204,20 @@
     background: var(--accent2);
     color: var(--accent2);
     box-shadow: 0 0 0 2px var(--bg), 0 0 6px 1px color-mix(in srgb, currentColor 55%, transparent);
-    transition: transform 0.15s ease;
+    transition: transform 0.15s ease, background-color 0.25s ease, color 0.25s ease;
+  }
+  /* Flagging and unflagging a card (renderFlags(true)): the dot pops in
+     with a small overshoot, and shrinks away. */
+  .sa-nav-flag.is-entering { animation: sa-nav-flag-in 0.34s cubic-bezier(.3, .7, .4, 1) both; }
+  .sa-nav-flag.is-leaving  { animation: sa-nav-flag-out 0.22s ease-in both; }
+  @keyframes sa-nav-flag-in {
+    from { transform: translateY(-50%) scale(0); opacity: 0; }
+    60%  { transform: translateY(-50%) scale(1.35); opacity: 1; }
+    to   { transform: translateY(-50%) scale(1); opacity: 1; }
+  }
+  @keyframes sa-nav-flag-out {
+    from { transform: translateY(-50%) scale(1); opacity: 1; }
+    to   { transform: translateY(-50%) scale(0); opacity: 0; }
   }
   .sa-nav-flag[data-flag="1"] { background: var(--accent); color: var(--accent); }
   #saNavRail.flag-near .sa-nav-hitzone,
@@ -260,6 +273,8 @@
   .sa-nav-pointer {
     transition: none;
   }
+  .sa-nav-flag.is-entering,
+  .sa-nav-flag.is-leaving { animation: none; }
 }
 
 

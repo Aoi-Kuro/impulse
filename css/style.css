@@ -569,6 +569,35 @@
   .logo-cube-top    { transform: rotateX(90deg) translateZ(calc(var(--a) / 2)); background: #d7263d; }
   .logo-cube-bottom { transform: rotateX(-90deg) translateZ(calc(var(--a) / 2)); background: #d7263d; }
 
+  /* ── Logo while the database is off (js/logo-offline.js) ──
+     The <img> gets the same three reds as a picture, so a tumble ending hands
+     back to a matching cube. The transition is the change seen mid-tumble. */
+  .logo-cube-face { transition: background-color 0.7s ease; }
+  html.db-offline .logo-cube-front,
+  html.db-offline .logo-cube-back   { background: #8a1226; }
+  html.db-offline .logo-cube-right,
+  html.db-offline .logo-cube-left   { background: #c4203a; }
+  html.db-offline .logo-cube-top,
+  html.db-offline .logo-cube-bottom { background: #ef4757; }
+  /* Kept in the bar: its 3rem is the name's line plus room for this one.
+     Same lettering as the name, at a size that fits. `left` is set from the
+     name's L, and the letters stay in layout so they can be measured. */
+  .site-logo-limited {
+    position: absolute;
+    top: calc(50% + 9px);
+    z-index: 1;
+    visibility: hidden;
+    font-family: 'Kanit', var(--sans);
+    font-weight: 900;
+    font-style: italic;
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    line-height: 1.3;   /* the brackets reach below 1 and got cut off */
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .site-logo-limited.shown { visibility: visible; }
+
   .site-logo-link.logo-tumbling .site-logo-img { visibility: hidden; }
   .site-logo-link.logo-tumbling .logo-cube {
     visibility: visible;
@@ -3559,3 +3588,24 @@
   /* Light theme adjustments */
   body.light .changelog-btn-label { color: var(--muted); }
   body.light .changelog-dot.level-0 { box-shadow: 0 0 4px rgba(var(--accent-rgb),0.4); }
+
+
+/* ── Database offline (js/db-status.js) ──
+   Hidden until html.db-offline says the database is off, so a page can keep
+   an empty one wherever it matters. */
+.db-offline-box {
+  display: none;
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  text-align: left;
+}
+.db-offline-box a { color: var(--accent); }
+html.db-offline .db-offline-box { display: block; }

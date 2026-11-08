@@ -148,13 +148,15 @@ function sortSolutionRows(rows) {
     (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || t(a) - t(b) || (a.id || 0) - (b.id || 0));
 }
 
-async function readStoredSolutionRows(key) {
+// anyAge: for when the server can't be asked, so old beats nothing.
+async function readStoredSolutionRows(key, anyAge) {
   try {
     if (typeof caches === 'undefined') return null;
     const res = await (await caches.open(SOLUTION_ROWS_CACHE)).match(solutionRowUrl(key));
     if (!res) return null;
     const { rows, at } = await res.json();
     if (!Array.isArray(rows) || !rows.length) return null;
+    if (anyAge) return rows;
     const fresh = solutionsIndexStamps
       ? solutionsIndexStamps.get(key) === solutionsStampOf(rows)
       : Date.now() - at < sitePollMs('solutions');
@@ -287,8 +289,15 @@ async function fetchSolutions(problemKey) {
   }
   const url = `${SOLUTIONS_REST}?select=${SOLUTIONS_ROW_COLUMNS}`
             + `&problem_key=eq.${encodeURIComponent(problemKey)}&status=eq.published&order=${SOLUTIONS_ORDER}`;
-  const res = await fetch(url, { headers: solutionsRestHeaders() });
-  if (!res.ok) throw new Error('Could not load the solution.');
+  let res;
+  try {
+    res = await fetch(url, { headers: solutionsRestHeaders() });
+    if (!res.ok) throw new Error('Could not load the solution.');
+  } catch (e) {
+    const old = await readStoredSolutionRows(problemKey, true);
+    if (old) return old;
+    throw e;
+  }
   const rows = await res.json();
   const list = Array.isArray(rows) && rows.length ? rows : null;
   solutionsRowCache.set(problemKey, list);
@@ -300,10 +309,12 @@ async function fetchSolutions(problemKey) {
    Cards are built by quiz-engine.js with the button already in place but
    hidden; this reveals the ones that have a solution. Called after a
    render and again when the index arrives, since the first render
-   usually wins that race. */
+   usually wins that race. With the database off the index may never
+   arrive, so every card shows it: opening one gives what this browser
+   has kept of that solution, or says why there's none. */
 function refreshSolutionButtons() {
   document.querySelectorAll('.solution-btn[data-quiz][data-problem]').forEach((btn) => {
-    const show = hasPublishedSolution(+btn.dataset.quiz, btn.dataset.problem);
+    const show = dbOffline() || hasPublishedSolution(+btn.dataset.quiz, btn.dataset.problem);
     btn.style.display = show ? '' : 'none';
     // A Random quiz card before Check answers: the row holds only this
     // (disabled) button, so it shows exactly when the button does.
@@ -322,6 +333,7 @@ function refreshSolutionsUi() {
 
 function initSolutions() {
   loadSolutionsIndex().then(refreshSolutionsUi);
+  document.addEventListener('db-status-changed', refreshSolutionsUi);
 
   // Coming back to a tab, and every few minutes while one stays in front,
   // pick up the newest copy: usually another tab's, read from localStorage
@@ -703,10 +715,12 @@ async function openSolution(quizNum, problemId, previewRow, solutionId) {
   try {
     rows = previewRow ? [previewRow] : await fetchSolutions(key);
   } catch (e) {
+    const failure = await dbFailureText('Could not load this solution. Check your connection and try again.');
     if (stale()) return;
     loading.hidden = true;
     document.getElementById('solutionMain').hidden = false;
-    body.textContent = 'Could not load this solution. Check your connection and try again.';
+    body.textContent = failure;
+    if (dbOffline()) body.replaceChildren(dbOfflineBox());
     reveal();
     if (solutionPreviewMode) notifyPreviewParent('solution-preview-ready');
     return;

@@ -327,7 +327,7 @@ function _setSolveAllSyncDot(state) {
   if (!dot) return;
   if (typeof _settleLiveDot !== 'function') return;
   if (state === 'green') _settleLiveDot(dot, 'ok', 'Synced');
-  else if (state === 'red') _settleLiveDot(dot, 'error', "Couldn't sync — will retry automatically");
+  else if (state === 'red') _settleLiveDot(dot, 'error', dbProblemText() || "Couldn't sync — will retry automatically");
   else if (state === 'paused') _settleLiveDot(dot, 'syncing', 'Sync is paused for now. Your progress is saved on this device.');
   else _settleLiveDot(dot, 'syncing', 'Not synced yet');
 }

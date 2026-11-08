@@ -1334,7 +1334,7 @@ async function submitForumMessage(opts = {}) {
   } catch (err) {
     console.error('Forum post error:', err);
     forumRevertOptimisticSend(tempId, body);
-    statusEl.textContent = "Couldn't reach the forum, check your connection.";
+    statusEl.textContent = await dbFailureText("Couldn't reach the forum, check your connection.");
     statusEl.classList.add('forum-composer-status-error');
   } finally {
     sendBtn.disabled = false;
@@ -1575,7 +1575,7 @@ async function submitForumClaimModal() {
     }
   } catch (err) {
     console.error('Forum claim error:', err);
-    statusEl.textContent = "Couldn't reach the forum, check your connection.";
+    statusEl.textContent = await dbFailureText("Couldn't reach the forum, check your connection.");
     statusEl.classList.add('forum-composer-status-error');
   }
 }
@@ -1673,7 +1673,7 @@ async function submitForumChangeNickname() {
     }
   } catch (err) {
     console.error('Forum rename error:', err);
-    statusEl.textContent = "Couldn't reach the forum, check your connection.";
+    statusEl.textContent = await dbFailureText("Couldn't reach the forum, check your connection.");
     statusEl.classList.add('forum-composer-status-error');
   }
 }
@@ -1749,7 +1749,7 @@ async function submitForumExitDevice() {
     }
   } catch (err) {
     console.error('Forum exit-device error:', err);
-    statusEl.textContent = "Couldn't reach the forum, check your connection.";
+    statusEl.textContent = await dbFailureText("Couldn't reach the forum, check your connection.");
     statusEl.classList.add('forum-composer-status-error');
   }
 }
@@ -1901,7 +1901,7 @@ async function submitForumEditMessage() {
     }
   } catch (err) {
     console.error('Forum edit-message error:', err);
-    statusEl.textContent = "Couldn't reach the forum, check your connection.";
+    statusEl.textContent = await dbFailureText("Couldn't reach the forum, check your connection.");
     statusEl.classList.add('forum-composer-status-error');
   }
 }
@@ -2576,7 +2576,7 @@ async function loadForumMentionProfile(name, bodyEl, avatarEl) {
     if (isGemini) {
       bodyEl.textContent = "Gemini is the forum's bot helper — tag it in any thread to get a reply.";
     } else {
-      bodyEl.textContent = "Couldn't load — try again.";
+      bodyEl.textContent = await dbFailureText("Couldn't load — try again.");
       avatarEl.appendChild(await forumResolveAvatarEl(name));
     }
   }
@@ -3386,7 +3386,8 @@ async function loadForumInitial() {
   if (error) {
     // Only clobber the view with an error if we had nothing cached to show.
     if (!cached || cached.length === 0) {
-      setForumStatus("Couldn't load the forum right now — try again in a bit.", true);
+      const failure = await dbFailureText("Couldn't load the forum right now — try again in a bit.");
+      if (forumCacheKey() === cacheKey) setForumStatus(failure, true);
       if (loadMoreBtn) loadMoreBtn.style.display = 'none';
     }
     return;
@@ -3517,7 +3518,7 @@ async function runForumSearch(term) {
   if (!input || input.value.trim() !== term) return;
 
   if (error) {
-    setForumStatus("Couldn't search right now — try again in a bit.", true);
+    setForumStatus(await dbFailureText("Couldn't search right now — try again in a bit."), true);
     return;
   }
   if (data.length === 0) {

@@ -4,6 +4,7 @@
 
 html.lockdown #lockdownExitBtn { display: inline-block; margin-left: 0.3rem; color: var(--wrong); opacity: 1; }
 html.lockdown .lockdown-only { display: block; }
+html.lockdown.db-offline .landing-start-btn { display: none; }
 html.lockdown .lockdown-only.btn { display: inline-block; }
 
 html.lockdown .mode-switch-label,

@@ -67,6 +67,16 @@
 }
 @keyframes lockdown-spin { to { transform: rotate(360deg); } }
 .lockdown-card.help .lockdown-spinner { display: none; }
+
+/* The database is off or not responding (openLockdownView, js/lockdown.js).
+   The box here doesn't wait for html.db-offline, which needs a second check:
+   lockdown refuses on the first. */
+.lockdown-db-block { display: none; }
+.lockdown-card.db-blocked .lockdown-db-block { display: block; }
+.lockdown-card.db-blocked .lockdown-db-block .db-offline-box { display: block; margin-top: 0.9rem; }
+.lockdown-card.db-blocked .lockdown-spinner,
+.lockdown-card.db-blocked .lockdown-skip-wrap,
+.lockdown-card.db-blocked .lockdown-help { display: none; }
 .lockdown-card.help .lockdown-card-title { animation: lockdown-title-in 0.3s ease both; }
 @keyframes lockdown-title-in {
   from { opacity: 0; transform: translateX(-6px); }

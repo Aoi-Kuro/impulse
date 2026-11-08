@@ -63,6 +63,7 @@ The procedure is described in [Deploying a new course](#deploying-a-new-course).
   - [Other editor tools](#other-editor-tools)
   - [Managing editor keys](#managing-editor-keys)
 - [Database (Supabase)](#database-supabase)
+- [Database offline](#database-offline)
 - [Edge functions](#edge-functions)
 - [Device ownership (`device_secret`) and tokens](#device-ownership-device_secret-and-tokens)
 - [Gemini integration](#gemini-integration)
@@ -87,8 +88,9 @@ The procedure is described in [Deploying a new course](#deploying-a-new-course).
   + Edge Functions (Deno/TypeScript). The browser talks to it directly with a
   public, RLS-restricted *publishable* key; every write goes through an Edge
   Function.
-- **Netlify** serves the static files, plus one Edge Function
-  (`netlify/edge-functions/share.ts`) for shared solution links. `minify.py`
+- **Netlify** serves the static files, plus two Edge Functions in
+  `netlify/edge-functions/`: `share.ts` for shared solution links and
+  `db-status.ts`, which says whether the database is off. `minify.py`
   builds the minified site and either zips it or deploys it with the Netlify
   CLI (see [Building for deployment](#building-for-deployment-minifypy)).
 - **MathJax 3** (STIX Two font, vendored in `vendor/mathjax/`) renders LaTeX,
@@ -138,7 +140,8 @@ impulse/
 │                            site-version.json; zips it, or with --deploy
 │                            deploys it (and netlify/) with the Netlify CLI
 ├── netlify/edge-functions/
-│   └── share.ts             /s/<key>: a shared solution's link preview
+│   ├── share.ts             /s/<key>: a shared solution's link preview
+│   └── db-status.ts         /db-status: is the course database on?
 ├── seb/                     Safe Exam Browser configs, one per host, and
 │                            quit.html, where leaving lockdown lands
 ├── LICENSE                  GNU AGPL v3 (shown on the Copyright screen)
@@ -179,6 +182,8 @@ impulse/
 │   ├── course-config.js     Loads first. Per-course keys/settings → globals
 │   ├── site-config.js       Settings read from site-version.json: poll
 │   │                        intervals, kill switches, sync pause
+│   ├── db-status.js         Notices the database is off; the offline box
+│   ├── logo-offline.js      Red cube and "Limited (DB lost)" meanwhile
 │   ├── banner-manager.js    One-at-a-time queue for the bottom banners
 │   ├── theme-colors.js      Reads live CSS variables for JS-drawn UI
 │   ├── themes.js            Theme presets, custom theme builder, day/night
@@ -627,7 +632,7 @@ attempts.
    deferring them caused a flash of unstyled markup.
 3. **Tier 1 scripts** (plain tags, in order): `course-config.js`, `lockdown.js`
    (which adds the session files inside Safe Exam Browser),
-   `site-config.js` → `banner-manager.js`, `theme-colors.js`, `themes.js`, `splash.js`,
+   `site-config.js`, `db-status.js` → `banner-manager.js`, `theme-colors.js`, `themes.js`, `splash.js`,
    `easter.js` → `course/quizzes/quiz1..4.js` → `data/changelog.js`,
    `data/tips.js` → `quizzes.js` → `vendor/pt-answer`, `answer-check.js` →
    `stats.js`, `stats-export.js`,
@@ -1445,7 +1450,7 @@ check.
 | Key | Effect | Default |
 |---|---|---|
 | `min_version` | Tabs on an older version reload 5 minutes after a "marked critical" countdown banner appears, outside a timed quiz (a timed quiz once it has run 3 h), instead of after 48 h. Must not be above `version`. | no minimum |
-| `poll` | Background intervals in seconds, each clamped to its limits: `attempts` 45 (15–3600), `attempts_live` 300 (45–3600, used instead of `attempts` while that Realtime channel is connected), `solve_all` 60 (15–3600), `solve_all_live` 300 (60–3600, likewise), `settings` 900 (60–86400), `stats` 45 (15–3600), `forum` 90 (15–3600), `forum_live` 300 (60–3600, used instead of `forum` while the forum's Realtime channel is connected), `forum_quiet` 900 (60–21600), `solutions` 1800 (60–86400, how long one solutions index fetch is reused), `update` 900 (60–1800). Zero or a negative value is ignored (default), not clamped to the fastest rate. A changed value takes effect at once. A timer tick is skipped when the same work already ran less than an interval ago (tab return, Realtime ping), so a catch-up isn't repeated seconds later. | values shown |
+| `poll` | Background intervals in seconds, each clamped to its limits: `attempts` 45 (15–3600), `attempts_live` 300 (45–3600, used instead of `attempts` while that Realtime channel is connected), `solve_all` 60 (15–3600), `solve_all_live` 300 (60–3600, likewise), `settings` 900 (60–86400), `stats` 45 (15–3600), `forum` 90 (15–3600), `forum_live` 300 (60–3600, used instead of `forum` while the forum's Realtime channel is connected), `forum_quiet` 900 (60–21600), `solutions` 1800 (60–86400, how long one solutions index fetch is reused), `update` 900 (60–1800), `db_status` 300 (60–3600, how often the database is rechecked while it is off). Zero or a negative value is ignored (default), not clamped to the fastest rate. A changed value takes effect at once. A timer tick is skipped when the same work already ran less than an interval ago (tab return, Realtime ping), so a catch-up isn't repeated seconds later. | values shown |
 | `off` | `realtime`: no Realtime connections; everything runs on its `poll` interval. `forum_posting`: the forum is read-only (no new messages, replies or edits). | nothing off |
 | `sync_paused` | `true`: attempts, Solve-All progress and settings stay in each browser and are neither sent nor fetched; deleting an attempt and resetting Solve-All still go through. Removing it syncs every visible tab at once. | `false` |
 | `purge_id` | Each browser refills its offline cache once per new value (`sw.js` refills at most once an hour, so a fresh install skips it). | none |
@@ -1666,7 +1671,8 @@ paste, the SVG window) refuse to write there too.
   themes and day/night.
 - **Sidebar**: quizzes as collapsible groups of problems (retired ones
   included), each marked with its state; **Mine** (count only your own
-  solutions) and a filter for "problems with work"; *Check all*, *Editors*
+  solutions), a filter for "problems with work" and *Others* (other people's
+  solutions, yours there or not; one filter at a time); *Check all*, *Editors*
   and, for reviewers, *Reviews (N)* at the bottom.
 - **Problem bar**: problem key, state pill (opens the state panel), *Hide
   figure*, and *Problem* (shows the problem text and accepted answer).
@@ -2013,7 +2019,7 @@ P143 · Solution by @name | Impulse`; the default names nobody.
 - **Editors**: active editors and their links.
 - **Export all as JSON**: `{ rows, reviews? }`, every solution of every
   problem (reviews with their content for level 4), as a backup file.
-- **Keyboard**: Alt+↑ / Alt+↓ previous/next problem (respecting the filter),
+- **Keyboard**: Alt+↑ / Alt+↓ previous/next problem (respecting the filter on),
   Alt+N next problem with no work (with *Mine* on: none of yours).
 - **Version label**: both numbers of `site-version.json` at load, then the
   key's access level once the server has confirmed it (`13.3.0 · 1.0.1 ·
@@ -2126,6 +2132,45 @@ needs no publication; the forum's Postgres Changes subscription requires
 `forum_messages` to be part of the `supabase_realtime` publication.
 
 ---
+
+## Database offline
+
+The database gets paused between semesters, and there is nothing to set: the
+site works it out. A paused Supabase project has no DNS record, so a browser
+sees "Failed to fetch", the same as a dead network, and the 540 status in
+Supabase's docs never arrives (measured 2026-11-07). So after a request to
+Supabase fails, `js/db-status.js` asks `/db-status`, a Netlify Edge Function
+that probes the database and, if the host doesn't answer, looks the name up in
+DNS. It says `paused` only on proof (a 540, or NXDOMAIN; a deleted project looks
+the same), and `down` for anything else that fails. Netlify's CDN keeps the
+answer for 60 s.
+
+`dbOffline()` is true for `paused` at once, and for `down` once a second check a
+minute later agrees. While it is true, `html.db-offline` is set, which shows
+every `.db-offline-box` and lets the CSS hide what can't work. `/db-status`
+failing, or answering `up`, means the trouble is on the viewer's side: nothing
+changes and the usual "check your connection" text stays.
+
+The logo shows it too (`js/logo-offline.js`): the cube's picture is swapped for
+a red one in three shades, during a tumble so the swap can't be seen, and
+"Limited (DB lost)" flies out of it to sit under the course name, L under L.
+Every logo animation runs on the same elements, so they all go on in red.
+
+| Feature | With the database off |
+|---|---|
+| Quizzes, Solve-All | Work. Attempts and progress wait on the device (`siteSyncPaused()` is true for `paused`), and go up by themselves once it is back |
+| Registering | The nickname step before a quiz is skipped, as no name can be claimed. Attempts wait until a name exists |
+| Lockdown | **Refused**, on any problem and not only a confirmed one: an attempt that can't reach the drop-off is lost when SEB closes. `openLockdownView()` asks first and offers an ordinary quiz. Inside SEB the Start button goes away |
+| Forum | Box; composer, filters, search and alerts hidden. Messages this tab already loaded stay |
+| Stats | Box. The attempt log is local and still works |
+| Solutions | The button shows on every problem, as the list of published ones may be out of reach. Opening one gives this browser's stored copy, however old, or the box |
+| Editor | Box on the key screen and over the app. Drafts stay in the browser; saving fails with a one-line reason |
+| Settings sync, push, visit counter, Realtime | Sync waits, Realtime is off, the rest fails quietly |
+| Go offline | Works, but the download has no solutions (listed as failed) |
+
+Starting lockdown and a new device registering are the only things that ask
+`/db-status` while the site is healthy. Without the Edge Function (a zip upload,
+a local copy) the check reads as "up" and the site behaves as before.
 
 ## Edge functions
 
@@ -2268,6 +2313,7 @@ Course-scoped keys start with `STORAGE_PREFIX` (shown as `<p>`).
 | localStorage | `<p>-editor-key`, `-editor-drafts`, `-editor-history`, `-editor-last`, `-editor-sidebar`, `-editor-split`, `-editor-wrap`, `-editor-server-mock` | Editor state (the last one only with `store-mock.js`). |
 | localStorage | `<p>-solutions-index` | Published-solution index (`{at, rows}`), shared by all tabs; refetched once it is 30 minutes old (`poll.solutions`). |
 | localStorage | `<p>-site-config`, `<p>-purge-id` | Last remote settings seen in `site-version.json`; last `purge_id` acted on. |
+| localStorage | `<p>-db-status` | Last answer from `/db-status` (`{state, at, since}`), shared by all tabs. |
 | localStorage | `<p>-update-outdated`, `<p>-update-forced`, `<p>-update-purged` | Update checker: when this version was first seen outdated, last forced reload, last update purge. |
 | IndexedDB | `mathRenderCache` | Typeset Solve-All problem HTML + CSS. |
 | IndexedDB | `<p>-tikz-cache` | Editor only: compiled TikZ steps (newest 300). |
@@ -2310,13 +2356,13 @@ python minify.py path/to/out.zip  # -> that file
 python minify.py --deploy         # build, then deploy to Netlify
 ```
 
-**`--deploy`** is the only way the Edge Function in `netlify/edge-functions/`
-(shared solution links) goes live: a zip uploaded by hand deploys the static
+**`--deploy`** is the only way the Edge Functions in `netlify/edge-functions/`
+(shared solution links, database status) go live: a zip uploaded by hand deploys the static
 files only. It needs, once per machine, Node.js and the Netlify CLI
 (`npm install -g netlify-cli`, then `netlify login`), and once per project
 folder `netlify link` (stored in `.netlify/`, git-ignored; `NETLIFY_SITE_ID`
-overrides it). The build is the same as for the zip; `share.ts` is then
-copied next to it with this course's Supabase URL, publishable key and
+overrides it). The build is the same as for the zip; `share.ts` and
+`db-status.ts` are then copied next to it with this course's Supabase URL, publishable key and
 names filled in from `js/course-config.js` (the course in `index.html`'s
 `<head data-course>`), and `netlify deploy --prod` runs from that folder.
 

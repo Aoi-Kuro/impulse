@@ -55,7 +55,7 @@ const SolutionStore = (function () {
       // no CORS headers back and fetch() rejects before any status is seen.
       // So the message names the likeliest cause rather than claiming the
       // network is down.
-      const err = new Error('Could not reach the solutions-admin function. It may not be deployed in this Supabase project yet, or you are offline.');
+      const err = new Error(await dbFailureText('Could not reach the solutions-admin function. It may not be deployed in this Supabase project yet, or you are offline.'));
       err.offline = true;
       throw err;
     }

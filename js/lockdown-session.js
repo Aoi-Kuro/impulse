@@ -99,7 +99,8 @@ function dropOffLockdownAttempt(entry) {
         await new Promise(r => setTimeout(r, 2000));
       }
     }
-    setLockdownSaveNote("Couldn't save this attempt. Check your connection.");
+    await checkDbStatus();
+    setLockdownSaveNote(`Couldn't save this attempt. ${dbProblemText() || 'Check your connection.'}`);
   });
 }
 
@@ -117,6 +118,7 @@ function requestExitLockdown() {
 
 document.addEventListener('DOMContentLoaded', () => {
   readLockdownLinkTicket();
+  checkDbStatus({ force: true });
   const sub = document.querySelector('.landing-sub');
   if (sub) sub.textContent = '🔒 Lockdown mode: choose a set and hit start';
 });

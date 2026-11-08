@@ -1520,7 +1520,7 @@ async function pollStatsPanel() {
 
   if (typeof _settleLiveDot === 'function') {
     if (ok) _settleLiveDot(dot, 'ok', 'Synced');
-    else _settleLiveDot(dot, 'error', "Connection lost: waiting for network");
+    else _settleLiveDot(dot, 'error', await dbFailureText("Connection lost: waiting for network"));
   }
 }
 

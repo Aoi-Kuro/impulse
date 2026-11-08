@@ -104,7 +104,7 @@ function _updateAttemptsSyncDot(syncing) {
     return;
   }
   if (_lastSyncFailed) {
-    _settleLiveDot(dot, 'error', "Couldn't sync — will retry automatically");
+    _settleLiveDot(dot, 'error', dbProblemText() || "Couldn't sync — will retry automatically");
     return;
   }
   const upToDate = loadStats().every(a => a.synced);
