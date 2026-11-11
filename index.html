@@ -238,6 +238,9 @@
 <link rel="stylesheet" href="css/card-layouts.css">
 <!-- Flags on problem cards (js/problem-flags.js) -->
 <link rel="stylesheet" href="css/problem-flags.css">
+<!-- Exam handout button and window (js/handout.js); after problem-flags.css,
+     whose header rules it adjusts -->
+<link rel="stylesheet" href="css/handout.css">
 <!-- Lockdown mode (js/lockdown.js) -->
 <link rel="stylesheet" href="css/lockdown.css">
 <!-- TeX fonts: dvisvgm writes figure glyphs as private-use codepoints in
@@ -1445,6 +1448,8 @@
 <script src="course/quizzes/quiz2-mistakes.js"></script>
 <script src="course/quizzes/quiz3-mistakes.js"></script>
 <script src="course/quizzes/quiz4.js"></script>
+<script src="course/quizzes/quiz4-mistakes.js"></script>
+<script src="course/quizzes/handouts.js"></script>
 
 <!-- ── Changelog data ── -->
 <script src="js/data/changelog.js"></script>
@@ -1482,6 +1487,8 @@
 <script src="js/solutions.js"></script>
 <!-- Flag button at the top right of every problem card. -->
 <script src="js/problem-flags.js"></script>
+<!-- Exam handout button after the number of a problem whose quiz has one. -->
+<script src="js/handout.js"></script>
 <!-- Long-press affordance on the site logo for the solutions authors (see
      the file's own header). Nothing is rendered until the hold completes. -->
 <!-- Personal cabinet (👤 → Stats) beside the logo; placed before
@@ -1544,6 +1551,7 @@
       'course/figures/quiz3.js',
       'course/figures/quiz4.js',
       'course/figures/manual.js',
+      'course/figures/inertia.js',
       'course/animations/quiz1.js',
       'course/animations/quiz2.js',
       'course/animations/quiz3.js',

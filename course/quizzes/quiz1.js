@@ -24,7 +24,7 @@ const Quiz_1_Problems = [
     text:"2 astronauts are in a spherical space station. If, as is typical, each of them breathes about 500 cm$^{3}$ of air with each breath, what volume of air (in cubic meters) do these astronauts breathe in 69 days? Assume 10 breaths per minute." },
 
   { id:"P8", topic:"Units", answer:37.7595, units:[],
-    text:"4 astronauts are in a spherical space station whose internal radius is 6 m. Each of them breathes about 520 cm³ of air with each breath, at 8 breaths per minute. After how many days will the astronauts have breathed a total volume of air equal to the internal volume of the station? (enter only numerical answer with no units)" },
+    text:"4 astronauts are in a spherical space station whose internal radius is 6 m. Each of them breathes about 520 cm³ of air with each breath, at 8 breaths per minute. After how many days will the astronauts have breathed a total volume of air equal to the internal volume of the station?" },
 
   // ──────────────────── Uncertainty ────────────────────
 
@@ -190,7 +190,7 @@ const Quiz_1_Problems = [
     text:"To start an avalanche on a mountain slope, an artillery shell is fired with an initial velocity of 291 m s$^{-1}$ at 57° above the horizontal. It explodes on the mountainside 46 s after firing. What is the horizontal coordinate of the shell where it explodes relative to its firing point?" },
 
   { id:"P60", topic:"Kinematics of projectiles", answer:2556.7818058073, units:["m"],
-    text:"To start an avalanche on a mountain slope, an artillery shell is fired with an initial velocity of 301 m s$^{-1}$ at 61° above the horizontal. It explodes on the mountainside 41 s after firing. What is the vertical distance of the shell where it explodes relative to its firing point?" },
+    text:"To start an avalanche on a mountain slope, an artillery shell is fired with an initial velocity of 301 m s$^{-1}$ at 61° above the horizontal. It explodes on the mountainside 41 s after firing. What is the vertical distance of the shell where it explodes relative to its firing point? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
 
   { id:"P61", topic:"Kinematics of projectiles", answer:161.174, units:["m/s"],
     text:"To start an avalanche on a mountain slope, an artillery shell is fired with an initial velocity of 296 m s$^{-1}$ at 62° above the horizontal. It explodes on the mountainside 35 s after firing. What is the speed of the shell at the moment it explodes? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },
@@ -313,7 +313,7 @@ const Quiz_1_Problems = [
     text:"A force of magnitude 46.5 N is applied at an angle of 27° above the horizontal to a block of mass 4.7 kg resting on a horizontal surface. Taking the coefficient of kinetic friction between the block and the surface equal to 0.1, calculate the speed of the block 2.8 s after it starts moving. Take the gravitational acceleration $g$ = 9.8 m s$^{-2}$." },
 
   { id:"P99", topic:"Friction", answer:749.53631, units:["N"],
-    text:"Figure shows two blocks with masses $m_{1}$ = 20.6 kg and $m_{2}$ = 61.2 kg; the blocks are free to move. The surface beneath $m_{2}$ is frictionless and the coefficient of static friction between the blocks is 0.36. Find the minimal force $F$ required to hold $m_{1}$ against $m_{2}$? <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_1/unnamed(11).webp\" alt=\"figure\" width=\"350px\"></div>" },
+    text:"Figure shows two blocks with masses $m_{1}$ = 20.6 kg and $m_{2}$ = 61.2 kg; the blocks are free to move. The surface beneath $m_{2}$ is frictionless and the coefficient of static friction between the blocks is 0.36. Find the minimal force $F$ required to hold $m_{1}$ against $m_{2}$? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_1/unnamed(11).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
   { id:"P100", topic:"Friction", answer:9.56522, units:["m/s^2"],
     text:"Figure shows two blocks with masses $m_1$ = 21 kg and $m_2$ = 59.5 kg. A horizontal force $F$ = 770 N presses $m_1$ against the vertical face of $m_2$, and the coefficient of static friction between the blocks is large enough that $m_1$ does not slip down. The surface beneath $m_2$ is frictionless. Find the magnitude of the acceleration of the two blocks. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_1/unnamed(11).webp\" alt=\"figure\" width=\"350px\"></div>" },
@@ -324,7 +324,7 @@ const Quiz_1_Problems = [
     text:"A cord exerts a force $F$ = 5 N at an angle $\\theta$ = 45° above the horizontal to a block of mass 5 kg, pulling the block along a horizontal frictionless floor. What is the magnitude of the acceleration of the block?" },
 
   { id:"P102", topic:"Newton’s 2nd law", answer:42.2897, units:["N"],
-    text:"A cord exerts a force $F$ = 12 N at an angle $\\theta$ = 34° above the horizontal to a block of mass 5 kg, pulling the block along a horizontal frictionless floor. What is the magnitude of the normal force exerted on the mass by the floor? <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_1/unnamed(12).webp\" alt=\"figure\" width=\"350px\"></div>" },
+    text:"A cord exerts a force $F$ = 12 N at an angle $\\theta$ = 34° above the horizontal to a block of mass 5 kg, pulling the block along a horizontal frictionless floor. What is the magnitude of the normal force exerted on the mass by the floor? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$. <div class=\"fig-img-wrap\"><img src=\"course/images/quiz_1/unnamed(12).webp\" alt=\"figure\" width=\"350px\"></div>" },
 
   { id:"P103", topic:"Newton’s 2nd law", answer:56.6792, units:["N"],
     text:"A rod exerts a force $F$ = 10.5 N at an angle $\\theta$ = 47° below the horizontal on a block of mass 5 kg, pushing the block along a horizontal frictionless floor. What is the magnitude of the normal force exerted on the block by the floor? The gravitational acceleration is $g$ = 9.8 m s$^{-2}$." },

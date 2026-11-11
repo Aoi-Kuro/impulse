@@ -65,6 +65,7 @@ const OFFLINE_CORE_FILES = [
   'css/solutions.css',
   'css/card-layouts.css',
   'css/problem-flags.css',
+  'css/handout.css',
   'css/lockdown.css',
   'vendor/tikzjax/fonts.css',
   'vendor/dompurify/purify.min.js',
@@ -92,6 +93,7 @@ const OFFLINE_CORE_FILES = [
   'js/solution-render.js',
   'js/solutions.js',
   'js/problem-flags.js',
+  'js/handout.js',
   'js/cabinet-link.js',
   'js/editor-access.js',
   'js/quiz-engine.js',
@@ -127,12 +129,15 @@ const OFFLINE_CORE_FILES = [
   'course/quizzes/quiz1-mistakes.js',
   'course/quizzes/quiz2-mistakes.js',
   'course/quizzes/quiz3-mistakes.js',
+  'course/quizzes/quiz4-mistakes.js',
+  'course/quizzes/handouts.js',
   'course/quizzes/quizzes.js',
   'course/figures/quiz1.js',
   'course/figures/quiz2.js',
   'course/figures/quiz3.js',
   'course/figures/quiz4.js',
   'course/figures/manual.js',
+  'course/figures/inertia.js',
   'course/animations/quiz1.js',
   'course/animations/quiz2.js',
   'course/animations/quiz3.js',
@@ -267,6 +272,11 @@ function discoverCourseImageUrls() {
         while ((m = re.exec(text))) urls.add(m[1]);
       });
     });
+  }
+  // Exam handouts' original images (course/quizzes/handouts.js), shown while
+  // Redrawn figures is off.
+  if (typeof QUIZ_HANDOUTS !== 'undefined') {
+    Object.values(QUIZ_HANDOUTS).forEach((h) => { if (h && h.image) urls.add(h.image); });
   }
   return Array.from(urls);
 }

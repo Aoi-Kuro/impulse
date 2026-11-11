@@ -442,7 +442,7 @@ const Quiz_4_Problems = [
     text:"A Carnot engine whose low-temperature reservoir is at $-$90 °C has an efficiency of 25%. The efficiency is to be increased to 50%. By how many kelvins must the temperature of the high-temperature reservoir be increased if the temperature of the low-temperature reservoir remains constant?" },
 
   { id:"P148", topic:"Heat engines and Carnot cycles", answer:228.75, units:["K"],
-    text:"A Carnot engine whose low-temperature reservoir is at $-$90 °C has an efficiency of 20%. What is the temperature of its high-temperature reservoir? Answer in kelvins (K)." },
+    text:"A Carnot engine whose low-temperature reservoir is at $-$90 °C has an efficiency of 20%. What is the temperature of its high-temperature reservoir?" },
 
   { id:"P149", topic:"Heat engines and Carnot cycles", answer:67.667, units:["K"],
     text:"A Carnot engine whose low-temperature reservoir is at $-$70 °C has an efficiency of 25%. The efficiency is to be increased to 50%. By how many kelvins must the temperature of the low-temperature reservoir be decreased if the temperature of the high-temperature reservoir remains constant? Find the magnitude of the temperature change." },

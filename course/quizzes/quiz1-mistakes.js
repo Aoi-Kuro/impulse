@@ -28,6 +28,13 @@ const Quiz_1_Mistakes = {
   P6: [
     { v: 563.168, s: "$563.2$", n: "1 ft² is 0.0929 m², so multiply by it, don't divide", c: 2 },
   ],
+  // P8 (c: 0 = not from attempts: the official text doesn't say the answer
+  // is in days without a unit, so these note it)
+  P8: [
+    { v: 3262420.8, s: "$3.26\\times10^{6}$", n: "That is in seconds. The answer goes in days, as a bare number with no unit, though the official text doesn't say so", c: 0 },
+    { v: 906.228, s: "$906.2$", n: "That is in hours. The answer goes in days, as a bare number with no unit, though the official text doesn't say so", c: 0 },
+    { v: 54373.68, s: "$54374$", n: "That is in minutes. The answer goes in days, as a bare number with no unit, though the official text doesn't say so", c: 0 },
+  ],
   // P9
   P9: [
     { v: 0.00515464, s: "$0.005155$", n: "Use the same unit for both: 970 km is 970000 m", c: 2 },

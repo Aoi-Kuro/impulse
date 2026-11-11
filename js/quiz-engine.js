@@ -743,6 +743,7 @@ function render() {
     card.innerHTML = `
       <div class="card-header">
         <span class="problem-num">${numDisplay}</span>
+        ${typeof handoutButtonHtml === 'function' ? handoutButtonHtml(p._quizNum || selectedQuizNum) : ''}
         <span class="problem-topic">${p.topic}</span>
         ${typeof problemFlagHtml === 'function' ? problemFlagHtml(p._quizNum || selectedQuizNum, p.id) : ''}
       </div>
@@ -1600,6 +1601,7 @@ function buildSolveAllCards(container, batchSize = 12) {
           card.innerHTML = `
             <div class="card-header">
               <span class="problem-num">${problemLabel(p._quizNum || selectedQuizNum, p.id)}</span>
+              ${typeof handoutButtonHtml === 'function' ? handoutButtonHtml(p._quizNum || selectedQuizNum) : ''}
               <span class="problem-topic">${p.topic}</span>
               ${typeof problemFlagHtml === 'function' ? problemFlagHtml(p._quizNum || selectedQuizNum, p.id) : ''}
             </div>
@@ -2515,7 +2517,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '14.0.1';
+const CURRENT_VERSION = '14.0.2';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.

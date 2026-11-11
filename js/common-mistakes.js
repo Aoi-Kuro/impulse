@@ -22,6 +22,7 @@ const QUIZ_MISTAKES = {
   1: typeof Quiz_1_Mistakes !== 'undefined' ? Quiz_1_Mistakes : null,
   2: typeof Quiz_2_Mistakes !== 'undefined' ? Quiz_2_Mistakes : null,
   3: typeof Quiz_3_Mistakes !== 'undefined' ? Quiz_3_Mistakes : null,
+  4: typeof Quiz_4_Mistakes !== 'undefined' ? Quiz_4_Mistakes : null,
 };
 
 function problemMistakes(quizNum, problemId) {

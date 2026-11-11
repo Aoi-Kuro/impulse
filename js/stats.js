@@ -314,6 +314,7 @@ function renderAttemptReview(attempt) {
     card.innerHTML = `
       <div class="card-header">
         <span class="problem-num">${numDisplay}</span>
+        ${typeof handoutButtonHtml === 'function' ? handoutButtonHtml(a.quiz_num) : ''}
         <span class="problem-topic">${p.topic}</span>
         ${flagHtml}
       </div>
