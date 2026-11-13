@@ -1,14 +1,14 @@
 -- ============================================================================
--- ALL — migrations 000 to 018 folded into one script.
+-- ALL — migrations 000 to 019 folded into one script.
 --
 -- Builds a completely empty Supabase project straight into the end state
--- that running 000, 001, ..., 018 in order produces. Every table is created
+-- that running 000, 001, ..., 019 in order produces. Every table is created
 -- in its FINAL shape (columns added by later ALTERs are part of the CREATE),
 -- and every function is its LAST definition. One-off data fixes from the
 -- migrations (backfilling saved_by, owner_id, author_id, level = 4, ...) are
 -- left out: on an empty database they have nothing to update.
 --
--- Use EITHER this file OR 000-018, never both. The numbered files remain the
+-- Use EITHER this file OR 000-019, never both. The numbered files remain the
 -- history and explanation of each piece; look there for the "why".
 --
 -- Run once, in the SQL Editor of a new, empty project. After it, still do
@@ -823,6 +823,42 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.forum_messages;
   END IF;
 END $$;
+
+
+-- ----------------------------------------------------------------------------
+-- Nickname hashes for signing up offline (019). The salt is random per
+-- database; minify.py ships the result as nickname-hashes.json.
+-- ----------------------------------------------------------------------------
+
+INSERT INTO public.app_variables (key, value)
+VALUES ('nickname_hash_salt', to_jsonb(replace(gen_random_uuid()::text, '-', '')))
+ON CONFLICT (key) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.nickname_hashes()
+RETURNS jsonb
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+  WITH s AS (
+    SELECT value #>> '{}' AS salt FROM public.app_variables WHERE key = 'nickname_hash_salt'
+  ), d AS (
+    SELECT sha256(convert_to(s.salt || ':' || i.nickname_lower, 'UTF8')) AS h
+      FROM public.identities i, s
+     WHERE i.nickname_lower IS NOT NULL
+  )
+  SELECT jsonb_build_object(
+    'salt',   (SELECT salt FROM s),
+    'bits',   20,
+    'count',  (SELECT count(*) FROM d),
+    'hashes', COALESCE((SELECT jsonb_agg(v ORDER BY v) FROM (
+                SELECT DISTINCT (get_byte(h, 0) << 12) | (get_byte(h, 1) << 4) | (get_byte(h, 2) >> 4) AS v FROM d
+              ) x), '[]'::jsonb)
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.nickname_hashes() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.nickname_hashes() TO anon, authenticated;
 
 
 -- ----------------------------------------------------------------------------

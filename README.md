@@ -2203,8 +2203,8 @@ Every logo animation runs on the same elements, so they all go on in red.
 | Feature | With the database off |
 |---|---|
 | Quizzes, Solve-All | Work. Attempts and progress wait on the device (`siteSyncPaused()` is true for `paused`), and go up by themselves once it is back |
-| Registering | The nickname step before a quiz is skipped, as no name can be claimed. Attempts wait until a name exists |
-| Lockdown | **Refused**, on any problem and not only a confirmed one: an attempt that can't reach the drop-off is lost when SEB closes. `openLockdownView()` asks first and offers an ordinary quiz. Inside SEB the Start button goes away |
+| Registering | New accounts are made on the device and registered later: see [Signing up while it is off](#signing-up-while-it-is-off). Logging in to an existing account waits. Without a usable `nickname-hashes.json` the nickname step is skipped and attempts wait until a name exists |
+| Lockdown | **Refused**, on any problem and not only a confirmed one: an attempt that can't reach the drop-off is lost when SEB closes. `openLockdownView()` asks first and offers an ordinary quiz. Inside SEB the Start button goes away. Also refused for an account made offline until it is registered |
 | Forum | Box; composer, filters, search and alerts hidden. Messages this tab already loaded stay |
 | Stats | Box. The attempt log is local and still works |
 | Solutions | The button shows on every problem, as the list of published ones may be out of reach. Opening one gives this browser's stored copy, however old, or the box |
@@ -2215,6 +2215,36 @@ Every logo animation runs on the same elements, so they all go on in red.
 Starting lockdown and a new device registering are the only things that ask
 `/db-status` while the site is healthy. Without the Edge Function (a zip upload,
 a local copy) the check reads as "up" and the site behaves as before.
+
+### Signing up while it is off
+
+`js/offline-account.js`. A new device checks the nickname it wants against
+`nickname-hashes.json`, which `minify.py` fetches at every build from this
+course's own database (`nickname_hashes()`, migration 019): the first 20 bits of
+`sha256(salt:nickname_lower)` per name, with a random salt per database, so the
+file can't be read back into names. About 1 free name in 500 reads as taken.
+The file names its course and Supabase project, and the page ignores one that
+isn't its own.
+
+If the name reads as free, the account is made on the device with a PIN made
+there too, and kept as a "pending" account: quizzes run, attempts wait
+(`synced:false`), the forum is read-only, lockdown is refused. When the
+database is back it is claimed with `claim-nickname`'s `offline_created` mode,
+which takes the device's PIN and, for a taken name, answers `taken` without
+ever trying that PIN on the owner's account. A taken or refused name puts a
+rename window in front of Quizzes and Solve them all (with "it's mine: log in");
+a pending account older than a week (Netlify's clock, from the `Date` header)
+gets a window with a ready message for the admin instead.
+
+The name rules live in `js/nickname-rules.js`; the same block is copied into
+`claim-nickname.ts` and the build stops if the two differ. Names are compared
+after NFC and trimming.
+
+The build stops if the database doesn't answer and there is no earlier list for
+the same course and project (kept in `%LOCALAPPDATA%/impulse-minify/`).
+`--no-nickname-hashes` builds without one, which turns offline sign-up off.
+`--deploy` also refuses a linked Netlify site other than the course's
+`netlifySiteId` in `js/course-config.js`.
 
 ## Edge functions
 
@@ -2358,6 +2388,7 @@ Course-scoped keys start with `STORAGE_PREFIX` (shown as `<p>`).
 | localStorage | `<p>-solutions-index` | Published-solution index (`{at, rows}`), shared by all tabs; refetched once it is 30 minutes old (`poll.solutions`). |
 | localStorage | `<p>-site-config`, `<p>-purge-id` | Last remote settings seen in `site-version.json`; last `purge_id` acted on. |
 | localStorage | `<p>-db-status` | Last answer from `/db-status` (`{state, at, since}`), shared by all tabs. |
+| localStorage | `<p>_pending_account`, `<p>_server_time` | An account made while the database was offline (`{nickname, pin, createdAt, conflict?}`), and the last Netlify `Date` seen, for its one-week limit. |
 | localStorage | `<p>-update-outdated`, `<p>-update-forced`, `<p>-update-purged` | Update checker: when this version was first seen outdated, last forced reload, last update purge. |
 | IndexedDB | `mathRenderCache` | Typeset Solve-All problem HTML + CSS. |
 | IndexedDB | `<p>-tikz-cache` | Editor only: compiled TikZ steps (newest 300). |

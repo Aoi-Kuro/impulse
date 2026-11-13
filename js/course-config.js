@@ -22,18 +22,18 @@ const COURSES = {
   phys162: {
     storagePrefix: 'phys162',
     supabase: {
-      url: 'https://eammcjjsjyvmbjsloxpz.supabase.co',
+      url: 'https://tnvdwirpveqnjyvbuxvw.supabase.co',
       // Publishable key — safe to be public, RLS controls what it can
       // actually do (see the comment that used to live in
       // js/supabase-config.js). Never put the sb_secret_... key here.
-      publishableKey: 'sb_publishable_NjZjecxc0iP1JnPSk5cJWQ_qllgCF7P',
+      publishableKey: 'sb_publishable_DRjPrjYSPSZEkeIK28w5JA_8tOYSt_z',
     },
     // Public half of the VAPID keypair post-message.ts (in that project's
     // own superbase/edge-functions) signs pushes with. Public by design —
     // this is what identifies "a push claiming to be from this app", not
     // what lets anyone send one. Each Supabase project gets its own
     // keypair, so this is course-specific too.
-    pushVapidPublicKey: 'BHEaaW9g9lqgGVa8cpwWaXq8Sy6vSdxYSJbhRpshv1G5WRExKk0NHqpU3oRPF8vetfrGzjmlV9T1u_xl18LszGY',
+    pushVapidPublicKey: 'BDRo_Yl40BpT1hZXKWrYvgNyJXLPQQ2twT9-u4w4TR73UuMAf4F5m9Pce1_MEdk5LzpWJzi5HqIZK8Iso_s9JxQ',
     // How big a "Random N" draw is, and — in cumulative mode — how many
     // of those N come from the previous quiz vs. the current one. Courses
     // can differ here (more/fewer problems per exam), so this isn't a
@@ -47,7 +47,10 @@ const COURSES = {
     // screen (see forum.js's renderForumPinnedBanner) — an ordinary
     // message, nothing server-side marks it special, this id is the only
     // thing that says "this one is the pinned one".
-    pinnedMessageId: 336,
+    pinnedMessageId: null,
+    // The Netlify site this course deploys to (`netlify link`); minify.py
+    // --deploy refuses any other.
+    netlifySiteId: '64b151a5-f4e0-4cc6-8fd6-ef5728babcdb',
     // Which course this is for CHANGELOG.js's per-entry `scope` filtering
     // (js/data/changelog.js): 0 always means "both courses", so 0 is never
     // used here — this is the id that means "this course specifically".
@@ -98,6 +101,10 @@ const COURSES = {
     },
     pinnedMessageId: 2,
     changelogScope: 1,
+    // The Netlify site this course deploys to (`netlify link`). minify.py
+    // --deploy refuses any other site, so a build of this course can't land
+    // on another course's site with this course's nickname list.
+    netlifySiteId: 'e4972310-9b75-4dad-ad86-675c2f54b3d9',
     // TODO(phys161 release): confirm ogDescription/twitterDescription
     // actually describe phys161's real topic coverage — copied from
     // course/course.json's phys161 block, not re-verified here.

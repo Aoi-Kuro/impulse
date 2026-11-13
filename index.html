@@ -655,6 +655,7 @@
       </div>
       <div class="lockdown-db-block">
         <div class="db-offline-box"></div>
+        <div class="db-offline-box lockdown-pending-box">Your account was made while the database was offline and isn't registered yet, so a lockdown attempt would have nowhere to go. Lockdown opens once it's registered.</div>
         <div class="lockdown-actions">
           <button class="btn btn-primary" onclick="takeOrdinaryQuizInstead()">Take it as an ordinary quiz</button>
         </div>
@@ -1197,6 +1198,8 @@
 <div class="stats-modal-backdrop" id="gettingStartedModalBackdrop" onclick="if(event.target===this) closeGettingStartedModal()">
   <div class="stats-modal-box gs-modal-box">
     <div class="stats-modal-title">Getting Started</div>
+    <!-- Shown only while the database is offline (js/offline-account.js). -->
+    <div class="gs-offline-note" id="gsOfflineNote" style="display:none;">The database is offline right now. You can still start: your account is made on this device and registered once the database is back.</div>
     <div class="stats-modal-actions gs-start-row">
       <button type="button" class="stats-modal-btn primary gs-start-btn" onclick="chooseGettingStarted('create')">I'm new</button>
       <button type="button" class="stats-modal-btn gs-start-btn" onclick="chooseGettingStarted('restore')">I have an account</button>
@@ -1283,8 +1286,46 @@
       Keep this secret. Anyone who has it can claim your nickname on another device or drop it entirely.
     </div>
     <div class="forum-pin-display" id="forumPinModalDisplay">—</div>
+    <div class="acct-note" id="forumPinModalPendingNote" style="display:none;">Your account registers once the database is back. Until then it lives only in this browser, so don't clear this site's data.</div>
     <div class="stats-modal-actions">
       <button class="stats-modal-btn" onclick="closeForumPinModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Account made offline: new name needed (js/offline-account.js) ──
+     After a failed sync it stands in front of Quizzes and Solve them all:
+     no backdrop close, and Back only goes back to where you were. Also the
+     rename for an account that hasn't synced yet (Stats → Change nickname). -->
+<div class="stats-modal-backdrop" id="offlineRenameModalBackdrop">
+  <div class="stats-modal-box acct-modal">
+    <div class="stats-modal-title" id="offlineRenameTitle">Choose a new nickname</div>
+    <p class="acct-text" id="offlineRenameDesc"></p>
+    <div class="acct-field" id="offlineRenameField">
+      <input type="text" id="offlineRenameInput" class="forum-name-input" placeholder="New nickname" maxlength="40" autocomplete="off" oninput="this.value = this.value.replace(/\s+/g, '')" onkeydown="if(event.key==='Enter'){event.preventDefault();submitOfflineRename();}">
+      <div class="forum-composer-status" id="offlineRenameStatus"></div>
+    </div>
+    <div class="stats-modal-actions acct-actions">
+      <button type="button" class="forum-identity-link-btn acct-aside" id="offlineRenameMineBtn" style="display:none;" onclick="offlineRenameLogIn()">It's mine: log in</button>
+      <button class="stats-modal-btn" onclick="closeOfflineRenameModal()">Back</button>
+      <button class="stats-modal-btn primary" id="offlineRenameSave" onclick="submitOfflineRename()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Account made offline, a week on (js/offline-account.js) ── -->
+<div class="stats-modal-backdrop" id="offlineExpiredModalBackdrop">
+  <div class="stats-modal-box acct-modal">
+    <div class="stats-modal-title">Your account is still offline</div>
+    <p class="acct-text" id="offlineExpiredDesc"></p>
+    <p class="acct-text acct-text-quiet">Quizzes and Solve them all are paused until it's back. Your attempts are safe on this device.</p>
+    <div class="acct-label">Send this to the admin</div>
+    <div class="offline-message-box" id="offlineExpiredMessage"></div>
+    <div class="forum-composer-status" id="offlineExpiredStatus"></div>
+    <div class="stats-modal-actions acct-actions">
+      <button class="stats-modal-btn acct-aside" onclick="closeOfflineExpiredModal()">Back</button>
+      <button class="stats-modal-btn" onclick="copyOfflineAdminMessage()">Copy message</button>
+      <a class="stats-modal-btn primary" id="offlineExpiredTelegram" href="https://t.me/Aoi_Kuro" target="_blank" rel="noopener">Open Telegram</a>
     </div>
   </div>
 </div>
@@ -1573,6 +1614,8 @@
       'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
       'js/site-visits.js',
       'js/forum.js',
+      'js/nickname-rules.js',
+      'js/offline-account.js',
       'js/push-notifications.js',
       'js/settings-sync.js',
     ]);

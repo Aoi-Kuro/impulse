@@ -169,3 +169,9 @@
 #lockdownExitBtn,
 #calcToggleBtn,
 .lockdown-only { display: none; }
+
+/* An account made offline and not registered yet (openLockdownView): its own
+   box in place of the database one. */
+.lockdown-card.db-blocked .lockdown-db-block .lockdown-pending-box { display: none; }
+.lockdown-card.pending-blocked .lockdown-db-block .lockdown-pending-box { display: block; }
+.lockdown-card.pending-blocked .lockdown-db-block .db-offline-box:not(.lockdown-pending-box) { display: none; }

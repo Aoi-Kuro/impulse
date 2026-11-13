@@ -86,8 +86,11 @@
     if (typeof openStatsScreen !== 'function') return;
     // Signed out, a personal cabinet has nothing to show: sign in first, then
     // carry on to Stats. getForumNickname is in js/forum.js, which loads late.
-    if (typeof getForumNickname === 'function' && !getForumNickname()) {
+    // An account made offline (js/offline-account.js) counts as signed in.
+    if (typeof getForumNickname === 'function' && !getForumNickname()
+        && !(typeof getPendingAccount === 'function' && getPendingAccount())) {
       if (isOpen('statsScreen')) openSfpGettingStarted();
+      else if (typeof offlineAccountGate === 'function') offlineAccountGate(openCabinet, { quiz: false });
       else openGettingStartedModal(openCabinet);
       return;
     }

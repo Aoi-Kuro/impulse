@@ -1289,6 +1289,23 @@ function renderSfpIdentity(nickname) {
   const exitItem   = document.getElementById('sfpSettingsExitItem');
   if (!nameEl || !avatarEl) return;
 
+  // Made offline, not registered yet (js/offline-account.js): its name and
+  // PIN, and Change nickname (renames it before it syncs), but no Exit,
+  // which is a server-side unlink.
+  const pending = !nickname && typeof getPendingAccount === 'function' ? getPendingAccount() : null;
+  if (pending) {
+    if (gsItem)     gsItem.style.display     = 'none';
+    if (changeItem) changeItem.style.display = '';
+    if (pinItem)    pinItem.style.display    = '';
+    if (exitItem)   exitItem.style.display   = 'none';
+    avatarEl.innerHTML = '';
+    nameEl.textContent = pending.nickname;
+    const joinedEl = document.getElementById('sfpJoinedAt');
+    if (joinedEl) joinedEl.textContent = pending.conflict ? 'Needs a new name' : 'Registers when the database is back';
+    loadSfpAvatar(pending.nickname, avatarEl);
+    return;
+  }
+
   // Nothing claimed yet: the gear menu collapses down to just "Getting
   // started" (openSfpGettingStarted below) instead of offering
   // Change/PIN/Exit, which don't mean anything without an identity yet.
@@ -1315,10 +1332,14 @@ function renderSfpIdentity(nickname) {
 // panel instead of launching a quiz.
 function openSfpGettingStarted() {
   if (typeof openGettingStartedModal !== 'function') return;
-  openGettingStartedModal(() => {
+  const done = () => {
     renderSfpIdentity((typeof getForumNickname === 'function') ? getForumNickname() : '');
     if (typeof pollStatsPanel === 'function') pollStatsPanel();
-  });
+  };
+  // With the database offline, offlineAccountGate (js/offline-account.js)
+  // opens the offline version of the same screen.
+  if (typeof offlineAccountGate === 'function') offlineAccountGate(done, { quiz: false });
+  else openGettingStartedModal(done);
 }
 
 // ── Settings gear dropdown (Change nickname / Your PIN / Exit) ──────────────
@@ -1431,6 +1452,11 @@ async function loadSfpAvatar(nickname, avatarEl) {
 function openSfpNicknameEditor() {
   if (typeof openForumClaimModal !== 'function') return;
   const current = (typeof getForumNickname === 'function') ? getForumNickname() : '';
+  // Not registered yet: rename the pending account (js/offline-account.js).
+  if (!current && typeof getPendingAccount === 'function' && getPendingAccount()) {
+    openOfflineRenameModal({ onDone: () => renderSfpIdentity('') });
+    return;
+  }
   const onSuccess = () => {
     renderSfpIdentity((typeof getForumNickname === 'function') ? getForumNickname() : '');
     // A claim/rename/switch changes which identity this device resolves

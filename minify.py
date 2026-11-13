@@ -6,6 +6,7 @@ minify.py  ·  Builds a minified copy of the site as a zip for Netlify.
     python minify.py --deploy        -> deploys the build to Netlify instead of zipping it
     python minify.py --draft         -> the same, as a draft deploy: own preview URL, live site
                                         untouched; prints the command that publishes it later
+    --no-nickname-hashes             -> builds without nickname-hashes.json (offline sign-up off)
 
 --deploy uses the Netlify CLI (Node.js, then `npm install -g netlify-cli`,
 `netlify login`, and once in this folder `netlify link` to pick the site).
@@ -39,6 +40,11 @@ Checks before zipping (the build fails instead of shipping a broken site)
   - every minified script, including inline ones, still parses
   - every top-level name of the originals is still present
   - every JSON file holds the same data
+  - the nickname rules in js/nickname-rules.js and claim-nickname.ts are the
+    same block, word for word
+  - nickname-hashes.json comes from this course's own database (or its last
+    good copy); --deploy also checks the linked Netlify site is this course's
+    (netlifySiteId in js/course-config.js)
   - site-version.json: only known keys and sane values (js/site-config.js),
     "version" matching CURRENT_VERSION and the changelog, "min_version" not
     above "version". What the file will make open tabs do, compared with the
@@ -48,14 +54,14 @@ Checks before zipping (the build fails instead of shipping a broken site)
 esbuild is downloaded once from the npm registry into a cache folder in
 your user profile (not this project); nothing else needs installing.
 """
-import hashlib, io, json, os, platform, re, shutil, subprocess, sys, tarfile, tempfile, urllib.request, zipfile
+import datetime, hashlib, io, json, os, platform, re, shutil, subprocess, sys, tarfile, tempfile, urllib.request, zipfile
 
 ESBUILD_VERSION = '0.28.2'
 
 SRC = os.path.dirname(os.path.abspath(__file__))
 SELF = os.path.basename(__file__)
 SKIP_DIRS = {'.git', 'superbase', 'netlify', '.netlify', 'vendor-src', 'tools', '.claude', '.vscode', 'node_modules', '__pycache__'}
-SKIP_ROOT_FILES = {'README.md', SELF}
+SKIP_ROOT_FILES = {'README.md', SELF, 'nickname-hashes.json'}   # the last is always built fresh
 SKIP_EXT = {'.zip', '.py'}
 MINIFY_EXT = {'.js', '.css', '.html', '.json', '.webmanifest'}
 
@@ -555,6 +561,114 @@ def stage_edge_functions(stage, problems):
             fh.write(text)
 
 
+# ── Nickname list for signing up offline ────────────────────────────────
+# js/offline-account.js checks a new nickname against nickname-hashes.json
+# while the database is offline. The file comes from THIS course's database
+# (the Supabase project js/course-config.js names for <head data-course>) via
+# nickname_hashes() (superbase/migrations/019): 20-bit hashes, never names. It
+# says which course and project it was built from, and the page ignores a file
+# that isn't its own. No database answer: the last good list for the same
+# course and project, kept outside the project; none at all stops the build,
+# as an empty list would let every name through. --no-nickname-hashes builds
+# without one (offline sign-up is then off: the page lets quizzes start
+# unregistered, as before).
+NICKNAME_HASHES = 'nickname-hashes.json'
+NICKNAME_RULES = (os.path.join('js', 'nickname-rules.js'), os.path.join('superbase', 'edge-functions', 'claim-nickname.ts'))
+NICKNAME_RULES_BLOCK = re.compile(r'// <nickname-rules>\n.*?// </nickname-rules>', re.S)
+
+
+def check_nickname_rules(problems):
+    """The rules block must be the same, word for word, on both sides."""
+    blocks = []
+    for rel in NICKNAME_RULES:
+        found = NICKNAME_RULES_BLOCK.findall(_read(rel).replace('\r\n', '\n'))
+        if len(found) != 1:
+            problems.append(f'{rel}: expected exactly one // <nickname-rules> … // </nickname-rules> block')
+            return
+        blocks.append(found[0])
+    if blocks[0] != blocks[1]:
+        problems.append(f'nickname rules differ between {NICKNAME_RULES[0]} and {NICKNAME_RULES[1]}: copy one block over the other')
+
+
+def course_id():
+    head = re.search(r'<head\b[^>]*\bdata-course="([^"]+)"', _read('index.html'))
+    return head.group(1).lower() if head else None
+
+
+def course_field(name):
+    """A plain 'string' field of this course's entry in js/course-config.js."""
+    course = course_id()
+    block = course and _course_block(_read('js/course-config.js'), course)
+    m = block and re.search(r'\b' + name + r":\s*(['\"])(.*?)\1,", block)
+    return m.group(2) if m else None
+
+
+def _hashes_cache(course, ref):
+    root = os.environ.get('LOCALAPPDATA') or os.path.join(os.path.expanduser('~'), '.cache')
+    return os.path.join(root, 'impulse-minify', f'nickname-hashes-{course}-{ref}.json')
+
+
+def build_nickname_hashes(out, problems):
+    """Writes nickname-hashes.json into the built site. Returns a line for
+    the report."""
+    course = course_id()
+    edge = edge_course(problems)
+    if not edge:
+        return None
+    ref = re.match(r'https://([a-z0-9]+)\.supabase\.co$', edge['supabaseUrl'])
+    if not course or not ref:
+        problems.append(f'{NICKNAME_HASHES}: no course in index.html, or js/course-config.js has no *.supabase.co url for it')
+        return None
+    ref = ref.group(1)
+    cache = _hashes_cache(course, ref)
+    note = None
+    try:
+        req = urllib.request.Request(
+            edge['supabaseUrl'] + '/rest/v1/rpc/nickname_hashes', data=b'{}', method='POST',
+            headers={'apikey': edge['publishableKey'], 'Authorization': 'Bearer ' + edge['publishableKey'],
+                     'Content-Type': 'application/json'})
+        data = json.load(urllib.request.urlopen(req, timeout=20))
+        hashes = data.get('hashes') if isinstance(data, dict) else None
+        if not (isinstance(data.get('salt'), str) and data['salt'] and data.get('bits') == 20 and isinstance(hashes, list)
+                and all(isinstance(h, int) and 0 <= h < 1 << 20 for h in hashes)):
+            raise ValueError('unexpected answer from nickname_hashes()')
+        result = {'course': course, 'projectRef': ref,
+                  'builtAt': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                  'salt': data['salt'], 'bits': 20, 'count': int(data.get('count') or 0), 'hashes': sorted(set(hashes))}
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        with open(cache, 'w', encoding='utf-8') as fh:
+            json.dump(result, fh, separators=(',', ':'))
+        note = f'{NICKNAME_HASHES}: {result["count"]} names from {ref} ({course})'
+    except Exception as e:   # noqa: BLE001 — any failure means "no fresh list"
+        try:
+            with open(cache, encoding='utf-8') as fh:
+                result = json.load(fh)
+        except (OSError, ValueError):
+            problems.append(f'{NICKNAME_HASHES}: the {course} database ({ref}) did not answer ({e}) and there is no '
+                            'earlier list for it. Apply superbase/migrations/019_nickname_hashes.sql there, or build '
+                            'with --no-nickname-hashes (offline sign-up is then off)')
+            return None
+        if result.get('course') != course or result.get('projectRef') != ref:
+            problems.append(f'{cache}: kept list is not for {course} / {ref}')
+            return None
+        note = f'{NICKNAME_HASHES}: database unreachable ({e}); kept list from {result.get("builtAt")} ({result.get("count")} names)'
+    with open(os.path.join(out, NICKNAME_HASHES), 'w', encoding='utf-8', newline='\n') as fh:
+        json.dump(result, fh, separators=(',', ':'))
+    return note
+
+
+def check_deploy_site(problems):
+    """--deploy only: the linked Netlify site must be this course's own."""
+    want = course_field('netlifySiteId')
+    have = netlify_site_id()
+    if not want:
+        problems.append(f'js/course-config.js: {course_id()} has no netlifySiteId, so the build cannot tell whether '
+                        f'the linked site ({have}) is this course\'s. Add it before deploying')
+    elif have and have != want:
+        problems.append(f'this folder is linked to Netlify site {have}, but {course_id()} deploys to {want} '
+                        '(js/course-config.js netlifySiteId): run  netlify link  again, or fix data-course')
+
+
 def netlify_site_id():
     """The site `netlify link` tied this folder to (or NETLIFY_SITE_ID)."""
     if os.environ.get('NETLIFY_SITE_ID'):
@@ -602,7 +716,8 @@ def main():
     args = sys.argv[1:]
     draft = '--draft' in args
     deploying = '--deploy' in args or draft
-    args = [a for a in args if a not in ('--deploy', '--draft')]
+    no_hashes = '--no-nickname-hashes' in args
+    args = [a for a in args if a not in ('--deploy', '--draft', '--no-nickname-hashes')]
     zip_path = os.path.abspath(args[0]) if args else os.path.join(os.path.dirname(SRC), f'{project}-netlify.zip')
     ESBUILD = esbuild_path()
 
@@ -611,6 +726,10 @@ def main():
     stats = {k: [0, 0, 0] for k in ('js', 'css', 'html', 'json', 'copied')}
     problems = []
     manifest_actions = check_manifest(problems)
+    check_nickname_rules(problems)
+    if deploying:
+        check_deploy_site(problems)
+    hashes_note = None
     try:
         for root, dirs, files in os.walk(SRC):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -656,6 +775,9 @@ def main():
                     bundles += bundle_page(out, page_rel, name, problems)
         if deploying and not problems:
             stage_edge_functions(stage, problems)
+        if not problems:
+            hashes_note = (f'{NICKNAME_HASHES}: left out (--no-nickname-hashes), offline sign-up is off'
+                           if no_hashes else build_nickname_hashes(out, problems))
 
         if problems:
             print('Build stopped, nothing was ' + ('deployed:' if deploying else 'zipped:'))
@@ -664,7 +786,7 @@ def main():
             sys.exit(1)
 
         if deploying:
-            report(stats, bundles, manifest_actions)
+            report(stats, bundles, manifest_actions, hashes_note)
             deploy(stage, draft)
             print('All checks passed. ' + ('Draft deployed; the live site is unchanged.' if draft else 'Deployed.'))
             return
@@ -682,11 +804,11 @@ def main():
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 
-    report(stats, bundles, manifest_actions)
+    report(stats, bundles, manifest_actions, hashes_note)
     print(f'All checks passed. {count} files -> {zip_path} ({os.path.getsize(zip_path) / 1024 / 1024:.2f} MB)')
 
 
-def report(stats, bundles, manifest_actions):
+def report(stats, bundles, manifest_actions, hashes_note=None):
     for k, (n, b, a) in stats.items():
         if n:
             print(f'  {k:7s} {n:4d} files  {b / 1024:9.1f} KB -> {a / 1024:9.1f} KB')
@@ -695,6 +817,8 @@ def report(stats, bundles, manifest_actions):
     print(f'{MANIFEST}, once deployed (compared with the last commit):')
     for line in manifest_actions or ['Nothing unusual: no new version, no settings that change what open tabs do.']:
         print('  *', line)
+    if hashes_note:
+        print(hashes_note)
 
 
 if __name__ == '__main__':

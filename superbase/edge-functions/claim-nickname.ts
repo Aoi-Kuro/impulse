@@ -39,6 +39,15 @@
 //      owns the requested nickname (i.e. you "claimed" the name you already
 //      have). Returns success without changing anything.
 //
+//   5. MADE OFFLINE — { offline_created: true, pin } from a device that made
+//      its account while the database was offline (js/offline-account.js).
+//      Case 1 with the device's own PIN; a taken name answers 'taken'
+//      without ever checking that PIN against the owner (no Case 2), and a
+//      device linked to another identity answers 'device_linked' (no Case 3).
+//
+// Names are compared after normalizeNickname() (NFC + trim), the rules shared
+// word for word with js/nickname-rules.js.
+//
 // A 5-digit PIN only has 100,000 possible values, so wrong-PIN attempts are
 // throttled per-identity: 5 wrong guesses locks that identity for 15 minutes.
 //
@@ -56,7 +65,38 @@ import { withSupabase } from 'npm:@supabase/server@^1';
 // would be permanently unmentionable past that point (e.g. "@Aoi Kuro" only
 // ever resolves the mention as "Aoi", silently dropping " Kuro"). Underscores,
 // periods, and hyphens remain available as space substitutes.
+//
+// Reserved nicknames no human claim can ever land on, case-insensitive.
+// "gemini" specifically: this exact name is how the front end labels the
+// bot's own replies (GEMINI_BOT_NAME in post-message.ts) and picks its
+// official avatar (device_id check there; FORUM_GEMINI_BOT_DEVICE_ID in
+// forum.js). A human claiming "Gemini" wouldn't get that device_id or
+// avatar, but would still read as the bot at a glance in a message list —
+// close enough to trick someone. It answers with the same 'flagged_nickname'
+// error moderation uses, so the front end needs nothing extra for it.
+//
+// The block below is a word-for-word copy of the one in js/nickname-rules.js
+// (the sign-up form and the offline name check use that one). minify.py
+// stops the build if the two differ: change both or neither.
+// <nickname-rules>
 const NICKNAME_RE = /^[\p{L}\p{N}._-]{2,40}$/u;
+const RESERVED_NICKNAMES_LOWER = new Set(['gemini']);
+
+function normalizeNickname(raw = '') {
+  return typeof raw === 'string' ? raw.normalize('NFC').trim() : '';
+}
+
+function nicknameKey(name = '') {
+  return normalizeNickname(name).toLowerCase();
+}
+
+function nicknameProblem(name = '') {
+  if (!NICKNAME_RE.test(name)) return 'invalid_nickname';
+  if (RESERVED_NICKNAMES_LOWER.has(name.toLowerCase())) return 'flagged_nickname';
+  return null;
+}
+// </nickname-rules>
+
 const LOCK_MINUTES = 15;
 const MAX_FAILED_ATTEMPTS = 5;
 
@@ -68,19 +108,6 @@ const MAX_FAILED_ATTEMPTS = 5;
 // actual sentinel used in post-message.ts / forum.js
 // (FORUM_GEMINI_BOT_DEVICE_ID) — keep these three in sync if it ever changes.
 const GEMINI_BOT_DEVICE_ID = '00000000-0000-4000-8000-000000000001';
-
-// Reserved nicknames no human claim can ever land on, case-insensitive.
-// "gemini" specifically: this exact name is how the front end labels the
-// bot's own replies (GEMINI_BOT_NAME in post-message.ts) and picks its
-// official avatar (device_id check there; FORUM_GEMINI_BOT_DEVICE_ID in
-// forum.js). A human claiming "Gemini" wouldn't get that device_id or
-// avatar, but would still read as the bot at a glance in a message list —
-// close enough to trick someone. Checked for both a brand-new claim and a
-// rename (both go through the block below, right after nicknameLower is
-// computed, before any of the four cases branch), reusing the same
-// 'flagged_nickname' error code/message moderation already uses so the
-// front end needs no changes to handle this.
-const RESERVED_NICKNAMES_LOWER = new Set(['gemini']);
 
 function isUuid(v: unknown): v is string {
   return typeof v === 'string' &&
@@ -448,8 +475,12 @@ export default {
     }
 
     const deviceId: string = payload?.device_id;
-    const rawNickname: string = typeof payload?.nickname === 'string' ? payload.nickname.trim() : '';
+    const rawNickname: string = normalizeNickname(payload?.nickname);
     const pin: string | undefined = typeof payload?.pin === 'string' ? payload.pin.trim() : undefined;
+    // Made while the database was offline (js/offline-account.js): the device
+    // already chose the PIN and has been showing it, so a new account takes
+    // that PIN instead of a fresh one. Never a login: see the branch below.
+    const offlineCreated = payload?.offline_created === true;
 
     if (!isUuid(deviceId)) {
       return Response.json({ ok: false, error: 'invalid_device_id' }, { status: 400 });
@@ -461,16 +492,20 @@ export default {
       return Response.json({ ok: false, error: 'device_auth_failed' }, { status: 403 });
     }
     const deviceToken = await issueDeviceToken(deviceId);
-    if (!NICKNAME_RE.test(rawNickname)) {
+    const nameProblem = nicknameProblem(rawNickname);
+    if (nameProblem === 'invalid_nickname') {
       return Response.json({ ok: false, error: 'invalid_nickname' }, { status: 400 });
     }
     if (pin !== undefined && !/^\d{5}$/.test(pin)) {
       return Response.json({ ok: false, error: 'invalid_pin_format' }, { status: 400 });
     }
+    if (offlineCreated && pin === undefined) {
+      return Response.json({ ok: false, error: 'invalid_pin_format' }, { status: 400 });
+    }
 
-    const nicknameLower = rawNickname.toLowerCase();
-    if (RESERVED_NICKNAMES_LOWER.has(nicknameLower)) {
-      return Response.json({ ok: false, error: 'flagged_nickname' }, { status: 422 });
+    const nicknameLower = nicknameKey(rawNickname);
+    if (nameProblem) {
+      return Response.json({ ok: false, error: nameProblem }, { status: 422 });
     }
     const db = ctx.supabaseAdmin;
 
@@ -514,6 +549,20 @@ export default {
         ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
         ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
       });
+    }
+
+    // ── Made offline (js/offline-account.js): only ever a new account ─────
+    // The PIN came from the device, so it is never tried against someone
+    // else's account: a miss would count as a wrong guess against them and
+    // could lock them out. A taken name goes back to the device, which then
+    // asks for a new one; a device already linked elsewhere is left alone.
+    if (offlineCreated) {
+      if (target) {
+        return Response.json({ ok: false, error: 'taken' }, { status: 409 });
+      }
+      if (mineIdentity) {
+        return Response.json({ ok: false, error: 'device_linked' }, { status: 409 });
+      }
     }
 
     // ── Case 2: link/switch this device onto an existing identity ─────────
@@ -613,7 +662,8 @@ export default {
 
     // A PIN means the person thinks this name is already theirs. Falling
     // through to a new claim would turn a typo at login into an empty account.
-    if (pin !== undefined) {
+    // An offline-made account carries its own PIN on purpose (see above).
+    if (pin !== undefined && !offlineCreated) {
       return Response.json({ ok: false, error: 'not_found' }, { status: 404 });
     }
 
@@ -622,7 +672,7 @@ export default {
       return Response.json({ ok: false, error: 'flagged_nickname' }, { status: 422 });
     }
 
-    const newPin = randomPin();
+    const newPin = offlineCreated ? pin! : randomPin();
     const salt = randomHex(16);
     const pinHash = await hashPin(newPin, salt);
     const newAvatar = await fetchIdenticonSvg(rawNickname);
@@ -661,6 +711,7 @@ export default {
       nickname: rawNickname,
       pin: newPin,
       created: true,
+      ...(offlineCreated ? { offline_created: true } : {}),
       ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
       ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
     });

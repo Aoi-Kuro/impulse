@@ -2194,9 +2194,10 @@ function fadeInScreen(el, duration) {
 // it's needed, an FAQ), and only after tapping through that gets the
 // claim modal itself, in its 'create' mode. startSelected() only actually
 // proceeds once a name is resolved (or immediately, if one's already
-// claimed on this device). With the database off (js/db-status.js) no name
-// can be claimed, so the gate stands aside: quizzes don't need the database,
-// and attempts stay on the device until a name exists.
+// claimed on this device). With the database off (js/db-status.js) the name
+// is made on this device instead and registered later, and an account made
+// that way can be held here until it is renamed or the database is back:
+// offlineAccountGate, js/offline-account.js.
 function startSelected(pastGate) {
   // getForumNickname/openGettingStartedModal/openForumClaimModal all live
   // in js/forum.js, which (see index.html's tier-2 loader) can still be
@@ -2205,7 +2206,7 @@ function startSelected(pastGate) {
   // tap skipped the registration gate entirely. Fail safe instead: if the
   // identity system isn't here yet, wait for it and retry rather than
   // letting the quiz start unregistered.
-  if (typeof getForumNickname !== 'function') {
+  if (typeof getForumNickname !== 'function' || typeof offlineAccountGate !== 'function') {
     setTimeout(startSelected, 50);
     return;
   }
@@ -2213,10 +2214,7 @@ function startSelected(pastGate) {
   // reach the normal browser another way (see js/lockdown.js), so that
   // session skips the gate.
   if (!pastGate && !getForumNickname() && !isLockdownSession()) {
-    checkDbStatus().then(() => {
-      if (dbOffline()) startSelected(true);
-      else openGettingStartedModal(() => startSelected());
-    });
+    offlineAccountGate(() => startSelected(true));
     return;
   }
   // Reached only by a tab already inside SEB: the Start button is hidden
@@ -2517,7 +2515,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '14.0.2';
+const CURRENT_VERSION = '14.1.0';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.

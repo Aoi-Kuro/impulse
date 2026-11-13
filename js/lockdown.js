@@ -187,7 +187,7 @@ let _lockdownHelpTimer = 0;
 async function openLockdownView() {
   const card = document.getElementById('lockdownCard');
   const page = document.getElementById('choicePage');
-  card.classList.remove('help', 'db-blocked');
+  card.classList.remove('help', 'db-blocked', 'pending-blocked');
   document.getElementById('lockdownStatus').textContent = 'Opening Safe Exam Browser…';
   showChoiceView('lockdown');
   await Promise.race([
@@ -201,6 +201,17 @@ async function openLockdownView() {
     card.classList.add('db-blocked');
     document.getElementById('lockdownStatus').textContent = 'Lockdown is unavailable';
     return;
+  }
+  // An account made offline (js/offline-account.js) has nowhere on the server
+  // for the attempt to land until it is registered.
+  if (typeof getPendingAccount === 'function' && getPendingAccount() && !getForumNickname()) {
+    await syncPendingAccount();
+    if (page.classList.contains('hidden') || page.dataset.view !== 'lockdown') return;
+    if (getPendingAccount() && !getForumNickname()) {
+      card.classList.add('db-blocked', 'pending-blocked');
+      document.getElementById('lockdownStatus').textContent = 'Lockdown is unavailable';
+      return;
+    }
   }
   enterLockdown();
 }

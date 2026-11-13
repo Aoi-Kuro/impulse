@@ -1579,3 +1579,85 @@ html.db-offline #forumSearchToggleBtn,
 html.db-offline #forumPushToggleBtn,
 html.db-offline #forumLoadMoreBtn,
 html.db-offline #forumMessageList:has(> .forum-status) { display: none !important; }
+
+/* ── Accounts made while the database is offline (js/offline-account.js) ──
+   .acct-modal: the layout of the windows for those accounts (rename, a week
+   offline, and the claim window in its two offline modes). Left-aligned
+   text reads better than centered once it runs past a line or two; the field
+   and its status sit together, the status takes no room until it has
+   something to say, and the buttons line up on the right, with a quieter
+   action (a link, or Back) pushed to the left. On a phone the buttons stack,
+   primary first. */
+.gs-offline-note,
+.acct-note {
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-align: left;
+}
+.gs-offline-note { margin: 0 0 1rem; background: var(--surface); }
+.acct-note { margin: -0.4rem 0 1.2rem; color: var(--muted); }
+
+.stats-modal-box.acct-modal {
+  max-width: 400px;
+  padding: 1.6rem 1.7rem 1.5rem;
+  text-align: left;
+}
+.acct-modal .stats-modal-title { font-size: 0.95rem; margin-bottom: 0.7rem; text-align: center; }
+.acct-modal .stats-modal-desc,
+.acct-text {
+  margin: 0 0 0.8rem;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--text);
+  text-align: left;
+}
+.acct-text-quiet { color: var(--muted); font-size: 0.8rem; }
+.acct-name { font-weight: 600; color: var(--accent); }
+.acct-field { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 1.1rem; }
+.acct-modal .forum-name-input,
+.acct-modal #forumClaimNicknameInput { text-align: left; padding: 0.6rem 0.75rem; font-size: 0.9rem; }
+.acct-modal .forum-composer-status:empty { display: none; }
+.acct-label {
+  margin: 1.1rem 0 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.offline-message-box {
+  padding: 0.75rem 0.9rem;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  user-select: text;
+}
+.offline-message-box + .forum-composer-status { margin-top: 0.45rem; }
+.acct-modal .acct-actions {
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.4rem;
+}
+.acct-modal .acct-aside { margin-right: auto; }
+.acct-modal .forum-identity-link-btn { font-size: 0.75rem; align-self: center; }
+/* The claim window keeps its own link out of the way in the offline modes. */
+.acct-modal #forumClaimModalRestoreLink { display: none !important; }
+a.stats-modal-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+
+@media (max-width: 480px) {
+  .stats-modal-box.acct-modal { padding: 1.4rem 1.25rem 1.25rem; }
+  .acct-modal .acct-actions { flex-direction: column-reverse; align-items: stretch; }
+  .acct-modal .acct-actions > * { width: 100%; box-sizing: border-box; padding-top: 0.7rem; padding-bottom: 0.7rem; }
+  .acct-modal .acct-aside { margin-right: 0; }
+  .acct-modal .forum-identity-link-btn { padding: 0.35rem 0; }
+}

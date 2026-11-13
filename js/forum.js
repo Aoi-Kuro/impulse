@@ -658,6 +658,8 @@ function saveForumIdentity(nickname, pin) {
   const before = getForumNickname();
   localStorage.setItem(FORUM_NICKNAME_KEY, nickname);
   if (pin) localStorage.setItem(FORUM_PIN_KEY, pin);
+  // A real account replaces one made offline (js/offline-account.js).
+  if (typeof clearPendingAccount === 'function') clearPendingAccount();
   // A newly claimed or restored nickname: fetch its settings now rather
   // than on the next fallback check (js/settings-sync.js).
   if (nickname !== before && typeof syncSettingsNow === 'function') setTimeout(syncSettingsNow, 0);
@@ -746,6 +748,8 @@ function renderLandingIdentity(nickname) {
   // state itself the moment demon mode actually ends (tap, or the next
   // splash change).
   if (typeof isLandingDemonActive === 'function' && isLandingDemonActive()) return;
+  // An account made offline shows too, before it is registered.
+  if (!nickname && typeof pendingAccountName === 'function') nickname = pendingAccountName();
 
   if (!nickname) {
     btn.style.display = 'none';
@@ -1839,6 +1843,15 @@ async function submitForumMessage(opts = {}) {
   statusEl.textContent = '';
   statusEl.classList.remove('forum-composer-status-error');
 
+  // Made offline and not registered yet (js/offline-account.js): reading is
+  // fine, but a post needs the account on the server. Claiming the typed
+  // name here instead would make a second account.
+  if (!claimedNickname && typeof getPendingAccount === 'function' && getPendingAccount()) {
+    statusEl.textContent = 'Posting opens once your account is registered.';
+    statusEl.classList.add('forum-composer-status-error');
+    return;
+  }
+
   if (!name) {
     statusEl.textContent = 'Enter a name first.';
     statusEl.classList.add('forum-composer-status-error');
@@ -2051,9 +2064,16 @@ let forumPendingPinToShow = null;
 // quiz, refresh the Stats panel), which goes on to the claim modal. Back from
 // there comes here again.
 let gettingStartedOnSuccess = null;
+let gettingStartedOffline = false;
 
-function openGettingStartedModal(onSuccess) {
+// opts.offline: the database is offline (offlineAccountGate,
+// js/offline-account.js). A note says so, "I'm new" makes the account on this
+// device, and "I have an account" explains that logging in has to wait.
+function openGettingStartedModal(onSuccess, opts) {
   gettingStartedOnSuccess = onSuccess || null;
+  gettingStartedOffline = !!(opts && opts.offline);
+  const note = document.getElementById('gsOfflineNote');
+  if (note) note.style.display = gettingStartedOffline ? '' : 'none';
   setGsFaqListOpen(false);
   document.getElementById('gettingStartedModalBackdrop')?.classList.add('visible');
 }
@@ -2066,8 +2086,10 @@ function closeGettingStartedModal() {
 // mode: 'create' (I'm new) or 'restore' (I have an account).
 function chooseGettingStarted(mode) {
   const onSuccess = gettingStartedOnSuccess;
+  const offline = gettingStartedOffline;
   closeGettingStartedModal();
-  openForumClaimModal(mode, '', onSuccess, () => openGettingStartedModal(onSuccess));
+  if (offline) mode = mode === 'create' ? 'offline' : 'offline-restore';
+  openForumClaimModal(mode, '', onSuccess, () => openGettingStartedModal(onSuccess, { offline }));
 }
 
 function setGsFaqListOpen(open) {
@@ -2116,13 +2138,33 @@ function openForumClaimModal(mode, prefillNickname, onSuccess, onBack) {
   if (pinInput) pinInput.value = '';
   if (restoreLink) restoreLink.style.display = mode === 'create' && !onBack ? '' : 'none';
   if (pinHint) pinHint.style.display = mode === 'restore' || mode === 'verify' ? '' : 'none';
-  if (submitBtn) submitBtn.textContent = { create: "Let's go", restore: 'Log in', verify: 'Log in' }[mode] || 'Claim';
+  if (submitBtn) submitBtn.textContent = { create: "Let's go", offline: "Let's go", restore: 'Log in', verify: 'Log in' }[mode] || 'Claim';
+  if (submitBtn) submitBtn.style.display = mode === 'offline-restore' ? 'none' : '';
+  if (nickInput) nickInput.style.display = mode === 'offline-restore' ? 'none' : '';
+  if (statusEl) statusEl.style.display = mode === 'offline-restore' ? 'none' : '';
+  // The offline modes take the layout of the other offline-account windows
+  // (.acct-modal, css/forum.css): left-aligned text, buttons on the right.
+  const offlineLayout = mode === 'offline' || mode === 'offline-restore';
+  const box = backdrop.querySelector('.stats-modal-box');
+  box?.classList.toggle('acct-modal', offlineLayout);
+  box?.querySelector('.stats-modal-actions')?.classList.toggle('acct-actions', offlineLayout);
   if (cancelBtn) cancelBtn.textContent = onBack ? 'Back' : 'Cancel';
 
   if (mode === 'create') {
     if (title) title.textContent = 'Choose a nickname';
     if (desc) desc.textContent = '';
     if (nickInput) { nickInput.value = ''; nickInput.disabled = false; }
+    if (pinRow) pinRow.style.display = 'none';
+  } else if (mode === 'offline') {
+    // The database is offline (js/offline-account.js): checked against the
+    // list from the last update, registered once the database is back.
+    if (title) title.textContent = 'Choose a nickname';
+    if (desc) desc.textContent = "The database is offline, so your nickname is checked against a list from the last update. It registers once the database is back.";
+    if (nickInput) { nickInput.value = ''; nickInput.disabled = false; }
+    if (pinRow) pinRow.style.display = 'none';
+  } else if (mode === 'offline-restore') {
+    if (title) title.textContent = 'Log in';
+    if (desc) desc.textContent = "Logging in needs the database, and it's offline right now. Come back once it's on, or go back and start as new.";
     if (pinRow) pinRow.style.display = 'none';
   } else if (mode === 'verify') {
     if (title) title.textContent = 'That name is taken';
@@ -2152,7 +2194,8 @@ function openForumClaimModal(mode, prefillNickname, onSuccess, onBack) {
   }
 
   backdrop.classList.add('visible');
-  setTimeout(() => (mode === 'create' || !nickInput?.value ? nickInput : pinInput)?.focus(), 50);
+  if (mode === 'offline-restore') return;
+  setTimeout(() => (mode === 'create' || mode === 'offline' || !nickInput?.value ? nickInput : pinInput)?.focus(), 50);
 }
 
 function closeForumClaimModal() {
@@ -2184,7 +2227,7 @@ async function submitForumClaimModal() {
   if (!nickInput || !pinInput || !statusEl) return;
 
   const isCreate = forumClaimModalMode === 'create';
-  const nickname = nickInput.value.trim();
+  const nickname = normalizeNickname(nickInput.value);
   const pin = isCreate ? '' : pinInput.value.trim();
 
   statusEl.textContent = '';
@@ -2193,6 +2236,30 @@ async function submitForumClaimModal() {
   if (!nickname) {
     statusEl.textContent = 'Enter a name.';
     statusEl.classList.add('forum-composer-status-error');
+    return;
+  }
+  // The same rules the server applies (js/nickname-rules.js), so a name
+  // that can't be claimed is turned down here, online or not.
+  if (isCreate || forumClaimModalMode === 'offline') {
+    const problem = nicknameProblem(nickname);
+    if (problem) {
+      statusEl.textContent = nicknameProblemText(problem, nickname);
+      statusEl.classList.add('forum-composer-status-error');
+      return;
+    }
+  }
+
+  if (forumClaimModalMode === 'offline') {
+    statusEl.textContent = 'Checking…';
+    const made = await createPendingAccount(nickname);
+    if (!made.ok) {
+      statusEl.textContent = made.text;
+      statusEl.classList.add('forum-composer-status-error');
+      return;
+    }
+    const onSuccess = forumClaimModalOnSuccess;
+    closeForumClaimModal();
+    openForumPinModal(made.pin, { andThen: onSuccess });
     return;
   }
   if (!isCreate && !/^\d{5}$/.test(pin)) {
@@ -2270,8 +2337,13 @@ function openForumPinModal(pinOverride, opts) {
   const backdrop = document.getElementById('forumPinModalBackdrop');
   const display   = document.getElementById('forumPinModalDisplay');
   if (!backdrop) return;
-  const pin = pinOverride || getForumPin();
+  // An account made offline keeps its PIN with the rest of it
+  // (js/offline-account.js) until it is registered; say that it waits.
+  const pending = !getForumNickname() && typeof getPendingAccount === 'function' ? getPendingAccount() : null;
+  const pin = pinOverride || getForumPin() || (pending && pending.pin);
   if (display) display.textContent = pin || '—';
+  const note = document.getElementById('forumPinModalPendingNote');
+  if (note) note.style.display = pending && pin === pending.pin ? '' : 'none';
   forumPinModalAndThen = (opts && opts.andThen) || null;
   backdrop.classList.add('visible');
 }

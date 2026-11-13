@@ -31,6 +31,9 @@ const DEPLOY_MESSAGE = '';
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 const CHANGELOG = [
+  { version: "14.1.0", note: "New users can sign up while the database is offline; the account is registered once it's back.", scope: 0 },
+  { version: "14.1.0", note: "Sets 1–4 match the official exams, with new redrawn figures.", scope: 2 },
+  { version: "14.1.0", note: "New splashes.", scope: 2 },
   { version: "14.0.2", note: "Moments of inertia table in Set 2: the exam handout, one tap from every problem.", scope: 1 },
   { version: "14.0.2", note: "Sets 1–4 updated to match the official versions.", scope: 1 },
   { version: "14.0.1", note: "New splashes.", scope: 0 },

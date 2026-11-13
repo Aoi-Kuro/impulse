@@ -107,7 +107,20 @@
     BOLTZMANN:      () => isDate(2, 20),  // Boltzmann's birthday, 1844
     NOETHER:        () => isDate(3, 23),  // Emmy Noether's birthday, 1882
     JOULE:          () => isDate(12, 24), // Joule's birthday, 1818
-    CUSTOM:         () => isDateRange(11, 1, 7) // Exam week
+    CUSTOM:         () => isDateRange(11, 1, 7), // Exam week
+
+    // ── PHYS 162 (electricity, magnetism & optics) ─────────────────
+    AMPERE:         () => isDate(1, 20),  // Ampère's birthday, 1775
+    VOLTA:          () => isDate(2, 18),  // Volta's birthday, 1745
+    HERTZ:          () => isDate(2, 22),  // Hertz's birthday, 1857
+    LENZ:           () => isDate(2, 24),  // Lenz's birthday, 1804 (Gregorian)
+    OHM:            () => isDate(3, 16),  // Ohm's birthday, 1789
+    GAUSS:          () => isDate(4, 30),  // Gauss's birthday, 1777
+    MAXWELL:        () => isDate(6, 13),  // Maxwell's birthday, 1831
+    COULOMB:        () => isDate(6, 14),  // Coulomb's birthday, 1736
+    TESLA:          () => isDate(7, 10),  // Tesla's birthday, 1856
+    OERSTED:        () => isDate(8, 14),  // Ørsted's birthday, 1777
+    FARADAY:        () => isDate(9, 22),  // Faraday's birthday, 1791
   };
 
   function eligible () {
