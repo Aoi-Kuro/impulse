@@ -147,6 +147,10 @@
 }
 .sfp-identity-avatar .forum-message-avatar img.gemini-mark { width: 22px; height: 22px; }
 .sfp-identity-avatar .forum-message-avatar-initials { font-size: 1rem; }
+/* The character an unregistered visitor gets (guestFanAvatarEl, js/stats.js):
+   a deeper box than an identicon's, so the white skulls and masks still show
+   on the light theme. */
+.sfp-identity-avatar .guest-fan-avatar { background: color-mix(in srgb, var(--text) 16%, var(--surface)); }
 .sfp-identity-info {
   display: flex;
   flex-direction: column;

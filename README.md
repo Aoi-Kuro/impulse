@@ -808,7 +808,7 @@ claimed, localStorage is a cache/queue and the server is the source of truth.
 
 The Stats screen contains:
 
-- **Forum & Site panel**: avatar (a "?" for a visitor without an account), nickname, join date and a ⚙ menu (Getting
+- **Forum & Site panel**: avatar (a random pixel game character for a visitor without an account), nickname, join date and a ⚙ menu (Getting
   started / Change nickname / Your PIN / Exit); "my messages" and "my quizzes
   taken"; three tally dials (forum participants, total visits, total quizzes
   taken by everyone). Values come from the RPCs `get_stats_panel`,
@@ -2682,6 +2682,14 @@ its source code. Copyright and attribution notices must be kept.
 any other license here, as section 7(e) of the AGPL allows. Copies and modified
 versions of the code must use a different name and logo, and must not present
 themselves as this site or as connected to it.
+
+**Fan avatars** (the four pixel drawings in `GUEST_FAN_AVATARS`, `js/stats.js`,
+shown in Stats to visitors without a nickname: Sans and Papyrus from Undertale,
+© Toby Fox, and the Knight in a blue and a red cloak from Hollow Knight, © Team
+Cherry). **Not licensed**: they are not covered by the AGPL or any other license
+here, and this project claims no rights to them. The site is not affiliated with,
+endorsed or sponsored by Toby Fox or Team Cherry, uses them non-commercially, and
+will remove them at the rights holders' request.
 
 **Worked solutions** (the solution text and figures written in the solutions
 editor and shown on the Solution screen) — © their authors, credited under each

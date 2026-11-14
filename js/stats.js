@@ -1280,6 +1280,69 @@ async function loadStatsPanel() {
   await pollStatsPanel();
 }
 
+// ── Easter egg: a game character for visitors who aren't registered ──
+// Instead of a plain "?", the Stats avatar of a visitor without a nickname is
+// one of four characters drawn as vector pixel art (9×9 cells, inline SVG).
+// Each browser gets one at random the first time and keeps it (localStorage),
+// so it stays theirs until they register and their real identicon takes its
+// place. Hovering it shows a line about it.
+const GUEST_FAN_AVATAR_KEY = STORAGE_PREFIX + '-guest-fan-avatar';
+// Not the project's own work and not under the AGPL: fan drawings of Sans and
+// Papyrus (Undertale, © Toby Fox) and the Knight (Hollow Knight, © Team
+// Cherry). Credited on the Copyright screen (index.html, "Fan Avatars") and
+// in the README's licensing section; to be removed if the rights holders ask.
+// px: one string per row, '.' empty, every other letter a colour from c.
+const GUEST_FAN_AVATARS = [
+  { name: 'Sans', hover: '* you feel like you\'re gonna have a bad time.',
+    c: { w: '#FFFFFF', k: '#16181F', c: '#2FD4F0', l: '#C8F7FF', b: '#1E78D0', s: '#9ED8FF' },
+    px: ['..wwwww..', '.wwwwwww.', 'wkkwwwclw', 'wkkwwwccw', 'wwwwkwwww', 'kwwwwwwwk', 'wkwkwkwkw', '.kkkkkkk.', 'bsswwwssb'] },
+  { name: 'Papyrus', hover: 'NYEH HEH HEH! THE GREAT PAPYRUS GUARDS YOUR STATS!',
+    c: { w: '#FFFFFF', k: '#16181F', r: '#D7262E' },
+    px: ['..wwwww..', '.wwwwwww.', '.wkwwwkw.', '.wkwwwkw.', '.wwwkwww.', '.wwwwwww.', '.wkwkwkw.', 'rrrrrrrrr', 'rr.www.rr'] },
+  { name: 'The Knight', hover: 'The Knight is quietly exploring your stats',
+    c: { w: '#F4F4F2', k: '#16181F', c: '#3B4A7A', d: '#27324F' },
+    px: ['.w.....w.', '.w.....w.', '.ww...ww.', '..wwwww..', '.wkkwkkw.', '.wkkwkkw.', '.wwkwkww.', 'ccwwwwwcc', 'dcccccccd'] },
+  { name: 'The Knight (red cloak)', hover: 'The Knight found a red cloak somewhere in Hallownest',
+    c: { w: '#F4F4F2', k: '#16181F', c: '#B3262E', d: '#7A1420' },
+    px: ['.w.....w.', '.w.....w.', '.ww...ww.', '..wwwww..', '.wkkwkkw.', '.wkkwkkw.', '.wwkwkww.', 'ccwwwwwcc', 'dcccccccd'] },
+];
+
+// This browser's character: the one it was given, or a random one now.
+function guestFanAvatar() {
+  let name = null;
+  try { name = localStorage.getItem(GUEST_FAN_AVATAR_KEY); } catch (e) { /* storage off: a new one each time */ }
+  let p = GUEST_FAN_AVATARS.find((x) => x.name === name);
+  if (!p) {
+    p = GUEST_FAN_AVATARS[Math.floor(Math.random() * GUEST_FAN_AVATARS.length)];
+    try { localStorage.setItem(GUEST_FAN_AVATAR_KEY, p.name); } catch (e) { /* kept for this page only */ }
+  }
+  return p;
+}
+
+// Same box as a forum identicon (forumUserAvatarEl, js/forum.js). Each row's
+// runs of one colour become a single rect, so the SVG stays small.
+function guestFanAvatarEl() {
+  const p = guestFanAvatar();
+  const n = p.px.length;
+  let rects = '';
+  p.px.forEach((row, y) => {
+    for (let x = 0; x < row.length;) {
+      const ch = row[x];
+      let w = 1;
+      while (row[x + w] === ch) w++;
+      if (ch !== '.') rects += `<rect x="${x}" y="${y}" width="${w}" height="1" fill="${p.c[ch]}"/>`;
+      x += w;
+    }
+  });
+  const wrap = document.createElement('div');
+  wrap.className = 'forum-message-avatar forum-message-avatar-user guest-fan-avatar';
+  wrap.title = p.hover;
+  wrap.setAttribute('role', 'img');
+  wrap.setAttribute('aria-label', p.name);
+  wrap.innerHTML = `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" aria-hidden="true">${rects}</svg>`;
+  return wrap;
+}
+
 // My claimed nickname + identicon avatar, next to "My date of join" — same
 // avatar/name pairing the forum's own mention-profile popup shows
 // (forumUserAvatarEl/forumInitialsAvatarEl, js/forum.js), just reused here
@@ -1322,7 +1385,7 @@ function renderSfpIdentity(nickname) {
   avatarEl.innerHTML = '';
   if (!nickname) {
     nameEl.textContent = 'Not registered yet';
-    if (typeof forumInitialsAvatarEl === 'function') avatarEl.appendChild(forumInitialsAvatarEl('?'));
+    avatarEl.appendChild(guestFanAvatarEl());
     return;
   }
   nameEl.textContent = nickname;
