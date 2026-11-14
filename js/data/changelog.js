@@ -31,6 +31,12 @@ const DEPLOY_MESSAGE = '';
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 const CHANGELOG = [
+  { version: "14.2.0", note: "A footer at the bottom of the long screens, with Settings, the Manual, GitHub and a bug report link.", scope: 0 },
+  { version: "14.2.0", note: "Solutions stay readable while the database is offline.", scope: 0 },
+  { version: "14.2.0", note: "Without an account: a Pokémon in your Stats avatar, and up to five solutions before signing up.", scope: 0 },
+  { version: "14.2.0", note: "Stats: the legend sits inside the chart, and an empty chart shows a short note.", scope: 0 },
+  { version: "14.2.0", note: "New splashes for first-time visitors; the bug and theme reminder banners are gone.", scope: 0 },
+  { version: "14.2.0", note: "The first worked solution: Set 1, P17.", scope: 2 },
   { version: "14.1.0", note: "New users can sign up while the database is offline; the account is registered once it's back.", scope: 0 },
   { version: "14.1.0", note: "Sets 1–4 match the official exams, with new redrawn figures.", scope: 2 },
   { version: "14.1.0", note: "New splashes.", scope: 2 },
