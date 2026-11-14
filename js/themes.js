@@ -8,7 +8,6 @@
 
 const THEME_KEY  = STORAGE_PREFIX + '-color-theme';
 const CUSTOM_KEY = STORAGE_PREFIX + '-custom-theme';
-const NUDGE_KEY  = STORAGE_PREFIX + '-theme-nudge-shown';
 const CUSTOM_VARS = ['--bg','--surface','--border','--text','--muted','--accent','--accent-dim','--accent2','--accent2-rgb','--accent-rgb','--svg-blue','--svg-red','--radius-mult','--sans','--mono'];
 
 // Curated font pairings offered in the custom-theme builder. Each pairs a
@@ -207,8 +206,6 @@ function renderThemeGrid(){
 }
 function selectTheme(id){
   closeThemePanel();
-  // Picked during a nudge: the choice stands, and the banner's done.
-  if (_nudgeActive) { endThemeNudge(false); BannerManager.release('theme'); }
   runThemeChange(() => { applyColorTheme(id, true); renderThemeGrid(); });
 }
 
@@ -305,91 +302,6 @@ function saveCustomTheme(){
   closeCustomThemeModal();
 }
 
-/* ── theme nudge banner (~15 min after page load, at most once/day) ──
-   The banner previews a random theme on the live page without saving it;
-   ✕ puts the previous one back. Hiding the banner (its own setting or Go
-   silent) has to stop the preview too, not just the banner: the CSS in
-   css/settings.css only hides the element, so a preview running behind it
-   used to stay on screen until a reload. Three ✕ in all turn the banner's
-   own setting on. */
-const NUDGE_INTERVAL = 24 * 60 * 60 * 1000; // 1 day
-const NUDGE_REFUSALS_KEY = STORAGE_PREFIX + '-theme-nudge-refusals';
-const NUDGE_REFUSALS_MAX = 3;
-let _nudgePrevTheme = null;
-let _nudgeActive = false;
-
-function themeNudgeSuppressed(){
-  // Inside Safe Exam Browser it would change the theme in the middle of a quiz.
-  if (isLockdownSession()) return true;
-  return typeof getSetting === 'function' &&
-    (getSetting('notifications', 'hideThemeNudge') === true || getSetting('notifications', 'goSilent') === true);
-}
-
-// Banner off and preview over. revert: put the previous theme back (✕, or
-// hidden by a setting); false when the person just picked a theme
-// themselves (selectTheme), which must not be undone.
-function endThemeNudge(revert){
-  _nudgeActive = false;
-  localStorage.setItem(NUDGE_KEY, String(Date.now()));
-  document.getElementById('theme-nudge-banner').classList.remove('visible');
-  if (revert) applyColorTheme(_nudgePrevTheme || DEFAULT_COLOR_THEME, false);
-}
-
-// The actual reveal is deferred to BannerManager so it only happens once
-// nothing higher-priority (update) or earlier-in-line (bug/telegram) is showing.
-BannerManager.register('theme',
-  () => { // show
-    // Its turn may come long after it asked: the setting can be on by now.
-    if (themeNudgeSuppressed()) { setTimeout(() => BannerManager.release('theme'), 0); return; }
-    const cur = getColorTheme();
-    const pool = THEMES.filter(t => t.id !== cur);
-    const pick = (pool.length ? pool : THEMES)[Math.floor(Math.random() * (pool.length || THEMES.length))];
-    _nudgePrevTheme = cur;
-    _nudgeActive = true;
-    applyColorTheme(pick.id, false);
-    document.getElementById('theme-nudge-name').textContent = pick.name;
-    document.getElementById('theme-nudge-banner').classList.add('visible');
-  },
-  () => { // hide (preempted by a higher-priority banner)
-    if (!_nudgeActive) return;
-    _nudgeActive = false;
-    document.getElementById('theme-nudge-banner').classList.remove('visible');
-    applyColorTheme(_nudgePrevTheme || DEFAULT_COLOR_THEME, false);
-  }
-);
-
-function scheduleThemeNudge(){
-  const last = +localStorage.getItem(NUDGE_KEY) || 0;
-  if (Date.now() - last < NUDGE_INTERVAL) return;
-  setTimeout(triggerThemeNudge, 15 * 60 * 1000);
-}
-function triggerThemeNudge(){
-  if (themeNudgeSuppressed()) return;
-  const last = +localStorage.getItem(NUDGE_KEY) || 0;
-  if (Date.now() - last < NUDGE_INTERVAL) return;
-  BannerManager.request('theme');
-}
-function dismissThemeNudge(){
-  if (!_nudgeActive) return;
-  endThemeNudge(true);
-  BannerManager.release('theme');
-  const refusals = (+localStorage.getItem(NUDGE_REFUSALS_KEY) || 0) + 1;
-  localStorage.setItem(NUDGE_REFUSALS_KEY, String(refusals));
-  if (refusals >= NUDGE_REFUSALS_MAX && typeof setSetting === 'function') {
-    localStorage.removeItem(NUDGE_REFUSALS_KEY); // so turning the setting back off gives three more
-    setSetting('notifications', 'hideThemeNudge', true);
-    if (typeof applyNotificationSettings === 'function') applyNotificationSettings();
-  }
-}
-// Called by applyNotificationSettings() (js/settings.js) on every change,
-// including ones synced in from another device.
-function syncThemeNudgeSuppression(){
-  if (!themeNudgeSuppressed()) return;
-  if (_nudgeActive) endThemeNudge(true);
-  BannerManager.cancel('theme');
-}
-
 window.addEventListener('DOMContentLoaded', () => {
   renderThemeGrid();
-  scheduleThemeNudge();
 });

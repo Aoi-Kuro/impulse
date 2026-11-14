@@ -22,7 +22,9 @@
         opened, cached in memory until the index shows one of them was
         unpublished, saved again, or joined by another.
    While Go offline's 24h window runs, both are answered from the copy it
-   downloaded (offline-data/solutions.json) instead of the network.
+   downloaded (offline-data/solutions.json) instead of the network. While
+   the database is off (js/db-status.js), from the copy kept on Netlify
+   (/solutions-copy, see "The copy kept on Netlify" below).
 
    WHERE THE BUTTON APPEARS
      Random quiz — shown but disabled during the attempt, usable only
@@ -83,11 +85,57 @@ async function loadOfflineSolutionRows() {
   return solutionsOfflineRows;
 }
 
+// ── The copy kept on Netlify, for a database that is off ──
+// netlify/edge-functions/solutions-copy.ts holds every published solution as
+// of the last deploy and hands it out only while its own check finds the
+// database off; while the database is up it answers 404, so the copy can't be
+// read then. This page asks for it only when the indicator already says the
+// database is offline (dbOffline(), js/db-status.js), and only once a
+// solution is wanted: one opened, the Solution list, or the Copyright
+// screen's authors. Asking never starts a status check of its own; the
+// indicator keeps its usual schedule. Held in memory for this page only,
+// never stored, and dropped once the database is back. Go offline's download
+// (above) comes first while its window runs.
+const SOLUTIONS_COPY_URL = '/solutions-copy';
+const SOLUTIONS_COPY_RETRY_MS = 60 * 1000;   // after a failed ask, before the next
+let solutionsCopyRows = null;                // the copy's rows, once read
+let solutionsCopyPromise = null;
+let solutionsCopyFailedAt = 0;
+
+function solutionsCopyWanted() {
+  return !solutionsOfflineActive() && typeof dbOffline === 'function' && dbOffline();
+}
+
+/** The copy's rows, or null when there is none to read (the database is up
+    after all, an older deploy without one, or no connection). Never throws. */
+function loadSolutionsCopy() {
+  if (solutionsCopyRows) return Promise.resolve(solutionsCopyRows);
+  if (solutionsCopyPromise) return solutionsCopyPromise;
+  if (Date.now() - solutionsCopyFailedAt < SOLUTIONS_COPY_RETRY_MS) return Promise.resolve(null);
+  const ref = new URL(SUPABASE_URL).hostname.split('.')[0];
+  solutionsCopyPromise = fetch(SOLUTIONS_COPY_URL, { cache: 'no-store' })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((copy) => {
+      if (!copy || !Array.isArray(copy.rows) || copy.projectRef !== ref) throw new Error('no copy');
+      // Dropped again if the database came back while it was loading.
+      if (!solutionsCopyWanted()) return null;
+      solutionsCopyRows = copy.rows;
+      applySolutionsIndexRows(copy.rows);
+      refreshSolutionsUi();
+      return solutionsCopyRows;
+    })
+    .catch(() => { solutionsCopyFailedAt = Date.now(); return null; })
+    .finally(() => { solutionsCopyPromise = null; });
+  return solutionsCopyPromise;
+}
+
 /** Index rows ({ id, problem_key, updated_at }) from the network or, while
-    offline mode is active, from the download. null on a server error. */
+    offline mode is active, from the download, or, while the database is off,
+    from the Netlify copy if it was read already. null on a server error. */
 async function solutionsIndexRows() {
   if (solutionsOfflineActive()) return loadOfflineSolutionRows();
   solutionsOfflineRows = null;
+  if (solutionsCopyWanted() && solutionsCopyRows) return solutionsCopyRows;
   const r = await fetch(`${SOLUTIONS_REST}?select=id,problem_key,updated_at&status=eq.published`, {
     headers: solutionsRestHeaders(),
     cache: 'no-store',
@@ -100,10 +148,9 @@ async function solutionsIndexRows() {
     can't be loaded. */
 async function fetchSolutionAuthorRows() {
   try {
-    if (solutionsOfflineActive()) {
-      return (await loadOfflineSolutionRows())
-        .map((r) => ({ problem_key: r.problem_key, author: r.author, author_link: r.author_link }));
-    }
+    const copy = solutionsOfflineActive() ? await loadOfflineSolutionRows()
+      : solutionsCopyWanted() ? await loadSolutionsCopy() : null;
+    if (copy) return copy.map((r) => ({ problem_key: r.problem_key, author: r.author, author_link: r.author_link }));
     const r = await fetch(`${SOLUTIONS_REST}?select=problem_key,author,author_link&status=eq.published`, {
       headers: solutionsRestHeaders(),
       cache: 'no-store',
@@ -217,9 +264,9 @@ function readSolutionsIndexCache() {
 function fetchSolutionsIndex() {
   if (solutionsIndexPromise) return solutionsIndexPromise;
 
-  // The offline download is not a fresh server copy, so it never resets
-  // the 30-minute window for the tabs that are back online.
-  const offline = solutionsOfflineActive();
+  // The offline download and the Netlify copy are not a fresh server copy,
+  // so they never reset the 30-minute window for the tabs that are online.
+  const offline = solutionsOfflineActive() || !!(solutionsCopyWanted() && solutionsCopyRows);
   solutionsIndexPromise = solutionsIndexRows()
     .then((rows) => {
       if (!rows) return solutionsIndex || new Set();      // keep what we had on a server error
@@ -282,6 +329,15 @@ async function fetchSolutions(problemKey) {
     const rows = (await loadOfflineSolutionRows()).filter((r) => r && r.problem_key === problemKey);
     return rows.length ? sortSolutionRows(rows) : null;
   }
+  // The database is off: the Netlify copy. Without one, on as before (what
+  // this browser kept, then a request that will most likely fail).
+  if (solutionsCopyWanted()) {
+    const copy = await loadSolutionsCopy();
+    if (copy) {
+      const rows = copy.filter((r) => r && r.problem_key === problemKey);
+      return rows.length ? sortSolutionRows(rows) : null;
+    }
+  }
   const stored = await readStoredSolutionRows(problemKey);
   if (stored) {
     solutionsRowCache.set(problemKey, stored);
@@ -310,11 +366,13 @@ async function fetchSolutions(problemKey) {
    hidden; this reveals the ones that have a solution. Called after a
    render and again when the index arrives, since the first render
    usually wins that race. With the database off the index may never
-   arrive, so every card shows it: opening one gives what this browser
-   has kept of that solution, or says why there's none. */
+   arrive, so every card shows it: opening one gives the Netlify copy's
+   solution, what this browser has kept of it, or says why there's none.
+   Once the copy is read its list is the index, so only real ones show. */
 function refreshSolutionButtons() {
+  const everyCard = dbOffline() && !solutionsCopyRows;
   document.querySelectorAll('.solution-btn[data-quiz][data-problem]').forEach((btn) => {
-    const show = dbOffline() || hasPublishedSolution(+btn.dataset.quiz, btn.dataset.problem);
+    const show = everyCard || hasPublishedSolution(+btn.dataset.quiz, btn.dataset.problem);
     btn.style.display = show ? '' : 'none';
     // A Random quiz card before Check answers: the row holds only this
     // (disabled) button, so it shows exactly when the button does.
@@ -333,7 +391,16 @@ function refreshSolutionsUi() {
 
 function initSolutions() {
   loadSolutionsIndex().then(refreshSolutionsUi);
-  document.addEventListener('db-status-changed', refreshSolutionsUi);
+  document.addEventListener('db-status-changed', () => {
+    // Back up: the copy goes, and the index comes from the database again.
+    if (!dbOffline() && solutionsCopyRows) {
+      solutionsCopyRows = null;
+      solutionsIndex = null;
+      solutionsIndexStamps = null;
+      loadSolutionsIndex().then(refreshSolutionsUi);
+    }
+    refreshSolutionsUi();
+  });
 
   // Coming back to a tab, and every few minutes while one stays in front,
   // pick up the newest copy: usually another tab's, read from localStorage
@@ -653,8 +720,69 @@ function releaseSolutionContent() {
 // previewRow: a row built by the editor's Full preview — shown instead of
 // fetching the published ones. solutionId: open that tab instead of the
 // default (a shared link to it); unknown ids fall back to the default.
+/* ── Without an account: five solutions ──────────────────────────────
+   A visitor with no nickname (claimed, or made offline and waiting to
+   register, js/offline-account.js) can open GUEST_SOLUTION_LIMIT different
+   solutions on this device, and those stay open to them. The next one,
+   however it is asked for (a card's button, the list, Previous/Next, a
+   shared link), takes them to the main page and opens Getting started with
+   a note saying why (#gsSolutionsNote). They can close it and use the site
+   as before without an account (starting a quiz asks for one anyway), but
+   no other solution opens until they have one; with an account made from
+   that screen, the solution they asked for opens. Counted in localStorage,
+   so it is a nudge, not a lock. The editor's preview never counts. */
+const GUEST_SOLUTION_LIMIT = 5;
+const GUEST_SOLUTIONS_KEY = STORAGE_PREFIX + '-guest-solutions';
+
+// Read straight from storage as well: a shared link can open a solution
+// before js/forum.js and js/offline-account.js have loaded.
+function solutionsHaveAccount() {
+  if (typeof getForumNickname === 'function' && getForumNickname()) return true;
+  if (typeof getPendingAccount === 'function' && getPendingAccount()) return true;
+  try {
+    return !!(localStorage.getItem(STORAGE_PREFIX + '_forum_nickname') || localStorage.getItem(STORAGE_PREFIX + '_pending_account'));
+  } catch (e) {
+    return false;
+  }
+}
+
+// Whether this visitor may open the solution of `key`; a new one is counted.
+function guestMayOpenSolution(key) {
+  if (solutionsHaveAccount()) return true;
+  let seen = [];
+  try { seen = JSON.parse(localStorage.getItem(GUEST_SOLUTIONS_KEY) || '[]'); } catch (e) { seen = []; }
+  if (!Array.isArray(seen)) seen = [];
+  if (seen.includes(key)) return true;
+  if (seen.length >= GUEST_SOLUTION_LIMIT) return false;
+  seen.push(key);
+  try { localStorage.setItem(GUEST_SOLUTIONS_KEY, JSON.stringify(seen)); } catch (e) { /* storage off: not counted */ }
+  return true;
+}
+
+// Over the limit: the main page, then Getting started once the landing
+// screen is up (and the scripts behind it have loaded).
+function stopGuestAtSolutionLimit(quizNum, problemId, solutionId) {
+  if (typeof goToMainMenu === 'function') goToMainMenu();
+  const reopen = () => { if (solutionsHaveAccount()) openSolution(quizNum, problemId, null, solutionId); };
+  let tries = 0;
+  const ask = () => {
+    if (typeof openGettingStartedModal !== 'function') {
+      if (++tries < 50) setTimeout(ask, 200);
+      return;
+    }
+    if (typeof setGettingStartedReason === 'function') setGettingStartedReason('solutions');
+    if (typeof offlineAccountGate === 'function') offlineAccountGate(reopen, { quiz: false });
+    else openGettingStartedModal(reopen);
+  };
+  setTimeout(ask, 420);   // after closeSolutionScreen's 280 ms fade
+}
+
 async function openSolution(quizNum, problemId, previewRow, solutionId) {
   const key = solutionKeyFor(quizNum, problemId);
+  if (!previewRow && !guestMayOpenSolution(key)) {
+    stopGuestAtSolutionLimit(quizNum, problemId, solutionId);
+    return;
+  }
   const screen = solutionScreenEl();
   if (!screen) return;
   const token = ++solutionOpenToken;
@@ -730,7 +858,9 @@ async function openSolution(quizNum, problemId, previewRow, solutionId) {
   if (!rows) {
     loading.hidden = true;
     document.getElementById('solutionMain').hidden = false;
-    body.textContent = 'This solution is no longer published.';
+    body.textContent = solutionsCopyWanted() && solutionsCopyRows
+      ? 'This solution isn\'t in the copy kept for while the database is offline.'
+      : 'This solution is no longer published.';
     reveal();
     if (solutionPreviewMode) notifyPreviewParent('solution-preview-ready');
     return;
@@ -1144,8 +1274,10 @@ function showSolutionList(focus) {
   const here = list.querySelector('.solution-list-item[aria-current]');
   if (focus && here) here.focus({ preventScroll: true });
   // A copy older than poll.solutions is fetched again now, so the list is
-  // as fresh as the rest of the site allows.
-  loadSolutionsIndex().then(refreshSolutionsUi);
+  // as fresh as the rest of the site allows. With the database off, the
+  // Netlify copy is the list instead (it refreshes the UI once read).
+  if (solutionsCopyWanted()) loadSolutionsCopy();
+  else loadSolutionsIndex().then(refreshSolutionsUi);
 }
 
 function closeSolutionList() {

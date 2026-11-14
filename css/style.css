@@ -1084,53 +1084,11 @@
     #update-forced-banner .forced-icon { animation: none; }
   }
 
-  /* ── Bug report nudge banner ── */
-  #bug-report-banner {
-    display: none;
-    position: fixed;
-    bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 9998;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: calc(8px * var(--radius-mult));
-    padding: 0.65rem 1.1rem;
-    box-shadow: 0 4px 24px color-mix(in srgb, var(--shadow) calc(0.45 * 100%), transparent);
-    font-family: var(--mono);
-    font-size: 0.76rem;
-    color: var(--text);
-    align-items: center;
-    gap: 0.9rem;
-    white-space: nowrap;
-    animation: banner-slide-in 0.35s cubic-bezier(.4,0,.2,1);
-  }
-  #bug-report-banner.visible { display: flex; }
+  /* Slide-out shared by the banners' .hiding states. */
   @keyframes banner-slide-out {
     from { opacity: 1; transform: translateX(-50%) translateY(0); }
     to   { opacity: 0; transform: translateX(-50%) translateY(12px); }
   }
-  #bug-report-banner.hiding {
-    animation: banner-slide-out 0.3s cubic-bezier(.4,0,.2,1) forwards;
-  }
-  #bug-report-banner .banner-text { color: var(--muted); }
-  #bug-report-banner .banner-text strong { color: var(--text); }
-  #bug-report-banner .banner-text a {
-    color: var(--accent);
-    text-decoration: none;
-  }
-  #bug-report-banner .banner-text a:hover { text-decoration: underline; }
-  #bug-report-banner .banner-dismiss {
-    background: none;
-    border: none;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 1rem;
-    line-height: 1;
-    padding: 0 0.1rem;
-    transition: color 0.15s;
-  }
-  #bug-report-banner .banner-dismiss:hover { color: var(--text); }
 
   /* ── Random N full-screen reminder ── */
   #fullscreen-hint-banner {
@@ -1185,36 +1143,6 @@
     vector-effect: non-scaling-stroke;
   }
 
-  /* ── Theme nudge banner ── */
-  #theme-nudge-banner {
-    display: none;
-    position: fixed;
-    bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 9997;
-    background: var(--surface);
-    border: 1px solid var(--accent2, var(--accent));
-    border-radius: calc(8px * var(--radius-mult));
-    padding: 0.65rem 1.1rem;
-    box-shadow: 0 4px 24px color-mix(in srgb, var(--shadow) calc(0.45 * 100%), transparent);
-    font-family: var(--mono);
-    font-size: 0.76rem;
-    color: var(--text);
-    align-items: center;
-    gap: 0.9rem;
-    white-space: nowrap;
-    animation: banner-slide-in 0.35s cubic-bezier(.4,0,.2,1);
-  }
-  #theme-nudge-banner.visible { display: flex; }
-  #theme-nudge-banner .banner-text { color: var(--muted); }
-  #theme-nudge-banner .banner-text strong { color: var(--accent2, var(--accent)); }
-  #theme-nudge-banner .banner-dismiss {
-    background: none; border: none; color: var(--muted); cursor: pointer;
-    font-size: 1rem; line-height: 1; padding: 0 0.1rem; transition: color 0.15s;
-  }
-  #theme-nudge-banner .banner-dismiss:hover { color: var(--text); }
-
   /* Same reasoning as .forum-message-body's mjx-container rule in forum.css:
      a long $$...$$ derivation can render wider than the problem card,
      especially on mobile — scope the scroll to just the equation instead of
@@ -1242,9 +1170,7 @@
     #update-banner,
     #update-forced-banner,
     #update-done-banner,
-    #bug-report-banner,
-    #fullscreen-hint-banner,
-    #theme-nudge-banner {
+    #fullscreen-hint-banner {
       left: 0.6rem;
       right: 0.6rem;
       bottom: 0.8rem;
@@ -1255,7 +1181,6 @@
       align-items: center;
       animation-name: banner-slide-in-mobile;
     }
-    #bug-report-banner.hiding,
     #update-forced-banner.hiding,
     #update-done-banner.hiding,
     #fullscreen-hint-banner.hiding {
@@ -1264,16 +1189,12 @@
     #update-banner .banner-text,
     #update-forced-banner .banner-text,
     #update-done-banner .banner-text,
-    #bug-report-banner .banner-text,
-    #fullscreen-hint-banner .banner-text,
-    #theme-nudge-banner .banner-text {
+    #fullscreen-hint-banner .banner-text {
       flex: 1 1 auto;
       min-width: 0;
     }
     #update-banner .banner-reload,
-    #update-banner .banner-dismiss,
-    #bug-report-banner .banner-dismiss,
-    #theme-nudge-banner .banner-dismiss {
+    #update-banner .banner-dismiss {
       flex-shrink: 0;
     }
   }
@@ -3315,11 +3236,9 @@
     outline: none;
     /* Field lines from js/changelog.js render on a full-screen overlay
        canvas at z-index 9990 (appended to <body>, so it stacks at the
-       root, and deliberately below #update-banner/#bug-report-banner/
-       #theme-nudge-banner's 9997-9999 — the overlay used to sit at 9998,
-       level with #bug-report-banner, and on ties the later-appended
-       element wins, so the overlay could paint over a banner instead of
-       under it). Without a stacking context of its own, this button's +
+       root, and deliberately below the bottom banners' z-indexes — an
+       overlay level with a banner could paint over it, since on ties the
+       later-appended element wins). Without a stacking context of its own, this button's +
        sign (drawn on #chargeCanvas below) sits in normal flow underneath
        that overlay — invisible whenever a field line's trajectory happens
        to pass over the button, which for the dipole (opposite-sign) case
@@ -3609,3 +3528,74 @@
 }
 .db-offline-box a { color: var(--accent); }
 html.db-offline .db-offline-box { display: block; }
+
+/* ── Site footer (js/site-footer.js) ──
+   Logo and name, then Report a bug, Settings, Manual and GitHub with small line
+   icons: muted until hovered or focused, centred, wrapping on a phone. */
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 1.6rem;
+  padding: 1.6rem 1rem calc(1.8rem + env(safe-area-inset-bottom, 0px));
+  font-size: 0.82rem;
+  color: var(--muted);
+  clear: both;
+}
+.site-footer[hidden] { display: none; }
+.site-footer-brand { display: inline-flex; align-items: center; gap: 0.5rem; }
+.site-footer-logo { width: 18px; height: 18px; flex: none; }
+.site-footer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: inherit;
+  text-decoration: none;
+  background: none;
+  border: 0;
+  padding: 0.15rem 0;
+  font: inherit;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.site-footer-link svg { width: 1em; height: 1em; flex: none; }
+.site-footer-link:hover,
+.site-footer-link:focus-visible { color: var(--text); outline: none; }
+.site-footer-link:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.site-footer-forum { padding-bottom: 1.2rem; }
+/* Settings only: a rule between the last settings group and the footer. */
+.site-footer-rule { border: 0; border-top: 1px solid var(--border); margin: 1.6rem 0 0; }
+
+/* The footer is the page's last line, as on other sites: nothing under it
+   but its own padding. The body's bottom padding goes while a screen with a
+   footer shows, and the wrap above the footer drops its own. */
+html:not(.lockdown) body:has(> .has-site-footer.visible) { padding-bottom: 0; }
+html:not(.lockdown) .site-footer-screen > .site-footer-above { padding-bottom: 0; }
+/* Stats, Solution, Settings and Manual fill the window below the top bar
+   as a column, so on a short screen the footer still sits at the bottom
+   edge and nothing scrolls. :is() keeps the screens' ids in the selector,
+   outranking their own "#id.visible { display: block }". */
+html:not(.lockdown) :is(#statsScreen, #solutionScreen, #settingsScreen, #manualScreen).site-footer-screen.visible {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - var(--top-bar-h) - env(safe-area-inset-top, 0px));
+  min-height: calc(100dvh - var(--top-bar-h) - env(safe-area-inset-top, 0px));
+}
+.site-footer-screen > .site-footer { margin-top: auto; }
+/* On a narrow window the quiz page's footer wraps under the fixed corner box
+   (#liveQuizTimer or Solve-all's #stickyScore, bottom right): while one shows,
+   the footer leaves room for it below its links, as the body's own padding
+   used to. Wide windows keep the footer clear of it anyway. */
+@media (max-width: 900px) {
+  /* Clearance = the box's 1.5rem offset + its height + 1.5rem of air:
+     the timer is about 2.6rem tall, the score box about 6.6rem. */
+  body:has(#liveQuizTimer.visible) #appPage > .site-footer {
+    padding-bottom: calc(5.6rem + env(safe-area-inset-bottom, 0px));
+  }
+  body:has(#stickyScore.visible) #appPage > .site-footer {
+    padding-bottom: calc(9.6rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+/* Inside Safe Exam Browser the links would lead nowhere. */
+html.lockdown .site-footer { display: none; }

@@ -1371,7 +1371,7 @@ is day mode. `js/themes.js` provides the picker, the **custom theme builder**
 (background, text, two accents, roundness, font pairing — Plex, Grotesk,
 Quicksand or All-mono — separately for night and day, with surface/border/
 muted/accent-dim derived automatically; nothing is applied until "Save &
-apply"), and a one-time theme nudge banner. `js/theme-colors.js` reads the live
+apply"). `js/theme-colors.js` reads the live
 computed CSS variables so canvas/JS-drawn UI (chart series via
 `quizSeriesColor`, confetti, the π egg) follows the active theme. The editor
 uses the same theme files and storage keys. Each preset (night and day) also
@@ -1458,10 +1458,6 @@ and the full-screen reminder queue first-come-first-served. API: `register`,
   brought a newer version. At most one forced reload per outdated
   version per tab per 24 hours (sessionStorage), so a reload that doesn't
   bring the new version can't loop.
-- **Bug-report nudge** ("Report on Telegram"): at most once a day, after 10
-  minutes of use. The third ✕ turns on "Hide bug report reminder".
-- **Theme nudge**: once, suggesting a preset. Never inside Safe Exam Browser, where it would change the theme mid-quiz. The third ✕ turns on "Hide try
-  new theme reminder". Both counts start over then.
 
 ### Remote settings (`site-version.json`)
 
@@ -2371,13 +2367,13 @@ Course-scoped keys start with `STORAGE_PREFIX` (shown as `<p>`).
 | Storage | Key | Contents |
 |---|---|---|
 | localStorage | `flux_settings` | All settings (not course-prefixed). |
-| localStorage | `<p>-theme`, `<p>-color-theme`, `<p>-custom-theme`, `<p>-theme-nudge-shown` | Day/night, preset, custom theme, nudge flag. |
+| localStorage | `<p>-theme`, `<p>-color-theme`, `<p>-custom-theme` | Day/night, preset, custom theme. |
 | localStorage | `<p>_stats_v2`, `<p>_po_mode`, `<p>_tp_quiz` | Attempt log; Last/Best overview mode; quiz shown in Topics. |
 | localStorage | `<p>_sa_q…` | Solve-All progress per quiz and mode. |
 | localStorage | `<p>_topics_q…`, `<p>_filtermode_q…`, `<p>_numfilter_q…`, `<p>_typefilter_q…` | Problem Pool Filter state per quiz. |
 | localStorage | `<p>_forum_device_id`, `<p>_forum_device_secret`, `<p>_forum_device_token`, `<p>_forum_identity_token` | Device identity and tokens. |
 | localStorage | `<p>_forum_nickname`, `<p>_forum_pin`, `<p>_forum_display_name`, `<p>_forum_avatar_cache`, `<p>_forum_last_seen_id`, `<p>_forum_pin_*` | Forum identity, avatars, unread tracking. |
-| localStorage | `<p>_splash_mandatory_shown`, `<p>-bug-nudge-shown` | Splash and nudge bookkeeping. |
+| localStorage | `<p>_splash_mandatory_shown` | Splash bookkeeping. |
 | localStorage | `<p>_deploy_msg_seen` | Version and text of the last `DEPLOY_MESSAGE` handled (shown or skipped). |
 | localStorage | `<p>-problem-flags` | Problem flags: `{ "q1_P55": 1 \| 2 }` (1 = C1, 2 = C2). |
 | localStorage | `<p>-fig-anim-speed` | Animated figures' speed: `0.5`, `1` or `2`. |
@@ -2596,7 +2592,7 @@ in `editor/editor.js`. Afterwards run *Check all → Rebuild* in the editor.
 ## License
 
 This is a free, non-commercial study project: no ads, no paid features, no
-fees. The repository holds four kinds of material under four different terms.
+fees. The repository holds five kinds of material under five different terms.
 
 **Code** (everything not listed below) — Copyright © 2026 Ansar Seitkali
 and contributors. Licensed under the
@@ -2612,6 +2608,15 @@ its source code. Copyright and attribution notices must be kept.
 any other license here, as section 7(e) of the AGPL allows. Copies and modified
 versions of the code must use a different name and logo, and must not present
 themselves as this site or as connected to it.
+
+**Pokémon avatars** (the ten pixel drawings in `GUEST_POKEMON`, `js/stats.js`,
+shown in Stats to visitors without a nickname: Pikachu, Bulbasaur, Charmander, Squirtle, Jigglypuff, Gengar, Snorlax, Ditto, Voltorb and Diglett) — fan drawings of
+Pokémon characters. Pokémon and the Pokémon character names are trademarks of
+Nintendo; the characters are © 1995–2026 Nintendo, Creatures Inc. and GAME FREAK inc. **Not licensed**: they
+are not covered by the AGPL or any other license here, and this project claims
+no rights to them. The site is not affiliated with, endorsed or sponsored by
+Nintendo, Creatures Inc., GAME FREAK inc. or The Pokémon Company, uses them
+non-commercially, and will remove them at the rights holders' request.
 
 **Worked solutions** (the solution text and figures written in the solutions
 editor and shown on the Solution screen) — © their authors, credited under each

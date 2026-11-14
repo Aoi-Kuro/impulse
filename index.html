@@ -411,13 +411,6 @@
   <span class="banner-text" id="update-done-text"></span>
 </div>
 
-<!-- ── Bug report nudge banner ── -->
-<div id="bug-report-banner" role="status" aria-live="polite">
-  <span class="banner-icon">🐛</span>
-  <span class="banner-text">Found a bug or mistake? <strong><a href="https://t.me/Aoi_Kuro" target="_blank" rel="noopener" id="bug-report-link">Report on Telegram</a></strong></span>
-  <button class="banner-dismiss" onclick="dismissBugBanner()" title="Dismiss">✕</button>
-</div>
-
 <!-- ── Random N full-screen reminder (auto-hides after 10 seconds) ── -->
 <button type="button" id="fullscreen-hint-banner" aria-live="polite" hidden
         aria-label="Open Settings, Study section, for full-screen behaviour"
@@ -426,13 +419,6 @@
   <span class="banner-icon">⛶</span>
   <span class="banner-text">You can turn off full-screen behaviour in <strong>Settings → Study</strong>.</span>
 </button>
-
-<!-- ── Theme nudge banner ── -->
-<div id="theme-nudge-banner" role="status" aria-live="polite">
-  <span class="banner-icon">🎨</span>
-  <span class="banner-text">Trying the <strong id="theme-nudge-name">Theme</strong> theme — check the palette icon for more</span>
-  <button class="banner-dismiss" onclick="dismissThemeNudge()" title="Dismiss">✕</button>
-</div>
 
 <!-- ── Custom theme modal ──
      Nothing here touches the live page until "Save & apply" — see themes.js. -->
@@ -611,7 +597,7 @@
       <button class="changelog-btn" id="changelogBtn" onclick="toggleChangelog()" title="Changelog">
         <canvas id="chargeCanvas" width="32" height="32"></canvas>
       </button>
-      <span class="changelog-btn-label" id="changelogBtnLabel">v<span id="changelogBtnVersion">—</span> · changelog · <a class="changelog-license-link" href="https://github.com/Aoi-Kuro/impulse/blob/main/LICENSE" target="_blank" rel="noopener license" title="Copyright and licenses" onclick="if (typeof openLicenseScreen === 'function') { openLicenseScreen(); return false; }">copyright</a></span>
+      <span class="changelog-btn-label" id="changelogBtnLabel">v<span id="changelogBtnVersion">—</span> · changelog · <a class="changelog-license-link" href="https://github.com/Aoi-Kuro/impulse/blob/HEAD/LICENSE" data-github-path="/blob/HEAD/LICENSE" target="_blank" rel="noopener license" title="Copyright and licenses" onclick="if (typeof openLicenseScreen === 'function') { openLicenseScreen(); return false; }">copyright</a></span>
     </div>
 
     <!-- ── Changelog panel ── -->
@@ -620,7 +606,7 @@
         <span class="changelog-title">Changelog</span>
         <div class="changelog-header-actions">
           <button class="field-lines-toggle" id="fieldLinesToggle" onclick="toggleFieldLines()" title="Hide field lines">⚡ field lines</button>
-          <a class="changelog-github-link" href="https://github.com/Aoi-Kuro/impulse" target="_blank" rel="noopener" title="View source on GitHub">GitHub ↗</a>
+          <a class="changelog-github-link" href="https://github.com/Aoi-Kuro/impulse" data-github-path="" target="_blank" rel="noopener" title="View source on GitHub">GitHub ↗</a>
           <button class="changelog-close" onclick="toggleChangelog()" title="Close">✕</button>
         </div>
       </div>
@@ -875,8 +861,16 @@
         </div>
       </div>
     </div>
-    <div class="stats-legend" id="statsLegend"></div>
     <div class="stats-chart-wrap">
+      <!-- The quizzes' colours, inside the chart's box (renderLegend in
+           js/stats.js); hidden with the canvas while nothing is plotted. -->
+      <div class="stats-legend" id="statsLegend"></div>
+      <!-- Shown instead of the chart while nothing is plotted (drawChart in
+           js/stats.js), in the Attempt log's empty style. -->
+      <div class="stats-empty stats-chart-empty" id="statsChartEmpty" hidden>
+        <div class="stats-empty-icon">📈</div>
+        <div>It takes at least two dots to make a line, go and create them!</div>
+      </div>
       <canvas id="statsChart"></canvas>
       <div class="chart-tooltip" id="chartTooltip"></div>
     </div>
@@ -1123,13 +1117,19 @@
       <section class="license-card">
         <h2>Site Code <span class="license-badge">AGPL-3.0</span></h2>
         <p>The source code of this site is © 2026 Ansar Seitkali and contributors, licensed under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener license">GNU Affero General Public License v3.0</a>.</p>
-        <p>You may use, modify and share it, as long as modified versions stay under the same license and keep their source code available, including to people who use a modified version over a network, such as a hosted copy of this site. Copyright and attribution notices must be kept. The source code is on <a href="https://github.com/Aoi-Kuro/impulse" target="_blank" rel="noopener">GitHub</a>.</p>
+        <p>You may use, modify and share it, as long as modified versions stay under the same license and keep their source code available, including to people who use a modified version over a network, such as a hosted copy of this site. Copyright and attribution notices must be kept. The source code is on <a href="https://github.com/Aoi-Kuro/impulse" data-github-path="" target="_blank" rel="noopener">GitHub</a>.</p>
       </section>
 
       <section class="license-card">
         <h2>Names and Logos <span class="license-badge">Not licensed</span></h2>
         <p>The names “Impulse” and “Flux”, the site logos and the app icons are © 2026 Ansar Seitkali. They are not covered by the AGPL or any other license here, as section 7(e) of the AGPL allows.</p>
         <p>Copies and modified versions of the code must use a different name and logo, and must not present themselves as this site or as connected to it.</p>
+      </section>
+
+      <section class="license-card">
+        <h2>Pokémon Avatars <span class="license-badge">Not licensed</span></h2>
+        <p>The small pixel avatars shown in Stats to visitors without a nickname (Pikachu, Bulbasaur, Charmander, Squirtle, Jigglypuff, Gengar, Snorlax, Ditto, Voltorb and Diglett) are fan drawings of Pokémon characters. Pokémon and the Pokémon character names are trademarks of Nintendo. The characters are © 1995–2026 Nintendo, Creatures Inc. and GAME FREAK inc.</p>
+        <p>This site is not affiliated with, endorsed or sponsored by Nintendo, Creatures Inc., GAME FREAK inc. or The Pokémon Company. The drawings are used non-commercially, are not covered by the AGPL or any other license here, and will be removed at the request of the rights holders.</p>
       </section>
 
       <section class="license-card">
@@ -1199,6 +1199,9 @@
   <div class="stats-modal-box gs-modal-box">
     <div class="stats-modal-title">Getting Started</div>
     <!-- Shown only while the database is offline (js/offline-account.js). -->
+    <!-- Shown when the limit on solutions without an account opened this
+         screen (js/solutions.js). -->
+    <div class="gs-offline-note" id="gsSolutionsNote" style="display:none;">You've read 5 solutions without an account. Make one to keep reading: it's free and takes just a nickname.</div>
     <div class="gs-offline-note" id="gsOfflineNote" style="display:none;">The database is offline right now. You can still start: your account is made on this device and registered once the database is back.</div>
     <div class="stats-modal-actions gs-start-row">
       <button type="button" class="stats-modal-btn primary gs-start-btn" onclick="chooseGettingStarted('create')">I'm new</button>
@@ -1535,6 +1538,10 @@
 <!-- Personal cabinet (👤 → Stats) beside the logo; placed before
      editor-access.js so the Editorial link lines up after it. -->
 <script src="js/cabinet-link.js"></script>
+
+<!-- Footer at the bottom of the long screens (Random N, Solve them all, Stats,
+     the end of the forum, Settings, Manual). -->
+<script src="js/site-footer.js"></script>
 <script src="js/editor-access.js"></script>
 <script src="js/quiz-engine.js"></script>
 <!-- Logo cube tumble whenever the main menu appears, and once everything

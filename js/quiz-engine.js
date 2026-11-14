@@ -3227,58 +3227,6 @@ window.addEventListener('quiztimer:activechange', (event) => {
   else _cancelFullscreenHint();
 });
 
-// ─── Bug report nudge banner ("Report on Telegram") ───────────────────────────
-// Shows once a day, after ~10 minutes of active use — not on a repeating timer.
-const BUG_NUDGE_KEY = STORAGE_PREFIX + '-bug-nudge-shown';
-const BUG_NUDGE_INTERVAL = 24 * 60 * 60 * 1000; // at most once a day
-const BUG_NUDGE_DELAY = 10 * 60 * 1000;         // after 10 min of usage
-
-BannerManager.register('bug',
-  () => { // show
-    const banner = document.getElementById('bug-report-banner');
-    if (!banner) return;
-    banner.classList.remove('hiding');
-    banner.classList.add('visible');
-  },
-  () => { // hide (preempted by a higher-priority banner)
-    const banner = document.getElementById('bug-report-banner');
-    if (banner) banner.classList.remove('visible', 'hiding');
-  }
-);
-
-// Three ✕ in all turn on "Hide bug report reminder" (same rule as the
-// theme nudge, js/themes.js). The count starts over then, so turning the
-// setting back off gives three more.
-const BUG_NUDGE_REFUSALS_KEY = STORAGE_PREFIX + '-bug-nudge-refusals';
-const BUG_NUDGE_REFUSALS_MAX = 3;
-
-function showBugBanner() {
-  if (typeof getSetting === 'function' && getSetting('notifications', 'hideBugReportReminder') === true) return;
-  const last = +localStorage.getItem(BUG_NUDGE_KEY) || 0;
-  if (Date.now() - last < BUG_NUDGE_INTERVAL) return;
-  BannerManager.request('bug');
-}
-
-function dismissBugBanner() {
-  const banner = document.getElementById('bug-report-banner');
-  if (!banner) return;
-  localStorage.setItem(BUG_NUDGE_KEY, String(Date.now()));
-  banner.classList.add('hiding');
-  banner.addEventListener('animationend', () => {
-    banner.classList.remove('visible', 'hiding');
-  }, { once: true });
-  BannerManager.release('bug');
-  const refusals = (+localStorage.getItem(BUG_NUDGE_REFUSALS_KEY) || 0) + 1;
-  if (refusals >= BUG_NUDGE_REFUSALS_MAX && typeof setSetting === 'function') {
-    localStorage.removeItem(BUG_NUDGE_REFUSALS_KEY);
-    setSetting('notifications', 'hideBugReportReminder', true);
-    // After the slide-out: the setting's display:none would cut it short.
-    setTimeout(() => { if (typeof applyNotificationSettings === 'function') applyNotificationSettings(); }, 350);
-  } else {
-    localStorage.setItem(BUG_NUDGE_REFUSALS_KEY, String(refusals));
-  }
-}
-
 // Run immediately on load, then on the set interval
 window.addEventListener('DOMContentLoaded', () => {
   checkForUpdate();
@@ -3286,8 +3234,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // is looking at has no use for an update until it's shown again (below).
   startSitePoll('update', () => { if (!document.hidden && sitePollDue('update', _lastUpdateCheckAt)) checkForUpdate(); });
 
-  // Telegram/bug-report nudge: once a day, after 10 minutes of usage.
-  setTimeout(showBugBanner, BUG_NUDGE_DELAY);
+  // The bug-report and theme-nudge banners are gone: drop what they kept.
+  ['-bug-nudge-shown', '-bug-nudge-refusals', '-theme-nudge-shown', '-theme-nudge-refusals']
+    .forEach((k) => { try { localStorage.removeItem(STORAGE_PREFIX + k); } catch (e) { /* storage blocked */ } });
 
   // Coming back to the tab: catch up on the polls skipped while it was
   // hidden — at most one request per interval, however often tabs are

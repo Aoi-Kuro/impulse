@@ -1,12 +1,12 @@
 // ─── Banner priority manager ────────────────────────────────────────────────
-// Makes sure only one of the bottom notification banners (update / bug-report
-// aka "Telegram" / theme-nudge) is visible at a time.
+// Makes sure only one of the bottom notification banners (update,
+// update-done, full-screen hint) is visible at a time.
 //
 // Priority rules:
 //   1. "update"  always wins — if it needs to show, it preempts whatever
 //      banner is currently on screen (that banner is paused, not lost — it
 //      resumes as soon as the update banner is dismissed).
-//   2. All other banners ("bug", "theme", ...) share the next tier: whichever
+//   2. All other banners share the next tier: whichever
 //      one asks to show *first* gets shown first; any later request just
 //      waits in line until the current one is dismissed.
 //

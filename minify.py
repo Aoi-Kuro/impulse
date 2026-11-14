@@ -45,6 +45,9 @@ Checks before zipping (the build fails instead of shipping a broken site)
   - nickname-hashes.json comes from this course's own database (or its last
     good copy); --deploy also checks the linked Netlify site is this course's
     (netlifySiteId in js/course-config.js)
+  - --deploy only: the published solutions, from the same database (or its
+    last copy), go into netlify/edge-functions/solutions-copy.ts, brotli
+    compressed, for reading while the database is off (build_solutions_copy)
   - site-version.json: only known keys and sane values (js/site-config.js),
     "version" matching CURRENT_VERSION and the changelog, "min_version" not
     above "version". What the file will make open tabs do, compared with the
@@ -542,9 +545,10 @@ def edge_course(problems):
     }
 
 
-def stage_edge_functions(stage, problems):
+def stage_edge_functions(stage, problems, solutions_copy=None):
     """Copies netlify/edge-functions/ next to the built site, with this
-    course's values filled into the ones that use them."""
+    course's values filled into the ones that use them, and the solutions
+    copy (build_solutions_copy) into solutions-copy.ts."""
     course = edge_course(problems)
     if not course:
         return
@@ -555,6 +559,12 @@ def stage_edge_functions(stage, problems):
                 problems.append(f'{EDGE_SRC}/{f}: expected exactly one {EDGE_COURSE_SLOT} to fill in')
                 continue
             text = text.replace(EDGE_COURSE_SLOT, 'JSON.parse(' + json.dumps(json.dumps(course, ensure_ascii=False)) + ')')
+        if f == SOLUTIONS_COPY_FILE:
+            if text.count(SOLUTIONS_COPY_SLOT) != 1:
+                problems.append(f'{EDGE_SRC}/{f}: expected exactly one {SOLUTIONS_COPY_SLOT} to fill in')
+                continue
+            if solutions_copy:
+                text = text.replace(SOLUTIONS_COPY_SLOT, json.dumps(solutions_copy, separators=(',', ':')))
         dst = os.path.join(stage, EDGE_SRC, f)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         with open(dst, 'w', encoding='utf-8', newline='\n') as fh:
@@ -657,6 +667,108 @@ def build_nickname_hashes(out, problems):
     return note
 
 
+# ── Solutions copy for a database that is off (--deploy) ─────────────────
+# netlify/edge-functions/solutions-copy.ts hands out every published solution
+# while the database is off, and a 404 while it's up; js/solutions.js asks for
+# it only when its indicator says the database is offline. The copy lives
+# inside that edge function, never as a file of the site, so it can't be
+# downloaded past that check. Built here from THIS course's database: the
+# columns Go offline downloads (SOLUTIONS_ROW_COLUMNS in js/solutions.js),
+# without each figure's TikZ source (the page only draws the compiled steps),
+# brotli quality 5 (by Node, which the Netlify CLI needs anyway), base64.
+# No database answer: the last copy for the same course and project, kept
+# outside the project. None at all: deployed without a copy (the function then
+# always says 404), with a warning, since a missing copy only loses solutions
+# during an outage and can't let anything through.
+SOLUTIONS_COPY_FILE = 'solutions-copy.ts'
+SOLUTIONS_COPY_SLOT = 'null /* <solutions-copy> */'
+SOLUTIONS_COPY_PAGE = 500
+NODE_BROTLI = r"""
+const z = require('zlib'); const parts = [];
+process.stdin.on('data', (d) => parts.push(d)).on('end', () => {
+  const raw = Buffer.concat(parts);
+  const br = z.brotliCompressSync(raw, { params: {
+    [z.constants.BROTLI_PARAM_QUALITY]: 5, [z.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } });
+  if (!z.brotliDecompressSync(br).equals(raw)) { console.error('brotli round trip differs'); process.exit(1); }
+  process.stdout.write(br.toString('base64'));
+});
+"""
+
+
+def _solutions_copy_cache(course, ref):
+    root = os.environ.get('LOCALAPPDATA') or os.path.join(os.path.expanduser('~'), '.cache')
+    return os.path.join(root, 'impulse-minify', f'solutions-copy-{course}-{ref}.json')
+
+
+def _fetch_published_solutions(edge):
+    m = re.search(r"const SOLUTIONS_ROW_COLUMNS = '([a-z_,]+)';", _read(os.path.join('js', 'solutions.js')))
+    if not m:
+        raise ValueError('js/solutions.js has no SOLUTIONS_ROW_COLUMNS')
+    rows = []
+    while True:
+        req = urllib.request.Request(
+            f"{edge['supabaseUrl']}/rest/v1/problem_solutions?select={m.group(1)}&status=eq.published&order=id.asc",
+            headers={'apikey': edge['publishableKey'], 'Authorization': 'Bearer ' + edge['publishableKey'],
+                     'Range-Unit': 'items', 'Range': f'{len(rows)}-{len(rows) + SOLUTIONS_COPY_PAGE - 1}'})
+        page = json.load(urllib.request.urlopen(req, timeout=60))
+        if not isinstance(page, list):
+            raise ValueError('unexpected answer from problem_solutions')
+        rows += page
+        if len(page) < SOLUTIONS_COPY_PAGE:
+            break
+    for r in rows:
+        if isinstance(r.get('figure'), dict):
+            r['figure'].pop('tikz', None)
+    return rows
+
+
+def build_solutions_copy(problems):
+    """Returns (copy for solutions-copy.ts or None, a line for the report)."""
+    course = course_id()
+    edge = edge_course(problems)
+    if not edge:
+        return None, None
+    ref = re.match(r'https://([a-z0-9]+)\.supabase\.co$', edge['supabaseUrl'])
+    if not course or not ref:
+        problems.append('solutions copy: no course in index.html, or js/course-config.js has no *.supabase.co url for it')
+        return None, None
+    ref = ref.group(1)
+    cache = _solutions_copy_cache(course, ref)
+    try:
+        payload = {'course': course, 'projectRef': ref,
+                   'builtAt': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                   'rows': _fetch_published_solutions(edge)}
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        with open(cache, 'w', encoding='utf-8') as fh:
+            json.dump(payload, fh, ensure_ascii=False, separators=(',', ':'))
+        source = f'from {ref} ({course})'
+    except Exception as e:   # noqa: BLE001 — any failure means "no fresh copy"
+        try:
+            with open(cache, encoding='utf-8') as fh:
+                payload = json.load(fh)
+        except (OSError, ValueError):
+            return None, (f'WARNING solutions copy: the {course} database ({ref}) did not answer ({e}) and there is '
+                          'no earlier copy, so this deploy has none (solutions can\'t be read while the database is off)')
+        if payload.get('course') != course or payload.get('projectRef') != ref:
+            problems.append(f'{cache}: kept solutions copy is not for {course} / {ref}')
+            return None, None
+        source = f'database unreachable ({e}); kept copy from {payload.get("builtAt")}'
+    raw = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    node = shutil.which('node')
+    if not node:
+        problems.append('solutions copy: Node.js is needed to compress it (brotli); install it as for the Netlify CLI')
+        return None, None
+    done = subprocess.run([node, '-e', NODE_BROTLI], input=raw, capture_output=True)
+    if done.returncode != 0:
+        problems.append(f'solutions copy: brotli failed: {done.stderr.decode(errors="replace").strip()}')
+        return None, None
+    b64 = done.stdout.decode('ascii')
+    copy = {'course': course, 'projectRef': ref, 'builtAt': payload['builtAt'], 'count': len(payload['rows']), 'br': b64}
+    note = (f'solutions copy: {copy["count"]} solutions {source}, '
+            f'{len(raw) / 1048576:.2f} MB -> {len(b64) * 3 / 4 / 1024:.0f} KB brotli (in {EDGE_SRC}/{SOLUTIONS_COPY_FILE})')
+    return copy, note
+
+
 def check_deploy_site(problems):
     """--deploy only: the linked Netlify site must be this course's own."""
     want = course_field('netlifySiteId')
@@ -729,7 +841,7 @@ def main():
     check_nickname_rules(problems)
     if deploying:
         check_deploy_site(problems)
-    hashes_note = None
+    hashes_note = copy_note = None
     try:
         for root, dirs, files in os.walk(SRC):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -774,7 +886,8 @@ def main():
                 if os.path.exists(os.path.join(out, page_rel)):
                     bundles += bundle_page(out, page_rel, name, problems)
         if deploying and not problems:
-            stage_edge_functions(stage, problems)
+            solutions_copy, copy_note = build_solutions_copy(problems)
+            stage_edge_functions(stage, problems, solutions_copy)
         if not problems:
             hashes_note = (f'{NICKNAME_HASHES}: left out (--no-nickname-hashes), offline sign-up is off'
                            if no_hashes else build_nickname_hashes(out, problems))
@@ -786,7 +899,7 @@ def main():
             sys.exit(1)
 
         if deploying:
-            report(stats, bundles, manifest_actions, hashes_note)
+            report(stats, bundles, manifest_actions, hashes_note, copy_note)
             deploy(stage, draft)
             print('All checks passed. ' + ('Draft deployed; the live site is unchanged.' if draft else 'Deployed.'))
             return
@@ -808,7 +921,7 @@ def main():
     print(f'All checks passed. {count} files -> {zip_path} ({os.path.getsize(zip_path) / 1024 / 1024:.2f} MB)')
 
 
-def report(stats, bundles, manifest_actions, hashes_note=None):
+def report(stats, bundles, manifest_actions, hashes_note=None, copy_note=None):
     for k, (n, b, a) in stats.items():
         if n:
             print(f'  {k:7s} {n:4d} files  {b / 1024:9.1f} KB -> {a / 1024:9.1f} KB')
@@ -819,6 +932,8 @@ def report(stats, bundles, manifest_actions, hashes_note=None):
         print('  *', line)
     if hashes_note:
         print(hashes_note)
+    if copy_note:
+        print(copy_note)
 
 
 if __name__ == '__main__':

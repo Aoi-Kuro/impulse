@@ -85,11 +85,13 @@
 .stats-close-btn:hover { color: var(--text); border-color: var(--text); }
 
 /* ── Legend ── */
+/* Inside .stats-chart-wrap, above the canvas, lined up with the plot area
+   (the canvas's left padding for the y labels, PAD.left in drawChart). */
 .stats-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.7rem 1.2rem;
-  margin-bottom: 1rem;
+  gap: 0.5rem 1.2rem;
+  padding: 0 0.6rem 0.7rem;
 }
 .legend-item {
   display: flex;
@@ -145,6 +147,10 @@
 }
 .sfp-identity-avatar .forum-message-avatar img.gemini-mark { width: 22px; height: 22px; }
 .sfp-identity-avatar .forum-message-avatar-initials { font-size: 1rem; }
+/* The Pokémon an unregistered visitor gets (guestPokemonAvatarEl, js/stats.js):
+   a deeper box than an identicon's, so white pixels (Voltorb, Gengar's grin)
+   still show on the light theme. */
+.sfp-identity-avatar .guest-pokemon-avatar { background: color-mix(in srgb, var(--text) 16%, var(--surface)); }
 .sfp-identity-info {
   display: flex;
   flex-direction: column;
@@ -450,6 +456,12 @@
   height: 240px;
   cursor: crosshair;
 }
+/* Nothing to plot: the card shows only the empty message (.stats-empty, as
+   the Attempt log's), no grid or axes. */
+.stats-chart-empty[hidden] { display: none; }
+.stats-chart-wrap.is-empty .stats-legend,
+.stats-chart-wrap.is-empty #statsChart,
+.stats-chart-wrap.is-empty .chart-tooltip { display: none; }
 .chart-tooltip {
   position: absolute;
   background: var(--bg);

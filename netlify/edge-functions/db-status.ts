@@ -19,15 +19,18 @@
 //
 // Deployed with the site by `python minify.py --deploy`, which fills COURSE
 // in from js/course-config.js, as for share.ts.
+//
+// solutions-copy.ts imports COURSE and databaseState() from here, so the copy
+// of the solutions is handed out on exactly this test.
 
-interface Course {
+export interface Course {
   supabaseUrl: string;
   publishableKey: string;
 }
 // minify.py --deploy replaces the "null" string with this course's values.
-const COURSE: Course | null = JSON.parse("null");
+export const COURSE: Course | null = JSON.parse("null");
 
-type State = "up" | "paused" | "down";
+export type State = "up" | "paused" | "down";
 
 const RESOLVERS = ["https://dns.google/resolve", "https://cloudflare-dns.com/dns-query"];
 const DNS_NOERROR = 0;
@@ -54,7 +57,7 @@ async function hostnameMissing(hostname: string): Promise<boolean> {
 // PostgREST and Postgres. Any answer under 500 means the database replied (a
 // 404 is a course without that table yet), except 402, Supabase's "project
 // restricted".
-async function databaseState(course: Course): Promise<State> {
+export async function databaseState(course: Course): Promise<State> {
   try {
     const res = await fetch(`${course.supabaseUrl}/rest/v1/problem_solutions?select=id&limit=1`, {
       headers: { apikey: course.publishableKey, Authorization: `Bearer ${course.publishableKey}` },

@@ -47,7 +47,7 @@ const COURSES = {
     // screen (see forum.js's renderForumPinnedBanner) — an ordinary
     // message, nothing server-side marks it special, this id is the only
     // thing that says "this one is the pinned one".
-    pinnedMessageId: null,
+    pinnedMessageId: 1,
     // The Netlify site this course deploys to (`netlify link`); minify.py
     // --deploy refuses any other.
     netlifySiteId: '64b151a5-f4e0-4cc6-8fd6-ef5728babcdb',
@@ -71,6 +71,8 @@ const COURSES = {
       // the editor add " | Offline" / " | Editorial". Shared-link titles
       // are "<appName> Practice App".
       appName: 'Flux',
+      // The course's repository on GitHub (the site footer's GitHub link).
+      githubRepo: 'Aoi-Kuro/flux',
       ogDescription: "Interactive physics practice quiz: electric fields, Gauss's law, circuits & more. Instant feedback with scoring.",
       twitterDescription: 'Interactive physics practice quiz for PHYS 162 course at Nazarbayev University.',
       siteUrl: 'https://your-domain.com/PHYS162_Practice_Quiz.html',
@@ -112,6 +114,7 @@ const COURSES = {
       courseCode: 'PHYS161',
       brandName: 'IMPULSE',
       appName: 'Impulse',
+      githubRepo: 'Aoi-Kuro/impulse',
       ogDescription: 'Interactive physics practice quiz: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring.',
       twitterDescription: 'Interactive physics practice quiz for PHYS 161 course at Nazarbayev University.',
       siteUrl: 'https://your-domain.com/PHYS161_Practice_Quiz.html',
@@ -204,6 +207,17 @@ const BRAND_NAME = _display.brandName;
 // that shape (e.g. already has a space, or no trailing digits).
 const COURSE_CODE_DISPLAY = COURSE_CODE.replace(/^([A-Za-z]+)(\d+)$/, '$1 $2');
 const APP_NAME = _display.appName;
+// Owner/name of the course's GitHub repository (js/site-footer.js).
+const GITHUB_REPO = _display.githubRepo || '';
+// Every GitHub link marked data-github-path (changelog, Copyright screen)
+// leads to this course's repository: the path is added to its address.
+if (GITHUB_REPO) {
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('a[data-github-path]').forEach((a) => {
+      a.href = `https://github.com/${GITHUB_REPO}${a.dataset.githubPath}`;
+    });
+  });
+}
 // Shared-link (OG/Twitter) title — "Impulse Practice App".
 const SHARE_TITLE = `${APP_NAME} Practice App`;
 

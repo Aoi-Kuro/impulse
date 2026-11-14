@@ -693,6 +693,9 @@ async function callForumClaimNickname(nickname, pin) {
       nickname,
       pin: pin || undefined,
     }),
+    // A database that hangs rather than refusing must not leave the window
+    // on "Checking…": the caller then asks /db-status itself.
+    signal: AbortSignal.timeout(12000),
   });
   const data = await res.json().catch(() => null);
   applyDeviceToken(data);
@@ -2065,6 +2068,12 @@ let forumPendingPinToShow = null;
 // there comes here again.
 let gettingStartedOnSuccess = null;
 let gettingStartedOffline = false;
+// Why the screen opened, when it wasn't the visitor's own choice: 'solutions'
+// (the limit on solutions without an account, js/solutions.js) shows
+// #gsSolutionsNote. Kept while the visitor goes on to the nickname window and
+// back, cleared when the screen is closed.
+let gettingStartedReason = null;
+function setGettingStartedReason(reason) { gettingStartedReason = reason || null; }
 
 // opts.offline: the database is offline (offlineAccountGate,
 // js/offline-account.js). A note says so, "I'm new" makes the account on this
@@ -2074,6 +2083,8 @@ function openGettingStartedModal(onSuccess, opts) {
   gettingStartedOffline = !!(opts && opts.offline);
   const note = document.getElementById('gsOfflineNote');
   if (note) note.style.display = gettingStartedOffline ? '' : 'none';
+  const solNote = document.getElementById('gsSolutionsNote');
+  if (solNote) solNote.style.display = gettingStartedReason === 'solutions' ? '' : 'none';
   setGsFaqListOpen(false);
   document.getElementById('gettingStartedModalBackdrop')?.classList.add('visible');
 }
@@ -2081,13 +2092,16 @@ function openGettingStartedModal(onSuccess, opts) {
 function closeGettingStartedModal() {
   document.getElementById('gettingStartedModalBackdrop')?.classList.remove('visible');
   gettingStartedOnSuccess = null;
+  gettingStartedReason = null;
 }
 
 // mode: 'create' (I'm new) or 'restore' (I have an account).
 function chooseGettingStarted(mode) {
   const onSuccess = gettingStartedOnSuccess;
   const offline = gettingStartedOffline;
+  const reason = gettingStartedReason;
   closeGettingStartedModal();
+  gettingStartedReason = reason;              // for the way back from the nickname window
   if (offline) mode = mode === 'create' ? 'offline' : 'offline-restore';
   openForumClaimModal(mode, '', onSuccess, () => openGettingStartedModal(onSuccess, { offline }));
 }
@@ -2270,8 +2284,33 @@ async function submitForumClaimModal() {
 
   statusEl.textContent = 'Checking…';
 
+  // No usable answer (no connection, a 5xx or proxy error page, a timeout):
+  // ask /db-status now (js/offline-account.js) instead of trusting the saved
+  // answer, and if the database is off, carry on the offline way at once: a
+  // new name becomes an account on this device, a log-in says it must wait.
+  const failed = async () => {
+    if (typeof dbUnavailableNow === 'function' && await dbUnavailableNow()) {
+      if (isCreate) {
+        const made = await createPendingAccount(nickname);
+        if (made.ok) {
+          const onSuccess = forumClaimModalOnSuccess;
+          closeForumClaimModal();
+          openForumPinModal(made.pin, { andThen: onSuccess });
+          return;
+        }
+        statusEl.textContent = made.text;
+      } else {
+        statusEl.textContent = "Logging in needs the database, and it's offline right now. Come back once it's on, or go back and start as new.";
+      }
+    } else {
+      statusEl.textContent = "Couldn't reach the forum, check your connection.";
+    }
+    statusEl.classList.add('forum-composer-status-error');
+  };
+
   try {
-    const { data } = await callForumClaimNickname(nickname, isCreate ? undefined : pin);
+    const { status, data } = await callForumClaimNickname(nickname, isCreate ? undefined : pin);
+    if (!data || status >= 500) return failed();
     if (data && data.ok) {
       // data.pin only comes back on a brand-new claim (isCreate, or a
       // 'create' that happened to land on 'verify' — either way the server
@@ -2317,8 +2356,7 @@ async function submitForumClaimModal() {
     }
   } catch (err) {
     console.error('Forum claim error:', err);
-    statusEl.textContent = await dbFailureText("Couldn't reach the forum, check your connection.");
-    statusEl.classList.add('forum-composer-status-error');
+    return failed();
   }
 }
 

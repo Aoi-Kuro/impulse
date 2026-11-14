@@ -36,6 +36,8 @@
     note: '<path d="M13 4H6a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/><path d="M18.4 2.6a2 2 0 0 1 2.9 2.9L13 13.8l-3.8 1 1-3.8Z"/>',
     books: '<path d="M3 4h4v16H3ZM9 4h4v16H9Z"/><path d="m14.8 5.1 3.9-1 3.8 15.5-3.9 1Z"/>',
     chart: '<path d="M3.5 20.5h17"/><path d="M6 13h3v7.5H6ZM10.5 8h3v12.5h-3ZM15 4h3v16.5h-3Z"/>',
+    // A line through dots on two axes: the Stats chart's empty state.
+    trend: '<path d="M3.5 3.5v17h17"/><path d="m7.5 15 3.5-4.5 3 2.5 4.5-6"/><circle cx="7.5" cy="15" r="1.4"/><circle cx="11" cy="10.5" r="1.4"/><circle cx="14" cy="13" r="1.4"/><circle cx="18.5" cy="7" r="1.4"/>',
     chat: '<path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3.5 20.5l1.4-4.6A8.5 8.5 0 1 1 21 11.5Z"/>',
     eye: '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
     clipboard: '<path d="M9 4.5H7a2 2 0 0 0-2 2V20a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6.5a2 2 0 0 0-2-2h-2"/><path d="M9 3h6v3H9ZM9 11h6M9 15h6"/>',
@@ -79,7 +81,7 @@
   const EMOJI_ICON = {
     '⚙': 'gear', '📖': 'manual', '🎨': 'palette', '🌙': 'moon', '☀': 'sun',
     '📘': 'book', '🎯': 'target', '⚡': 'bolt', '📝': 'note', '📚': 'books',
-    '📊': 'chart', '💬': 'chat', '👁': 'eye', '📋': 'clipboard', '🗑': 'trash',
+    '📊': 'chart', '📈': 'trend', '💬': 'chat', '👁': 'eye', '📋': 'clipboard', '🗑': 'trash',
     '🔁': 'repeat', '👥': 'users', '🔍': 'search', '🔔': 'bell', '🔕': 'bell-off',
     '🚫': 'block', '🌐': 'globe', '📌': 'pin', '📥': 'download', '⚠': 'warning',
     '✅': 'check', '⬇': 'down', '⬆': 'up', '🚀': 'rocket', 'ℹ': 'info',

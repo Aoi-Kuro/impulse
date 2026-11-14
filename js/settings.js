@@ -86,8 +86,6 @@ const SETTINGS_DEFAULTS = {
   notifications: {
     hideUpdateReminder: false,
     forceRefreshOutsideQuiz: false,
-    hideThemeNudge: false,
-    hideBugReportReminder: false,
     goSilent: false,
     goSilentAutoOff24h: false,
     // Timestamp (ms) of when goSilent was last turned on — null while it's
@@ -195,6 +193,10 @@ function migrateSettings(raw) {
     merged.display.reduceMotion = oldStudy.reduceMotion;
   }
   delete merged.study.reduceMotion;
+  // The theme-nudge and bug-report banners were removed, and their settings
+  // with them.
+  delete merged.notifications.hideThemeNudge;
+  delete merged.notifications.hideBugReportReminder;
   // "Select latest quiz" became "Select last used quiz" (a new key, on by
   // default): the old choice doesn't carry over.
   delete merged.study.selectLatestQuizByDefault;
@@ -331,6 +333,15 @@ function isSettingsScreenOpen() {
 }
 
 function toggleSettingsScreen() {
+  // Settings is open but covered by the Manual opened on top of it (its
+  // host, js/manual.js): going to Settings means closing the Manual, back
+  // to Settings. Closing Settings here instead brought back Settings' own
+  // host underneath the still-open Manual: two screens on one page.
+  if (settingsIsOpen && typeof manualHostId !== 'undefined' && manualHostId === 'settingsScreen'
+      && typeof closeManualScreen === 'function') {
+    closeManualScreen();
+    return;
+  }
   if (settingsIsOpen) {
     closeSettingsScreen();
   } else {
@@ -1377,10 +1388,8 @@ function renderSettingsNotificationsTab() {
       ${renderRow('hideUpdateReminder', 'Hide update reminder', 'Hides the "new version available" banner.')}
       ${renderRow('forceRefreshOutsideQuiz', 'Update anyway outside quiz mode', 'While the reminder above is hidden, silently reloads the page the instant you\u2019re not in the middle of a timed Random-quiz attempt.', { sub: true, blocked: !hideUpdate })}
     </div>
-    ${renderRow('hideThemeNudge', 'Hide try new theme reminder', 'Hides the occasional "trying the X theme" banner.')}
-    ${renderRow('hideBugReportReminder', 'Hide bug report reminder', 'Hides the "Report on Telegram" banner.')}
     <div class="settings-group">
-      ${renderRow('goSilent', 'Go silent', 'Hides every notification badge (problem buttons, the forum button) and every banner above, and mutes forum push notifications while it\u2019s on.')}
+      ${renderRow('goSilent', 'Go silent', 'Hides every notification badge (problem buttons, the forum button) and the update banner, and mutes forum push notifications while it\u2019s on.')}
       ${renderRow('goSilentAutoOff24h', 'Turn off automatically after 24 hours', 'Turns Go silent back off on its own a day after you enable it.', { sub: true, blocked: !goSilentOn })}
     </div>
   `;
@@ -1812,13 +1821,10 @@ function applyDisplaySettings() {
 }
 
 // ── Notifications ───────────────────────────────────────────────────────
-// Banner-hide classes: one per banner, each driven by "its own hide
-// setting OR Go silent" — Go silent is a blanket override on top of the
-// three individual reminders, not a separate fourth hide mechanism.
+// Banner-hide classes, each driven by "its own hide setting OR Go
+// silent" — Go silent is a blanket override, not a separate mechanism.
 const NOTIF_BANNER_HIDE_CLASSES = {
   hideUpdateReminder:     'settings-hide-update-banner',
-  hideThemeNudge:         'settings-hide-theme-banner',
-  hideBugReportReminder:  'settings-hide-bug-banner',
 };
 
 // IndexedDB mirror of the effective Go-silent state, so sw.js's 'push'
@@ -1875,7 +1881,6 @@ function applyNotificationSettings() {
     const hide = getSetting('notifications', key) === true || effectiveSilent;
     document.documentElement.classList.toggle(cls, hide);
   }
-  if (typeof syncThemeNudgeSuppression === 'function') syncThemeNudgeSuppression(); // js/themes.js: stops a running theme preview too
 
   // ── Badges (problem buttons + forum button) — Go silent only ──
   document.documentElement.classList.toggle('settings-silent-badges', effectiveSilent);

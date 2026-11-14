@@ -176,6 +176,15 @@ let manualLandingScrollY = 0;
 // through goToMainMenu() -> closeManualScreen(true)). This is what the
 // manual button's onclick calls.
 function toggleManualScreen() {
+  // The Manual is open but covered by Settings opened on top of it (its
+  // host, js/settings.js): going to the Manual means closing Settings, back
+  // to it. Opening the Manual again instead stacked a second one over
+  // Settings, with the first still underneath.
+  if (typeof settingsIsOpen !== 'undefined' && settingsIsOpen && typeof settingsHostId !== 'undefined'
+      && settingsHostId === 'manualScreen' && typeof closeSettingsScreen === 'function') {
+    closeSettingsScreen();
+    return;
+  }
   const manual = document.getElementById('manualScreen');
   if (manual && manual.classList.contains('visible')) {
     closeManualScreen();
@@ -416,7 +425,7 @@ function renderManualContent() {
 // _manualGithubDataPromise, so opening the manual only ever costs a single
 // pair of requests against GitHub's unauthenticated (60/hr) rate limit no
 // matter how many .manual-github-demo elements are on screen.
-const MANUAL_GITHUB_REPO = 'Aoi-Kuro/flux';
+const MANUAL_GITHUB_REPO = (typeof GITHUB_REPO === 'string' && GITHUB_REPO) || 'Aoi-Kuro/impulse'; // js/course-config.js
 let _manualGithubDataPromise = null;
 
 // Small generic octicon-style glyphs (repo book, star, fork, issue-circle,
@@ -568,6 +577,7 @@ function manualFillTokens(html) {
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const vals = {};
   if (typeof BRAND_NAME !== 'undefined') vals.brandName = esc(BRAND_NAME);
+  if (typeof GITHUB_REPO === 'string' && GITHUB_REPO) vals.githubRepo = esc(GITHUB_REPO);
   if (typeof QUIZ_SIZE !== 'undefined') {
     vals.quizSize = QUIZ_SIZE;
     vals.cumulativePrev = QUIZ_CUMULATIVE_PREV_COUNT;

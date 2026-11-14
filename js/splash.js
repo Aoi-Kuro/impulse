@@ -10,6 +10,7 @@
 
      ""  always            "M" morning (5–11)   "D" day (11–17)
      "N" night (21–5)      "E" evening (17–21)  "P" pi-time near
+     "NEW" a brand-new visitor: no nickname and no attempts yet
      date-specific holiday/anniversary codes (NY, XMAS, WD, ... see
      COND_ACTIVE below) are only active on their specific day(s).
 
@@ -57,8 +58,24 @@
     return n.getMonth() + 1 === month && n.getDate() >= dayStart && n.getDate() <= dayEnd;
   }
 
+  // A brand-new visitor: no nickname (claimed, or made offline and waiting
+  // to register) and no attempts on this device. Read straight from
+  // storage, as this runs before js/forum.js and js/stats.js have loaded
+  // (FORUM_NICKNAME_KEY, PENDING_ACCOUNT_KEY and STATS_KEY there).
+  function isNewVisitor () {
+    try {
+      const ls = localStorage;
+      if (ls.getItem(STORAGE_PREFIX + '_forum_nickname') || ls.getItem(STORAGE_PREFIX + '_pending_account')) return false;
+      const attempts = JSON.parse(ls.getItem(STORAGE_PREFIX + '_stats_v2') || '[]');
+      return !Array.isArray(attempts) || attempts.length === 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // Special condition codes → is it active right now?
   const COND_ACTIVE = {
+    NEW: isNewVisitor,
     M: () => hour() >= 6  && hour() < 12,
     D: () => hour() >= 12 && hour() < 17,
     E: () => hour() >= 17 && hour() < 22,

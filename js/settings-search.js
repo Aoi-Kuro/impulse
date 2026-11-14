@@ -65,8 +65,6 @@ const SETTINGS_SEARCH_KEYWORDS = {
   // ── Notifications
   hideUpdateReminder: 'update, updates, new version, update banner, reload banner, refresh banner, version available, upgrade, update reminder, update notification, popup, pop up, nag, annoying banner, outdated, old version',
   forceRefreshOutsideQuiz: 'auto update, automatic update, auto reload, auto refresh, silent update, update automatically, reload automatically, refresh page, latest version, background update, stay updated, always up to date',
-  hideThemeNudge: 'theme reminder, try new theme, theme banner, theme suggestion, theme popup, theme notification, new theme, nudge, recommend theme, recommendation, ads, promo, annoying banner',
-  hideBugReportReminder: 'bug, bugs, bug report, report bug, report problem, report issue, telegram, feedback, error report, issue, contact, banner, reminder, popup, annoying banner',
   goSilent: 'silent, go silent, mute, quiet, do not disturb, dnd, focus, focus mode, notifications, notification, badges, red dots, dots, counters, numbers, banners, push notifications, alerts, sounds, disable notifications, turn off notifications, stop notifications, no notifications, hide everything, distractions, exam mode, study mode',
   goSilentAutoOff24h: '24 hours, 24h, one day, a day, tomorrow, timer, auto off, automatically off, temporary, temporarily, expire, unmute later, turn back on, schedule',
 

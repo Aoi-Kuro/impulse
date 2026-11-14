@@ -241,7 +241,7 @@ function renderChangelog() {
 
   // ── Overlay canvas (field lines) ─────────────────────────────────────────
   const overlay = document.createElement('canvas');
-  overlay.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:9990;visibility:hidden;'; // stays below #update-banner/#bug-report-banner/#theme-nudge-banner (9997-9999) — see their CSS comment
+  overlay.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:9990;visibility:hidden;'; // stays below the bottom banners — see the CSS comment on #chargeBtn's stacking
   document.body.appendChild(overlay);
 
   function resizeOverlay() {

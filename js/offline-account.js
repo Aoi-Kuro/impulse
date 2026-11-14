@@ -226,6 +226,17 @@ setInterval(() => { if (!document.hidden && getPendingAccount()) syncPendingAcco
 window.addEventListener('storage', (e) => { if (e.key === PENDING_ACCOUNT_KEY) _pendingAccountChanged(); });
 if (getPendingAccount()) setTimeout(syncPendingAccount, 0);
 
+// ── Is the database there, right now? ───────────────────────────────────────
+// Signing up and logging in can't go by the saved /db-status answer (up to
+// "poll.db_status" old) or wait the minute js/db-status.js takes to confirm
+// "down": a new visitor during an outage would see "Couldn't reach the forum"
+// until the next scheduled check. So these ask /db-status now, and treat
+// "down" as unavailable at once: an account made offline just syncs later.
+async function dbUnavailableNow() {
+  await checkDbStatus({ force: true });
+  return dbProblemText() !== null;
+}
+
 // ── The gate in front of Quizzes and Solve them all ─────────────────────────
 // startSelected (js/quiz-engine.js) calls this when the device has no real
 // account. `next` starts the quiz. Also used by the Stats entry points with
@@ -247,8 +258,7 @@ async function offlineAccountGate(next, { quiz = true } = {}) {
     if (serverNow() - account.createdAt > PENDING_ACCOUNT_MAX_MS) return openOfflineExpiredModal();
     return next();
   }
-  await checkDbStatus();
-  if (!dbOffline()) return openGettingStartedModal(next);
+  if (!(await dbUnavailableNow())) return openGettingStartedModal(next);
   // Offline with no usable list (an older build, or the file is for another
   // course): no name can be checked, so the gate stands aside as before and
   // attempts wait on the device until a name exists.

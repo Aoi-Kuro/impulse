@@ -279,8 +279,6 @@ html.settings-hide-fig-anim-controls .fig-anim-ctl { display: none !important; }
    also has to touch IndexedDB (for sw.js's push handler) and run a 24h
    auto-off check, neither of which any Display toggle needs. */
 html.settings-hide-update-banner #update-banner { display: none; }
-html.settings-hide-theme-banner #theme-nudge-banner { display: none; }
-html.settings-hide-bug-banner #bug-report-banner { display: none; }
 html.settings-hide-fullscreen-hint #fullscreen-hint-banner { display: none; }
 
 /* Go silent's badge targets all set their display via inline style

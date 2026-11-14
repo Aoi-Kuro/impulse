@@ -211,5 +211,16 @@
   ["Happy birthday, Ludwig Boltzmann!", "BOLTZMANN", 1],
   ["Happy birthday, Emmy Noether! Every symmetry gives a conservation law.", "NOETHER", 1],
   ["Happy birthday, James Joule! Heat is just energy in disguise.", "JOULE", 1],
-  ["The exam week is here! Don't forget to rest too! Luck!", "CUSTOM", 1]
+  ["The exam week is here! Don't forget to rest too! Luck!", "CUSTOM", 1],
+
+  ["Welcome! Your initial velocity is zero. Let's fix that.", "NEW", 1],
+  ["A body at rest stays at rest. Prove Newton wrong: press Start!", "NEW", 1],
+  ["First quiz? Overcoming inertia is the hardest part.", "NEW", 1],
+  ["Zero attempts, infinite potential.", "NEW", 1],
+  ["Every trajectory starts at t = 0.", "NEW", 1],
+  ["Hello, unknown variable! Got a name?", "NEW", 1],
+  ["Anonymous particles are hard to track. Pick a nickname!", "NEW", 1],
+  ["Every expert was once an unregistered user.", "NEW", 1],
+  ["No question is too elementary. Ask the forum!", "NEW", 1],
+  ["Start with a random quiz. Even Newton started small.", "NEW", 1]
 ]
