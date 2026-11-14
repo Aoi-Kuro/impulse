@@ -75,7 +75,9 @@ const COURSES = {
       githubRepo: 'Aoi-Kuro/flux',
       ogDescription: "Interactive physics practice quiz: electric fields, Gauss's law, circuits & more. Instant feedback with scoring.",
       twitterDescription: 'Interactive physics practice quiz for PHYS 162 course at Nazarbayev University.',
-      siteUrl: 'https://your-domain.com/PHYS162_Practice_Quiz.html',
+      // The live address (og:url, canonical, robots.txt and sitemap.xml;
+      // minify.py's seo_files reads it), with the trailing slash.
+      siteUrl: 'https://phys162.netlify.app/',
     },
   },
   phys161: {
@@ -117,7 +119,7 @@ const COURSES = {
       githubRepo: 'Aoi-Kuro/impulse',
       ogDescription: 'Interactive physics practice quiz: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring.',
       twitterDescription: 'Interactive physics practice quiz for PHYS 161 course at Nazarbayev University.',
-      siteUrl: 'https://your-domain.com/PHYS161_Practice_Quiz.html',
+      siteUrl: 'https://phys161.netlify.app/',
     },
   },
 };

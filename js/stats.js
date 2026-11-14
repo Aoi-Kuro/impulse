@@ -1280,80 +1280,6 @@ async function loadStatsPanel() {
   await pollStatsPanel();
 }
 
-// ── Easter egg: a Pokémon for visitors who aren't registered ──
-// Instead of a plain "?", the Stats avatar of a visitor without a nickname is
-// one of ten Pokémon drawn in the identicon look (7×7 pixels, a few colours).
-// Each browser gets one at random the first time and keeps it (localStorage),
-// so it stays theirs until they register and their real identicon takes its
-// place. Hovering it shows a line about it.
-const GUEST_POKEMON_KEY = STORAGE_PREFIX + '-guest-pokemon';
-// Not the project's own work and not under the AGPL: fan drawings of Pokémon
-// characters, which are © Nintendo, Creatures Inc. and GAME FREAK inc., their
-// names trademarks of Nintendo. Credited on the Copyright screen (index.html,
-// "Pokémon Avatars") and in the README's licensing section; to be removed if
-// the rights holders ask.
-// px: one string per row, '.' empty, every other letter a colour from c.
-const GUEST_POKEMON = [
-  { name: 'Pikachu', hover: 'A wild Pikachu appeared!',
-    c: { y: '#FFD43B', k: '#2B2B2B', r: '#E5484D' },
-    px: ['k.....k', 'y.....y', 'yy...yy', 'yyyyyyy', 'ykyyyky', 'ryykyyr', '.yyyyy.'] },
-  { name: 'Bulbasaur', hover: 'Bulbasaur is growing your stats',
-    c: { g: '#3E9B4F', t: '#6CC5AE', r: '#E5484D', w: '#FFFFFF', k: '#2E6B5E' },
-    px: ['..ggg..', '.ggggg.', 'tgggggt', 'ttttttt', 'twrtrwt', 'ttkkktt', '.tt.tt.'] },
-  { name: 'Charmander', hover: 'Charmander’s tail is still burning',
-    c: { o: '#F28C38', k: '#2B2B2B', c: '#F7DFA0', f: '#FF5A36', y: '#FFD43B' },
-    px: ['.ooo...', 'ooooo..', 'okoko.y', 'ooooo.f', '.occo.f', '.occoof', '.o..o..'] },
-  { name: 'Squirtle', hover: 'Squirtle is squirting your progress',
-    c: { s: '#7EC8E3', w: '#FFFFFF', k: '#7A3B2E', b: '#A0612D', c: '#F2D69B' },
-    px: ['.sssss.', 'sssssss', 'swkskws', 'sssssss', 'bsssssb', 'bbcccbb', '.s...s.'] },
-  { name: 'Jigglypuff', hover: 'Jigglypuff sang you to sleep',
-    c: { p: '#F6A5C0', b: '#3FA7E0', w: '#FFFFFF', k: '#7A2E4A' },
-    px: ['...pp..', '.ppppp.', 'pbbpbbp', 'pbwpbwp', 'ppppppp', '.ppkpp.', '..ppp..'] },
-  { name: 'Gengar', hover: 'Gengar is hiding in your shadow',
-    c: { p: '#7E57C2', r: '#E5484D', w: '#F1F3F5' },
-    px: ['p..p..p', 'pp.p.pp', 'ppppppp', 'prppprp', 'ppppppp', 'pwwwwwp', '.ppppp.'] },
-  { name: 'Snorlax', hover: 'Snorlax is blocking the leaderboard',
-    c: { t: '#2E6F8E', s: '#EAD7B7', k: '#2B2B2B' },
-    px: ['t.....t', 'ttttttt', 'tssssst', 'tkssskt', 'tssssst', 'tsskkst', 'ttttttt'] },
-  { name: 'Ditto', hover: 'Ditto is waiting to transform into you',
-    c: { p: '#C39BD3', k: '#2B2B2B' },
-    px: ['.p...p.', 'ppp.ppp', 'ppppppp', 'pkpppkp', 'ppppppp', 'ppkkkpp', 'ppppppp'] },
-  { name: 'Voltorb', hover: 'Voltorb used Self-Destruct on your stats',
-    c: { r: '#E5484D', k: '#2B2B2B', w: '#F1F3F5' },
-    px: ['..rrr..', '.rrrrr.', 'rkkrkkr', 'rrrrrrr', 'wwwwwww', '.wwwww.', '..www..'] },
-  { name: 'Diglett', hover: 'Diglett dug up your stats',
-    c: { d: '#9A6136', k: '#2B2B2B', n: '#F08DA5', g: '#6E5A45' },
-    px: ['..ddd..', '.ddddd.', '.dkdkd.', '.ddndd.', '.ddddd.', 'ggggggg', 'g.g.g.g'] },
-];
-
-// This browser's Pokémon: the one it was given, or a random one now.
-function guestPokemon() {
-  let name = null;
-  try { name = localStorage.getItem(GUEST_POKEMON_KEY); } catch (e) { /* storage off: a new one each time */ }
-  let p = GUEST_POKEMON.find((x) => x.name === name);
-  if (!p) {
-    p = GUEST_POKEMON[Math.floor(Math.random() * GUEST_POKEMON.length)];
-    try { localStorage.setItem(GUEST_POKEMON_KEY, p.name); } catch (e) { /* kept for this page only */ }
-  }
-  return p;
-}
-
-// Same box as a forum identicon (forumUserAvatarEl, js/forum.js).
-function guestPokemonAvatarEl() {
-  const p = guestPokemon();
-  let rects = '';
-  p.px.forEach((row, y) => [...row].forEach((ch, x) => {
-    if (ch !== '.') rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${p.c[ch]}"/>`;
-  }));
-  const wrap = document.createElement('div');
-  wrap.className = 'forum-message-avatar forum-message-avatar-user guest-pokemon-avatar';
-  wrap.title = p.hover;
-  wrap.setAttribute('role', 'img');
-  wrap.setAttribute('aria-label', p.name);
-  wrap.innerHTML = `<svg viewBox="0 0 7 7" shape-rendering="crispEdges" aria-hidden="true">${rects}</svg>`;
-  return wrap;
-}
-
 // My claimed nickname + identicon avatar, next to "My date of join" — same
 // avatar/name pairing the forum's own mention-profile popup shows
 // (forumUserAvatarEl/forumInitialsAvatarEl, js/forum.js), just reused here
@@ -1396,7 +1322,7 @@ function renderSfpIdentity(nickname) {
   avatarEl.innerHTML = '';
   if (!nickname) {
     nameEl.textContent = 'Not registered yet';
-    avatarEl.appendChild(guestPokemonAvatarEl());
+    if (typeof forumInitialsAvatarEl === 'function') avatarEl.appendChild(forumInitialsAvatarEl('?'));
     return;
   }
   nameEl.textContent = nickname;

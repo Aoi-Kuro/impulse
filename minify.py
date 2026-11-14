@@ -57,7 +57,7 @@ Checks before zipping (the build fails instead of shipping a broken site)
 esbuild is downloaded once from the npm registry into a cache folder in
 your user profile (not this project); nothing else needs installing.
 """
-import datetime, hashlib, io, json, os, platform, re, shutil, subprocess, sys, tarfile, tempfile, urllib.request, zipfile
+import datetime, hashlib, html, io, json, os, platform, re, shutil, subprocess, sys, tarfile, tempfile, urllib.request, zipfile
 
 ESBUILD_VERSION = '0.28.2'
 
@@ -571,6 +571,62 @@ def stage_edge_functions(stage, problems, solutions_copy=None):
             fh.write(text)
 
 
+# ── Search engines ──────────────────────────────────────────────────────
+# One index.html serves both courses, so the course-specific search tags are
+# filled in here from the built course's display block in js/course-config.js
+# (siteUrl, ogDescription), and robots.txt, sitemap.xml and Google Search
+# Console's verification file are written next to the page. The verification
+# file name is the site owner's account, the same for both courses (as is the
+# google-site-verification meta tag in index.html).
+GOOGLE_VERIFY_FILE = 'google99a60ffe12c3bcb8.html'
+# Not for search results: the solutions editor, the Safe Exam Browser files
+# and the offline fallback page.
+ROBOTS_DISALLOW = ('/editor/', '/seb/', '/offline.html')
+
+
+def seo_files(out, problems):
+    head = re.search(r'<head\b[^>]*\bdata-course="([^"]+)"', _read('index.html'))
+    course = head.group(1).lower() if head else None
+    block = course and _course_block(_read('js/course-config.js'), course)
+    if not block:
+        problems.append(f'search tags: no "{course}" course in js/course-config.js (index.html <head data-course>)')
+        return
+    def field(name):
+        m = re.search(r'\b' + name + r":\s*(['\"])(.*?)\1,", block)
+        return m.group(2).replace("\\'", "'") if m else None
+    url, desc = field('siteUrl'), field('ogDescription')
+    if not url or not re.fullmatch(r'https://[a-z0-9.-]+/', url) or 'your-domain' in url:
+        problems.append(f'search tags: {course} siteUrl in js/course-config.js must be the live https address ending in "/" (got {url!r})')
+        return
+    if not desc:
+        problems.append(f'search tags: {course} has no ogDescription in js/course-config.js')
+        return
+    page = os.path.join(out, 'index.html')
+    text = open(page, encoding='utf-8').read()
+    esc = lambda s: html.escape(s, quote=True)
+    for pat, rep in (
+        (r'(<meta\s+name="description"\s+content=")[^"]*(")', esc(desc)),
+        (r'(<link\s+rel="canonical"\s+href=")[^"]*(")', esc(url)),
+        (r'(<meta\s+property="og:url"\s+content=")[^"]*(")', esc(url)),
+        (r'(<p class="noscript-summary">)[^<]*(</p>)', esc(desc) + ' This site needs JavaScript.'),
+    ):
+        text, n = re.subn(pat, lambda m, r=rep: m.group(1) + r + m.group(2), text)
+        if n != 1:
+            problems.append(f'search tags: index.html should have exactly one match for {pat} (found {n})')
+    with open(page, 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write(text)
+    robots = 'User-agent: *\n' + ''.join(f'Disallow: {p}\n' for p in ROBOTS_DISALLOW) + f'\nSitemap: {url}sitemap.xml\n'
+    sitemap = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+               '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+               f'  <url><loc>{esc(url)}</loc><lastmod>{datetime.date.today().isoformat()}</lastmod></url>\n'
+               '</urlset>\n')
+    for name, body in (('robots.txt', robots), ('sitemap.xml', sitemap),
+                       (GOOGLE_VERIFY_FILE, f'google-site-verification: {GOOGLE_VERIFY_FILE}')):
+        with open(os.path.join(out, name), 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(body)
+    return f'search: {url} (description, canonical, robots.txt, sitemap.xml, {GOOGLE_VERIFY_FILE})'
+
+
 # ── Nickname list for signing up offline ────────────────────────────────
 # js/offline-account.js checks a new nickname against nickname-hashes.json
 # while the database is offline. The file comes from THIS course's database
@@ -841,7 +897,7 @@ def main():
     check_nickname_rules(problems)
     if deploying:
         check_deploy_site(problems)
-    hashes_note = copy_note = None
+    hashes_note = copy_note = seo_note = None
     try:
         for root, dirs, files in os.walk(SRC):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -885,6 +941,8 @@ def main():
             for page_rel, name in BUNDLE_PAGES.items():
                 if os.path.exists(os.path.join(out, page_rel)):
                     bundles += bundle_page(out, page_rel, name, problems)
+        if not problems:
+            seo_note = seo_files(out, problems)
         if deploying and not problems:
             solutions_copy, copy_note = build_solutions_copy(problems)
             stage_edge_functions(stage, problems, solutions_copy)
@@ -899,7 +957,7 @@ def main():
             sys.exit(1)
 
         if deploying:
-            report(stats, bundles, manifest_actions, hashes_note, copy_note)
+            report(stats, bundles, manifest_actions, hashes_note, copy_note, seo_note)
             deploy(stage, draft)
             print('All checks passed. ' + ('Draft deployed; the live site is unchanged.' if draft else 'Deployed.'))
             return
@@ -917,11 +975,11 @@ def main():
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 
-    report(stats, bundles, manifest_actions, hashes_note)
+    report(stats, bundles, manifest_actions, hashes_note, seo_note=seo_note)
     print(f'All checks passed. {count} files -> {zip_path} ({os.path.getsize(zip_path) / 1024 / 1024:.2f} MB)')
 
 
-def report(stats, bundles, manifest_actions, hashes_note=None, copy_note=None):
+def report(stats, bundles, manifest_actions, hashes_note=None, copy_note=None, seo_note=None):
     for k, (n, b, a) in stats.items():
         if n:
             print(f'  {k:7s} {n:4d} files  {b / 1024:9.1f} KB -> {a / 1024:9.1f} KB')
@@ -934,6 +992,8 @@ def report(stats, bundles, manifest_actions, hashes_note=None, copy_note=None):
         print(hashes_note)
     if copy_note:
         print(copy_note)
+    if seo_note:
+        print(seo_note)
 
 
 if __name__ == '__main__':

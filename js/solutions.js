@@ -746,35 +746,67 @@ function solutionsHaveAccount() {
   }
 }
 
+function guestSolutionsSeen() {
+  try {
+    const seen = JSON.parse(localStorage.getItem(GUEST_SOLUTIONS_KEY) || '[]');
+    return Array.isArray(seen) ? seen : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// True when the solution of `key` is over the limit for this visitor.
+function guestBlockedFrom(key) {
+  if (solutionsHaveAccount()) return false;
+  const seen = guestSolutionsSeen();
+  return !seen.includes(key) && seen.length >= GUEST_SOLUTION_LIMIT;
+}
+
 // Whether this visitor may open the solution of `key`; a new one is counted.
 function guestMayOpenSolution(key) {
+  if (guestBlockedFrom(key)) return false;
   if (solutionsHaveAccount()) return true;
-  let seen = [];
-  try { seen = JSON.parse(localStorage.getItem(GUEST_SOLUTIONS_KEY) || '[]'); } catch (e) { seen = []; }
-  if (!Array.isArray(seen)) seen = [];
-  if (seen.includes(key)) return true;
-  if (seen.length >= GUEST_SOLUTION_LIMIT) return false;
-  seen.push(key);
-  try { localStorage.setItem(GUEST_SOLUTIONS_KEY, JSON.stringify(seen)); } catch (e) { /* storage off: not counted */ }
+  const seen = guestSolutionsSeen();
+  if (!seen.includes(key)) {
+    seen.push(key);
+    try { localStorage.setItem(GUEST_SOLUTIONS_KEY, JSON.stringify(seen)); } catch (e) { /* storage off: not counted */ }
+  }
   return true;
 }
 
-// Over the limit: the main page, then Getting started once the landing
-// screen is up (and the scripts behind it have loaded).
-function stopGuestAtSolutionLimit(quizNum, problemId, solutionId) {
-  if (typeof goToMainMenu === 'function') goToMainMenu();
-  const reopen = () => { if (solutionsHaveAccount()) openSolution(quizNum, problemId, null, solutionId); };
-  let tries = 0;
-  const ask = () => {
-    if (typeof openGettingStartedModal !== 'function') {
-      if (++tries < 50) setTimeout(ask, 200);
-      return;
-    }
+// Getting started, at once. Its markup is in index.html from the start, but
+// its code is in js/forum.js, among the last scripts to load (seconds later on
+// a slow connection). Until that arrives the screen is shown straight from the
+// markup (its buttons and backdrop are written to wait for it), and handed to
+// openGettingStartedModal on 'tier2-loaded'. No network check first: whether
+// the database is off is what the indicator already knows (js/db-status.js).
+function showGuestLimitPopup(reopen) {
+  const offline = typeof dbOffline === 'function' && dbOffline();
+  if (typeof openGettingStartedModal === 'function') {
     if (typeof setGettingStartedReason === 'function') setGettingStartedReason('solutions');
-    if (typeof offlineAccountGate === 'function') offlineAccountGate(reopen, { quiz: false });
-    else openGettingStartedModal(reopen);
-  };
-  setTimeout(ask, 420);   // after closeSolutionScreen's 280 ms fade
+    openGettingStartedModal(reopen, { offline });
+    return;
+  }
+  const box = document.getElementById('gettingStartedModalBackdrop');
+  if (!box) return;
+  const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+  show('gsSolutionsNote', true);
+  show('gsOfflineNote', offline);
+  box.classList.add('visible');
+  window.addEventListener('tier2-loaded', () => {
+    if (!box.classList.contains('visible') || typeof openGettingStartedModal !== 'function') return;
+    if (typeof setGettingStartedReason === 'function') setGettingStartedReason('solutions');
+    openGettingStartedModal(reopen, { offline: typeof dbOffline === 'function' && dbOffline() });
+  }, { once: true });
+}
+
+// Over the limit: the main page, then Getting started.
+function stopGuestAtSolutionLimit(quizNum, problemId, solutionId) {
+  const reopen = () => { if (solutionsHaveAccount()) openSolution(quizNum, problemId, null, solutionId); };
+  const leaving = isSolutionScreenOpen();
+  if (typeof goToMainMenu === 'function') goToMainMenu();
+  // After closeSolutionScreen's 280 ms fade when a solution was showing.
+  setTimeout(() => showGuestLimitPopup(reopen), leaving ? 320 : 0);
 }
 
 async function openSolution(quizNum, problemId, previewRow, solutionId) {
@@ -1414,6 +1446,16 @@ function setSolutionPreviewMode(on) {
   const p = getQuizProblem(quizNum, m[2]) ||
     [...(quiz.problems || []), ...(quiz.retired || [])].find((q) => q.id.toLowerCase() === lower);
   if (!p) return;
+  // Over the limit without an account: say so at once. Getting started's
+  // markup comes before this script in index.html, so it can show now; even
+  // DOMContentLoaded can come many seconds later on a slow connection (the
+  // parser waits for the last bundles), after the late scripts themselves.
+  if (guestBlockedFrom(solutionKeyFor(quizNum, p.id))) {
+    const stop = () => stopGuestAtSolutionLimit(quizNum, p.id, solutionId);
+    if (document.getElementById('gettingStartedModalBackdrop') || document.readyState !== 'loading') stop();
+    else document.addEventListener('DOMContentLoaded', stop, { once: true });
+    return;
+  }
   whenLoaded(() => openSolution(quizNum, p.id, null, solutionId));
 })();
 

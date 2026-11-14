@@ -147,10 +147,6 @@
 }
 .sfp-identity-avatar .forum-message-avatar img.gemini-mark { width: 22px; height: 22px; }
 .sfp-identity-avatar .forum-message-avatar-initials { font-size: 1rem; }
-/* The Pokémon an unregistered visitor gets (guestPokemonAvatarEl, js/stats.js):
-   a deeper box than an identicon's, so white pixels (Voltorb, Gengar's grin)
-   still show on the light theme. */
-.sfp-identity-avatar .guest-pokemon-avatar { background: color-mix(in srgb, var(--text) 16%, var(--surface)); }
 .sfp-identity-info {
   display: flex;
   flex-direction: column;

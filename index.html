@@ -162,11 +162,22 @@
 <meta property="og:title"       content="Impulse Practice App" />
 <meta property="og:description" content="Interactive physics practice quiz: classical mechanics, thermodynamics, and vectors. Instant feedback with scoring." />
 <meta property="og:image"       content="course/preview.png" />
-<meta property="og:url"         content="https://your-domain.com/PHYS162_Practice_Quiz.html" />
+<meta property="og:url"         content="https://phys161.netlify.app/" />
 <meta name="twitter:card"       content="summary_large_image" />
 <meta name="twitter:title"      content="Impulse Practice App" />
 <meta name="twitter:description" content="Interactive physics practice quiz for PHYS 161 course at Nazarbayev University." />
 <meta name="twitter:image"      content="course/preview.png" />
+
+<!-- ── Search engines ───────────────────────────────────────────────────────
+     The snippet under the result and the one address Google should list.
+     minify.py (seo_files) rewrites these three, og:url and the <noscript>
+     text with the built course's ogDescription and siteUrl from
+     js/course-config.js, and writes robots.txt, sitemap.xml and the Google
+     verification file next to the page. The verification code is the site
+     owner's Google Search Console account, the same for both courses. ── -->
+<meta name="description" content="Interactive physics practice quiz: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring." />
+<link rel="canonical" href="https://phys161.netlify.app/" />
+<meta name="google-site-verification" content="DCPyWT5CBFRdrr0s67IfNQVCyDgTUht_J4kHFWtp35Y" />
 <!-- ── Keep these two lines' course-config.js values (display.ogDescription
      etc.) in sync with whatever you paste here — they're intentionally
      duplicated, not read from each other. ─────────────────────────────── -->
@@ -338,6 +349,10 @@
 <script defer id="MathJax-script" src="vendor/mathjax/mathjax-stix2.js"></script>
 </head>
 <body>
+
+<!-- For readers and crawlers without JavaScript: what the site is.
+     minify.py (seo_files) fills in the built course's ogDescription. -->
+<noscript><p class="noscript-summary">Interactive physics practice quiz: kinematics, dynamics, thermodynamics &amp; more. Instant feedback with scoring. This site needs JavaScript.</p></noscript>
 
 <!-- Settings > Display > Colour correction. One colour matrix per type,
      applied to <html> (css/settings.css), so every colour on the page goes
@@ -1127,12 +1142,6 @@
       </section>
 
       <section class="license-card">
-        <h2>Pokémon Avatars <span class="license-badge">Not licensed</span></h2>
-        <p>The small pixel avatars shown in Stats to visitors without a nickname (Pikachu, Bulbasaur, Charmander, Squirtle, Jigglypuff, Gengar, Snorlax, Ditto, Voltorb and Diglett) are fan drawings of Pokémon characters. Pokémon and the Pokémon character names are trademarks of Nintendo. The characters are © 1995–2026 Nintendo, Creatures Inc. and GAME FREAK inc.</p>
-        <p>This site is not affiliated with, endorsed or sponsored by Nintendo, Creatures Inc., GAME FREAK inc. or The Pokémon Company. The drawings are used non-commercially, are not covered by the AGPL or any other license here, and will be removed at the request of the rights holders.</p>
-      </section>
-
-      <section class="license-card">
         <h2>Third-Party Components</h2>
         <p>Bundled libraries and fonts keep their own licenses: MathJax, DOMPurify and SheetJS (Apache 2.0), jsPDF and html-to-image (MIT), IBM Plex fonts (SIL Open Font License 1.1) and TikZJax. Their license files are kept with them in <code>vendor/</code>.</p>
         <p>The site name next to the logo is set in Kanit, © 2020 The Kanit Project Authors (<a href="https://github.com/cadsondemak/kanit" target="_blank" rel="noopener">github.com/cadsondemak/kanit</a>), loaded from Google Fonts under the <a href="https://openfontlicense.org" target="_blank" rel="noopener license">SIL Open Font License 1.1</a>. So are the fonts offered in Settings → Display → Font (Atkinson Hyperlegible Next, Golos Text, Hanken Grotesk, Mona Sans, Outfit and Source Sans 3), each © its authors.</p>
@@ -1195,7 +1204,10 @@
      .stats-modal-box (widened via .gs-modal-box) so the FAQ list has room
      to breathe; see css/forum.css for the FAQ accordion rules and
      js/forum.js for openGettingStartedModal()/toggleGsFaq(). -->
-<div class="stats-modal-backdrop" id="gettingStartedModalBackdrop" onclick="if(event.target===this) closeGettingStartedModal()">
+<!-- The backdrop and buttons work before js/forum.js has loaded too: the
+     limit on solutions without an account (js/solutions.js) can show this
+     screen straight from the markup while the late scripts still load. -->
+<div class="stats-modal-backdrop" id="gettingStartedModalBackdrop" onclick="if(event.target===this) { if (window.closeGettingStartedModal) closeGettingStartedModal(); else this.classList.remove('visible'); }">
   <div class="stats-modal-box gs-modal-box">
     <div class="stats-modal-title">Getting Started</div>
     <!-- Shown only while the database is offline (js/offline-account.js). -->
@@ -1204,11 +1216,11 @@
     <div class="gs-offline-note" id="gsSolutionsNote" style="display:none;">You've read 5 solutions without an account. Make one to keep reading: it's free and takes just a nickname.</div>
     <div class="gs-offline-note" id="gsOfflineNote" style="display:none;">The database is offline right now. You can still start: your account is made on this device and registered once the database is back.</div>
     <div class="stats-modal-actions gs-start-row">
-      <button type="button" class="stats-modal-btn primary gs-start-btn" onclick="chooseGettingStarted('create')">I'm new</button>
-      <button type="button" class="stats-modal-btn gs-start-btn" onclick="chooseGettingStarted('restore')">I have an account</button>
+      <button type="button" class="stats-modal-btn primary gs-start-btn" onclick="window.chooseGettingStarted && chooseGettingStarted('create')">I'm new</button>
+      <button type="button" class="stats-modal-btn gs-start-btn" onclick="window.chooseGettingStarted && chooseGettingStarted('restore')">I have an account</button>
     </div>
     <div class="gs-faq" id="gsFaq">
-      <button type="button" class="gs-faq-toggle" id="gsFaqToggle" aria-expanded="false" onclick="toggleGsFaqList()">
+      <button type="button" class="gs-faq-toggle" id="gsFaqToggle" aria-expanded="false" onclick="window.toggleGsFaqList && toggleGsFaqList()">
         <span>FAQ</span><span class="gs-faq-caret">›</span>
       </button>
       <div class="gs-faq-list">

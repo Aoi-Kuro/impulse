@@ -66,6 +66,8 @@ The procedure is described in [Deploying a new course](#deploying-a-new-course).
   - [Managing editor keys](#managing-editor-keys)
 - [Database (Supabase)](#database-supabase)
 - [Database offline](#database-offline)
+  - [Signing up while it is off](#signing-up-while-it-is-off)
+  - [Solutions while it is off](#solutions-while-it-is-off)
 - [Edge functions](#edge-functions)
 - [Device ownership (`device_secret`) and tokens](#device-ownership-device_secret-and-tokens)
 - [Gemini integration](#gemini-integration)
@@ -90,9 +92,10 @@ The procedure is described in [Deploying a new course](#deploying-a-new-course).
   + Edge Functions (Deno/TypeScript). The browser talks to it directly with a
   public, RLS-restricted *publishable* key; every write goes through an Edge
   Function.
-- **Netlify** serves the static files, plus two Edge Functions in
-  `netlify/edge-functions/`: `share.ts` for shared solution links and
-  `db-status.ts`, which says whether the database is off. `minify.py`
+- **Netlify** serves the static files, plus three Edge Functions in
+  `netlify/edge-functions/`: `share.ts` for shared solution links,
+  `db-status.ts`, which says whether the database is off, and
+  `solutions-copy.ts`, which hands out the solutions while it is. `minify.py`
   builds the minified site and either zips it or deploys it with the Netlify
   CLI (see [Building for deployment](#building-for-deployment-minifypy)).
 - **MathJax 3** (STIX Two font, vendored in `vendor/mathjax/`) renders LaTeX,
@@ -143,7 +146,9 @@ impulse/
 │                            deploys it (and netlify/) with the Netlify CLI
 ├── netlify/edge-functions/
 │   ├── share.ts             /s/<key>: a shared solution's link preview
-│   └── db-status.ts         /db-status: is the course database on?
+│   ├── db-status.ts         /db-status: is the course database on?
+│   └── solutions-copy.ts    /solutions-copy: the solutions, only while it
+│                            is off (filled in by minify.py --deploy)
 ├── seb/                     Safe Exam Browser configs, one per host, and
 │                            quit.html, where leaving lockdown lands
 ├── LICENSE                  GNU AGPL v3 (shown on the Copyright screen)
@@ -196,6 +201,7 @@ impulse/
 │   ├── theme-colors.js      Reads live CSS variables for JS-drawn UI
 │   ├── themes.js            Theme presets, custom theme builder, day/night
 │   ├── splash.js            Splash line on the landing screen
+│   ├── site-footer.js       Footer at the end of the long screens
 │   ├── easter.js            Pi Day / Pi Hour easter egg
 │   ├── data/changelog.js    Changelog entries (platform history)
 │   ├── data/tips.js         Rotating top-bar tip strings
@@ -802,14 +808,18 @@ claimed, localStorage is a cache/queue and the server is the source of truth.
 
 The Stats screen contains:
 
-- **Forum & Site panel**: avatar, nickname, join date and a ⚙ menu (Getting
+- **Forum & Site panel**: avatar (a "?" for a visitor without an account), nickname, join date and a ⚙ menu (Getting
   started / Change nickname / Your PIN / Exit); "my messages" and "my quizzes
   taken"; three tally dials (forum participants, total visits, total quizzes
   taken by everyone). Values come from the RPCs `get_stats_panel`,
   `get_total_quiz_attempts` and `get_my_total_quiz_attempts`, refreshed on
   Realtime pings plus a fallback every 45 s (`poll.stats`), and on return to
   the tab only when the last refresh is older than that.
-- **Legend, chart (canvas, with tooltip) and filters.**
+- **Chart (canvas, with tooltip) and filters.** The quizzes' colour legend
+  sits inside the chart's box, above the plot. With nothing to plot under the
+  current filters, the box shows only a small empty state in the Attempt log's
+  style (a line-graph icon and "It takes at least two dots to make a line"),
+  with no grid or axes.
 - **Attempt log table**, with per-attempt delete and a sync dot.
 - **Topics** (`renderTopicPerformance`): between the attempt log and the
   overview, the topics of one enabled quiz at a time (a sliding *Quiz 1–4*
@@ -993,6 +1003,21 @@ thread on tap.
   of them was unpublished, saved again, or joined by another (compared as
   one stamp of every `id@updated_at`). While offline mode runs, both come
   from the offline download.
+- **Five without an account.** A visitor with no nickname (claimed, or made
+  offline and waiting to register) can open `GUEST_SOLUTION_LIMIT` = 5
+  different solutions on the device (`<p>-guest-solutions`), and those stay
+  open to them. The next one, however it is asked for (a card's button, the
+  list, Previous/Next, a shared link), sends them to the main page and opens
+  Getting started with a note saying why (`#gsSolutionsNote`). It shows at
+  once, even before `js/forum.js` (one of the last scripts) has loaded: a
+  link over the limit is stopped as soon as `js/solutions.js` runs, the screen
+  is shown from its markup until `forum.js` takes it over, and no network check
+  comes first (the offline indicator's state is used). Closing it
+  leaves the site as it was, minus new solutions; an account made from that
+  screen opens the solution they asked for. It lives in localStorage, so it is
+  a nudge, not a lock. The editor's preview never counts.
+- **While the database is off** the index and the rows come from the copy
+  kept on Netlify: see [Solutions while it is off](#solutions-while-it-is-off).
 - **"📘 Solution"** is shown but disabled in Random N until the score is
   revealed (so a solution cannot replace the attempt), and only on problems
   with a published solution; usable from the start in Solve-All, and on every
@@ -1292,7 +1317,7 @@ saved values over `SETTINGS_DEFAULTS`. `getSetting(tab, key)` /
 | Tab | Settings |
 |---|---|
 | **Display** | *Main screen*: Show floating avatar · Show floating splashes · Show manual button · Show theme selector button · Show daylight switch (sub-setting: Follow device theme). *Animations and figures*: Reduce motion (sub, independent of it: Off / XX% with ▲▼ arrows, 10–40% — reduce motion automatically while the battery is below that and not charging; `navigator.getBattery()`, Chromium only, blocked elsewhere) · Figure size slider (50–200%, scales problem images, redrawn figures and solution figures) · Default animation speed slider (0.25–5×; the speed chip under a figure multiplies it) · Repeat one-shot animations (they go round again until ⏸, which then finishes the round) · Play looped animations only once (one cycle, then they stop by themselves) · Hide animation control buttons (the play button and speed chip, so animated figures stay still) · Logo animation (the logo cube's tumble, `js/logo-tumble.js`) · Hide field lines by default. *Extra*: Show floating forum button · Show running line (top-bar tips) |
-| **Notifications** | Hide update reminder (sub: Update anyway outside quiz mode) · Hide try-new-theme reminder · Hide bug report reminder · Go silent — hides every badge and banner and mutes push (sub: Turn off automatically after 24 hours) |
+| **Notifications** | Hide update reminder (sub: Update anyway outside quiz mode) · Go silent — hides every badge and banner and mutes push (sub: Turn off automatically after 24 hours) |
 | **Study** | Redrawn figures (on: theme-coloured SVGs, off: original images) · Starting a quiz (Ask, Ordinary or Lockdown) · Show live timer · Reset filter on page load · Automatically stop after 50 minutes · Full screen for Random N (sub: Don't show full-screen reminder) · Select last used quiz by default (on) · Select cumulative by default · Hide topic while active · Solve-All: Lock order + Order · Line progress (rail) · Show progress window (sticky score) · Reveal wrong answer instantly |
 | **Sync & Storage** | Sync settings on this device (on by default; never synced itself) · Go offline (24 h) · Cache & storage tools · Backup |
 | **Search** | A search box; matching settings appear under it as their real rows, with a link to their own tab (`js/settings-search.js`) |
@@ -1429,9 +1454,9 @@ stored as the original `<img>` (see [Redrawn problem figures](#redrawn-problem-f
 ### Banners and the update checker
 
 `window.BannerManager` (`js/banner-manager.js`) shows one bottom banner at a
-time: `update` always preempts (others are paused, not lost); `bug`, `theme`
-and the full-screen reminder queue first-come-first-served. API: `register`,
-`request`, `release`, `cancel`.
+time: `update` always preempts (others are paused, not lost); `update-done`
+and the full-screen reminder wait their turn. API: `register`, `request`,
+`release`, `cancel`.
 
 - **Update banner**: `site-version.json` is polled every 15 minutes (`poll.update`)
   while the tab is visible (and on return to it, at most once per interval),
@@ -1569,9 +1594,12 @@ Safari and Firefox were not covered.
 
 - **Splash** (`js/splash.js` + `course/splashes.json`): entries are
   `[text, condition, mandatory?]`. Conditions: `""` always, `M`/`D`/`E`/`N`
-  (morning/day/evening/night), `P` (near π time or π day), plus date codes for
-  holidays defined in `COND_ACTIVE`. `mandatory: 1` guarantees the line is shown
-  once on its day. Tapping the badge rolls a new line. After 60 s with no
+  (morning/day/evening/night), `P` (near π time or π day), `NEW` (a brand-new
+  visitor: no nickname, claimed or pending, and no attempts on the device; read
+  straight from storage, as the splash runs before the forum and stats code),
+  plus date codes for holidays defined in `COND_ACTIVE`. `mandatory: 1`
+  guarantees the line is shown once on its day, so a new visitor's first splash
+  of the day is one of the `NEW` lines. Tapping the badge rolls a new line. After 60 s with no
   activity the bounce eases to a stop, and any activity eases it back, so an
   idle menu leaves the GPU alone.
 - **Manual** (`js/manual.js` + `course/manual.json`): an array of sections
@@ -1590,6 +1618,16 @@ Safari and Firefox were not covered.
   animation loop runs on the main screen only, the charge redraws at 30 fps, and
   the full-screen overlay stays hidden unless lines are drawn. With reduced
   motion the charge holds still and the splash doesn't bounce.
+- **Site footer** (`js/site-footer.js`): the logo and "© 2026 <name>", then
+  Report a bug (Telegram), Settings, Manual and GitHub (this course's repository,
+  `GITHUB_REPO` from `js/course-config.js`). Placed once at load after the
+  Stats, Solution, Settings and Manual wraps (without its own link on Settings
+  and Manual, and with a rule above it on Settings), at the end of `#appPage`,
+  and at the end of the forum once "Load older messages" is gone. It is the
+  page's last line: those four screens fill the window as a column so it sits
+  at the bottom edge, and the body's bottom padding goes while one shows; on a
+  narrow quiz page it leaves room for the timer or Solve-All's score box.
+  Hidden in lockdown.
 - **Easter egg** (`js/easter.js`): Pi Hour (3:14 AM/PM) and Pi Day (14 March).
 - **Figure attribution** (`js/fig-attribution.js`): tap-to-toggle `.fig-attr`
   (i) badges inside problem text; Escape or an outside tap closes them.
@@ -2203,7 +2241,7 @@ Every logo animation runs on the same elements, so they all go on in red.
 | Lockdown | **Refused**, on any problem and not only a confirmed one: an attempt that can't reach the drop-off is lost when SEB closes. `openLockdownView()` asks first and offers an ordinary quiz. Inside SEB the Start button goes away. Also refused for an account made offline until it is registered |
 | Forum | Box; composer, filters, search and alerts hidden. Messages this tab already loaded stay |
 | Stats | Box. The attempt log is local and still works |
-| Solutions | The button shows on every problem, as the list of published ones may be out of reach. Opening one gives this browser's stored copy, however old, or the box |
+| Solutions | Read from the copy kept on Netlify: see [Solutions while it is off](#solutions-while-it-is-off). Without one (a zip upload, an older deploy), the button shows on every problem and opening one gives this browser's stored copy, however old, or the box |
 | Editor | Box on the key screen and over the app. Drafts stay in the browser; saving fails with a one-line reason |
 | Settings sync, push, visit counter, Realtime | Sync waits, Realtime is off, the rest fails quietly |
 | Go offline | Works, but the download has no solutions (listed as failed) |
@@ -2241,6 +2279,33 @@ the same course and project (kept in `%LOCALAPPDATA%/impulse-minify/`).
 `--no-nickname-hashes` builds without one, which turns offline sign-up off.
 `--deploy` also refuses a linked Netlify site other than the course's
 `netlifySiteId` in `js/course-config.js`.
+
+### Solutions while it is off
+
+`netlify/edge-functions/solutions-copy.ts` holds every published solution as
+of the last deploy, so it is never a file of the site that could be downloaded
+past a check. `minify.py --deploy` reads them from this course's database with
+the columns Go offline downloads (`SOLUTIONS_ROW_COLUMNS` in `js/solutions.js`),
+drops each figure's TikZ source (the page draws only the compiled steps),
+compresses them with brotli quality 5 (through Node, which the Netlify CLI needs
+anyway) and fills them into the function as base64. For PHYS 161 that is 316
+solutions, 11.7 MB, in 425 KB. Without a database answer it reuses the last copy
+for the same course and project (`%LOCALAPPDATA%/impulse-minify/`); with none at
+all it deploys without one and says so.
+
+The function checks the database itself, with `databaseState()` imported from
+`db-status.ts`, and answers a plain 404 while it is up, whoever asks, so the copy
+can't be read then. While it is off it sends the copy still compressed, with
+`content-encoding: br` (the browser unpacks it, the function never does; checked
+live on 2026-11-14 with Flux paused), and nothing caches it (`no-store`). A
+client that doesn't accept brotli gets 406.
+
+The page (`js/solutions.js`) asks for it only when `dbOffline()` is already
+true, and only once a solution is wanted (one opened, the Solution list, or the
+Copyright screen's authors): asking never starts a status check of its own. It
+reads it once per page, keeps it in memory only, and drops it when the database
+comes back. Its rows then serve as the index, so only problems with a solution
+show the button. Go offline's download comes first while its window runs.
 
 ## Edge functions
 
@@ -2382,6 +2447,7 @@ Course-scoped keys start with `STORAGE_PREFIX` (shown as `<p>`).
 | sessionStorage | `<p>_lockdown_ticket` | Inside Safe Exam Browser: the ticket from the link, kept across reloads. |
 | localStorage | `<p>-editor-key`, `-editor-drafts`, `-editor-history`, `-editor-last`, `-editor-sidebar`, `-editor-split`, `-editor-wrap`, `-editor-server-mock` | Editor state (the last one only with `store-mock.js`). |
 | localStorage | `<p>-solutions-index` | Published-solution index (`{at, rows}`), shared by all tabs; refetched once it is 30 minutes old (`poll.solutions`). |
+| localStorage | `<p>-guest-solutions` | Without an account: the solutions opened so far (problem keys, at most 5). |
 | localStorage | `<p>-site-config`, `<p>-purge-id` | Last remote settings seen in `site-version.json`; last `purge_id` acted on. |
 | localStorage | `<p>-db-status` | Last answer from `/db-status` (`{state, at, since}`), shared by all tabs. |
 | localStorage | `<p>_pending_account`, `<p>_server_time` | An account made while the database was offline (`{nickname, pin, createdAt, conflict?}`), and the last Netlify `Date` seen, for its one-week limit. |
@@ -2428,14 +2494,22 @@ python minify.py --deploy         # build, then deploy to Netlify
 ```
 
 **`--deploy`** is the only way the Edge Functions in `netlify/edge-functions/`
-(shared solution links, database status) go live: a zip uploaded by hand deploys the static
+(shared solution links, database status, the solutions copy) go live: a zip uploaded by hand deploys the static
 files only. It needs, once per machine, Node.js and the Netlify CLI
 (`npm install -g netlify-cli`, then `netlify login`), and once per project
 folder `netlify link` (stored in `.netlify/`, git-ignored; `NETLIFY_SITE_ID`
 overrides it). The build is the same as for the zip; `share.ts` and
 `db-status.ts` are then copied next to it with this course's Supabase URL, publishable key and
 names filled in from `js/course-config.js` (the course in `index.html`'s
-`<head data-course>`), and `netlify deploy --prod` runs from that folder.
+`<head data-course>`), `solutions-copy.ts` gets this course's published solutions
+(see [Solutions while it is off](#solutions-while-it-is-off)), and
+`netlify deploy --prod` runs from that folder.
+
+**Don't link the Netlify site to the GitHub repository.** A linked site builds
+and publishes the raw repository on every push: no minifying, and Edge Functions
+with nothing filled in (`/db-status` answers `unknown`, `/solutions-copy` only
+404). If that ever happens, publish the last `--deploy` again
+(`netlify api restoreSiteDeploy`).
 
 The script never writes into the project folder. It copies the site to a
 temporary folder, leaving out `.git`, `superbase/`, `netlify/`, `vendor-src/`, `tools/`,
@@ -2608,15 +2682,6 @@ its source code. Copyright and attribution notices must be kept.
 any other license here, as section 7(e) of the AGPL allows. Copies and modified
 versions of the code must use a different name and logo, and must not present
 themselves as this site or as connected to it.
-
-**Pokémon avatars** (the ten pixel drawings in `GUEST_POKEMON`, `js/stats.js`,
-shown in Stats to visitors without a nickname: Pikachu, Bulbasaur, Charmander, Squirtle, Jigglypuff, Gengar, Snorlax, Ditto, Voltorb and Diglett) — fan drawings of
-Pokémon characters. Pokémon and the Pokémon character names are trademarks of
-Nintendo; the characters are © 1995–2026 Nintendo, Creatures Inc. and GAME FREAK inc. **Not licensed**: they
-are not covered by the AGPL or any other license here, and this project claims
-no rights to them. The site is not affiliated with, endorsed or sponsored by
-Nintendo, Creatures Inc., GAME FREAK inc. or The Pokémon Company, uses them
-non-commercially, and will remove them at the rights holders' request.
 
 **Worked solutions** (the solution text and figures written in the solutions
 editor and shown on the Solution screen) — © their authors, credited under each
