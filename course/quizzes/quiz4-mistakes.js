@@ -13,6 +13,6 @@
 const Quiz_4_Mistakes = {
   // P74
   P74: [
-    { v: 1.01866798509978, s: "$1.019$", n: "40 trips across 6 m really make 480 m, but the problem says to use 240 m in total", c: 0 },
+    { v: 1.01840002034831, s: "$1.018$", n: "40 trips across 6 m really make 480 m, but the problem says to use 240 m in total", c: 0 },
   ],
 };
