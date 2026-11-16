@@ -195,7 +195,7 @@ const Quiz_4_Problems = [
   { id:"P65", topic:"Ideal gas law and moles", answer:9.50138e+23, units:[],
     text:"How many molecules are contained in 35.5 g of a gas whose molar mass is 22.5 g mol$^{-1}$? Avogadro's number $N_{\\mathrm{A}} = 6.022 \\times 10^{23}$ mol$^{-1}$." },
 
-  { id:"P66", topic:"Ideal gas law and moles", answer:0.78286, units:["kg/mol"],
+  { id:"P66", topic:"Ideal gas law and moles", answer:782.86, units:["kg/mol"],
     text:"A large organic molecule has a mass of $1.3 \\times 10^{-21}$ kg. What is the molar mass of this compound? Avogadro's number $N_{\\mathrm{A}} = 6.022 \\times 10^{23}$ mol$^{-1}$." },
 
   { id:"P67", topic:"Ideal gas law and moles", answer:46180487, units:[],
