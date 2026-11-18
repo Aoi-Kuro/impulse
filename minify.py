@@ -574,14 +574,14 @@ def stage_edge_functions(stage, problems, solutions_copy=None):
 # ── Search engines ──────────────────────────────────────────────────────
 # One index.html serves both courses, so the course-specific search tags are
 # filled in here from the built course's display block in js/course-config.js
-# (siteUrl, ogDescription), and robots.txt, sitemap.xml and Google Search
-# Console's verification file are written next to the page. The verification
-# file name is the site owner's account, the same for both courses (as is the
+# (siteUrl, ogDescription, appName as the site name), and robots.txt,
+# sitemap.xml and Google Search Console's verification file are written next
+# to the page. The verification file name is the site owner's account, the same for both courses (as is the
 # google-site-verification meta tag in index.html).
 GOOGLE_VERIFY_FILE = 'google99a60ffe12c3bcb8.html'
-# Not for search results: the solutions editor, the Safe Exam Browser files
-# and the offline fallback page.
-ROBOTS_DISALLOW = ('/editor/', '/seb/', '/offline.html')
+# Not for search results: the solutions editor, the Safe Exam Browser files,
+# the offline fallback page and the PDF check (js/pdf-export.js).
+ROBOTS_DISALLOW = ('/editor/', '/seb/', '/offline.html', '/check')
 
 
 def seo_files(out, problems):
@@ -594,13 +594,19 @@ def seo_files(out, problems):
     def field(name):
         m = re.search(r'\b' + name + r":\s*(['\"])(.*?)\1,", block)
         return m.group(2).replace("\\'", "'") if m else None
-    url, desc = field('siteUrl'), field('ogDescription')
+    url, desc, name = field('siteUrl'), field('ogDescription'), field('appName')
     if not url or not re.fullmatch(r'https://[a-z0-9.-]+/', url) or 'your-domain' in url:
         problems.append(f'search tags: {course} siteUrl in js/course-config.js must be the live https address ending in "/" (got {url!r})')
         return
     if not desc:
         problems.append(f'search tags: {course} has no ogDescription in js/course-config.js')
         return
+    if not name:
+        problems.append(f'search tags: {course} has no appName in js/course-config.js')
+        return
+    # The site name Google shows above the result; without it, "Netlify".
+    site_ld = json.dumps({'@context': 'https://schema.org', '@type': 'WebSite', 'name': name, 'url': url},
+                         ensure_ascii=False, separators=(',', ':')).replace('</', r'<\/')
     page = os.path.join(out, 'index.html')
     text = open(page, encoding='utf-8').read()
     esc = lambda s: html.escape(s, quote=True)
@@ -608,6 +614,8 @@ def seo_files(out, problems):
         (r'(<meta\s+name="description"\s+content=")[^"]*(")', esc(desc)),
         (r'(<link\s+rel="canonical"\s+href=")[^"]*(")', esc(url)),
         (r'(<meta\s+property="og:url"\s+content=")[^"]*(")', esc(url)),
+        (r'(<meta\s+property="og:site_name"\s+content=")[^"]*(")', esc(name)),
+        (r'(<script type="application/ld\+json">)[^<]*(</script>)', site_ld),
         (r'(<p class="noscript-summary">)[^<]*(</p>)', esc(desc) + ' This site needs JavaScript.'),
     ):
         text, n = re.subn(pat, lambda m, r=rep: m.group(1) + r + m.group(2), text)
@@ -620,11 +628,11 @@ def seo_files(out, problems):
                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
                f'  <url><loc>{esc(url)}</loc><lastmod>{datetime.date.today().isoformat()}</lastmod></url>\n'
                '</urlset>\n')
-    for name, body in (('robots.txt', robots), ('sitemap.xml', sitemap),
+    for fname, body in (('robots.txt', robots), ('sitemap.xml', sitemap),
                        (GOOGLE_VERIFY_FILE, f'google-site-verification: {GOOGLE_VERIFY_FILE}')):
-        with open(os.path.join(out, name), 'w', encoding='utf-8', newline='\n') as fh:
+        with open(os.path.join(out, fname), 'w', encoding='utf-8', newline='\n') as fh:
             fh.write(body)
-    return f'search: {url} (description, canonical, robots.txt, sitemap.xml, {GOOGLE_VERIFY_FILE})'
+    return f'search: {url} as "{name}" (description, canonical, site name, robots.txt, sitemap.xml, {GOOGLE_VERIFY_FILE})'
 
 
 # ── Nickname list for signing up offline ────────────────────────────────

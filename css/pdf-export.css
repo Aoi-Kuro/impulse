@@ -1,0 +1,286 @@
+/* ─── Entire Set → Export PDF window, and the PDF check (js/pdf-export.js) ──
+   Both sit on the shared .stats-modal-backdrop / .stats-modal-box skin
+   (css/stats.css); this file adds the option groups, the figure previews,
+   the progress bar and the check results. */
+
+.pdfx-box {
+  max-width: 460px;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  text-align: left;
+  padding: 1.5rem 1.5rem 1.2rem;
+}
+/* Above the main page's changelog button (z-index 9991 in css/style.css),
+   which otherwise glows through the middle of the window. */
+.pdfx-backdrop { z-index: 9995; }
+
+/* Opening and closing: the backdrop fades (css/stats.css) while the window
+   rises into place and settles, and sinks back out on close. */
+.pdfx-backdrop .pdfx-box {
+  opacity: 0;
+  transform: translateY(18px) scale(0.96);
+  transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+.pdfx-backdrop.visible .pdfx-box {
+  opacity: 1;
+  transform: none;
+}
+.pdfx-backdrop:not(.visible) .pdfx-box {
+  transition: opacity 0.16s ease, transform 0.18s ease-in;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pdfx-backdrop .pdfx-box { transform: none; transition: opacity 0.15s; }
+}
+html.settings-reduce-motion .pdfx-backdrop .pdfx-box { transform: none; transition: opacity 0.15s; }
+.pdfx-box .stats-modal-title { text-align: center; }
+.pdfx-box .stats-modal-desc { text-align: center; margin-bottom: 1rem; }
+
+.pdfx-form { display: flex; flex-direction: column; gap: 0.7rem; }
+.pdfx-form.busy { opacity: 0.55; pointer-events: none; }
+
+.pdfx-group {
+  border: 1px solid var(--border);
+  border-radius: calc(8px * var(--radius-mult));
+  padding: 0.55rem 0.8rem 0.65rem;
+  margin: 0;
+  min-width: 0;
+}
+.pdfx-group legend {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 0.35rem;
+}
+
+.pdfx-row { display: flex; flex-wrap: wrap; gap: 0 1.2rem; }
+
+.pdfx-choice, .pdfx-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.84rem;
+  color: var(--text);
+  padding: 0.22rem 0;
+  cursor: pointer;
+  min-width: 0;
+}
+.pdfx-choice input, .pdfx-check input { accent-color: var(--accent); margin: 0; flex: none; }
+.pdfx-hint { color: var(--muted); font-size: 0.76rem; }
+
+.pdfx-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(5px * var(--radius-mult));
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  padding: 0.3rem 0.5rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.pdfx-input:focus { outline: none; border-color: var(--accent); }
+.pdfx-choice .pdfx-input { max-width: 11rem; }
+.pdfx-cm { max-width: 4.2rem !important; flex: 0 0 auto; }
+.pdfx-unit { color: var(--muted); font-size: 0.8rem; }
+
+.pdfx-types {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 0.8rem;
+  padding-left: 1.4rem;
+  transition: opacity 0.15s;
+}
+.pdfx-types.dim { opacity: 0.5; }
+/* By topic: one column (topic names run long), with All / None above.
+   Shown only while "By topic" is picked: the grid row grows from 0fr to
+   1fr, so the list slides open to its own height and shut again. */
+.pdfx-topics {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 0.28s ease, opacity 0.22s ease;
+}
+.pdfx-topics.collapsed { grid-template-rows: 0fr; opacity: 0; }
+.pdfx-topics-inner {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-left: 1.4rem;
+}
+@media (prefers-reduced-motion: reduce) { .pdfx-topics { transition: none; } }
+html.settings-reduce-motion .pdfx-topics { transition: none; }
+.pdfx-topics .pdfx-check { font-size: 0.78rem; padding: 0.15rem 0; align-items: flex-start; }
+.pdfx-topics .pdfx-check input { margin-top: 0.15rem; }
+.pdfx-topic-all { font-size: 0.74rem; color: var(--muted); padding: 0.1rem 0 0.2rem; }
+.pdfx-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.pdfx-link-btn:hover { text-decoration: underline; }
+.pdfx-types .pdfx-check { font-size: 0.78rem; }
+.pdfx-swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  flex: none;
+}
+@media (max-width: 420px) { .pdfx-types { grid-template-columns: 1fr; } }
+
+.pdfx-count {
+  margin-top: 0.35rem;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--accent);
+}
+.pdfx-count.none { color: var(--wrong); }
+.pdfx-answer-line { margin-top: 0.25rem; border-top: 1px dashed var(--border); padding-top: 0.45rem; }
+
+.pdfx-page-swatch {
+  display: inline-block;
+  width: 0.85rem;
+  height: 1.1rem;
+  border: 1px solid var(--border);
+  margin-right: 0.35rem;
+  vertical-align: -0.2rem;
+}
+.pdfx-page-swatch.light { background: #fff; }
+.pdfx-page-swatch.dark { background: #000; }
+
+/* Figure previews: the set's first redrawn drawing, as it would print, next
+   to the original picture it replaces. */
+.pdfx-fig-previews { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.pdfx-fig-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.45rem;
+  position: relative;
+}
+.pdfx-fig-card:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.pdfx-fig-card input { position: absolute; top: 0.4rem; left: 0.4rem; margin: 0; accent-color: var(--accent); }
+.pdfx-fig-thumb {
+  width: 100%;
+  height: 92px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 3px;
+}
+/* The redrawn drawing as the site shows it, in the current theme, so it
+   reads apart from the original picture next to it. */
+.pdfx-fig-thumb.pdfx-fig-redrawn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.pdfx-fig-redrawn svg.fig-redrawn {
+  color: var(--text);
+  --svg-fill-white: var(--surface);
+  --svg-dark: var(--bg);
+  --svg-gold: var(--partial);
+}
+body.light .pdfx-fig-redrawn svg.fig-redrawn { --svg-dark: var(--text); }
+.pdfx-fig-redrawn svg.fig-redrawn text { font-family: 'STIX Two Text', 'Times New Roman', serif; }
+.pdfx-fig-thumb.pdfx-fig-original { background: #fff; }
+.pdfx-fig-thumb svg { width: auto !important; max-width: 100%; height: 100% !important; max-height: 88px; }
+.pdfx-fig-thumb img { max-width: 100%; max-height: 88px; display: block; }
+/* The PDF prints the still drawing: no play control on the preview. */
+.pdfx-fig-thumb .fig-anim-ctl { display: none !important; }
+
+.pdfx-progress { margin-top: 0.9rem; }
+.pdfx-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.pdfx-bar-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.2s ease-out;
+}
+.pdfx-progress-text {
+  margin-top: 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--muted);
+  text-align: center;
+}
+.pdfx-error {
+  margin-top: 0.8rem;
+  font-size: 0.8rem;
+  color: var(--wrong);
+  text-align: center;
+}
+.pdfx-estimate {
+  margin-top: 0.9rem;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--muted);
+  text-align: center;
+}
+.pdfx-estimate:empty { display: none; }
+.pdfx-actions { margin-top: 0.5rem; gap: 0.5rem; }
+/* Reset sits apart on the left, quieter than Cancel and Export. */
+.pdfx-actions .pdfx-reset-btn {
+  margin-right: auto;
+  background: none;
+  border-color: transparent;
+  color: var(--muted);
+}
+.pdfx-actions .pdfx-reset-btn:not(:disabled):hover { color: var(--accent); border-color: var(--border); }
+.pdfx-actions .stats-modal-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* ── Check a PDF ── */
+.pdfx-check-box { max-width: 440px; }
+.pdfx-link-row { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+.pdfx-link-row .stats-modal-btn { flex: none; }
+
+.pdfx-result {
+  margin-top: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: calc(8px * var(--radius-mult));
+  padding: 0.75rem 0.9rem;
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.55;
+}
+.pdfx-result.ok { border-color: var(--correct); }
+.pdfx-result.warn { border-color: var(--partial); }
+.pdfx-result.bad { border-color: var(--wrong); }
+.pdfx-result p { margin: 0.3rem 0; }
+.pdfx-result a { color: var(--accent); }
+.pdfx-verdict { font-family: var(--mono); font-weight: 600; font-size: 0.95rem; }
+.pdfx-verdict.ok { color: var(--correct); }
+.pdfx-verdict.bad { color: var(--wrong); }
+.pdfx-warn { color: var(--partial); }
+.pdfx-list {
+  list-style: none;
+  margin: 0.4rem 0;
+  padding: 0;
+  max-height: 11rem;
+  overflow-y: auto;
+  font-size: 0.78rem;
+}
+.pdfx-list li { padding: 0.15rem 0; border-bottom: 1px solid var(--border); }
+.pdfx-list li.changed b, .pdfx-list li.removed b { color: var(--wrong); }
+.pdfx-fp { font-family: var(--mono); color: var(--muted); font-size: 0.72rem; }
+.pdfx-facts { color: var(--muted); font-size: 0.74rem; font-family: var(--mono); }
+
+/* Third choice on the Entire Set order page. */
+.modal-choice-btn.pdfx-choice-btn { border-style: dashed; }

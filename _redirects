@@ -1,0 +1,7 @@
+# Netlify redirects and rewrites (https://docs.netlify.com/routing/redirects/).
+#
+# /check is the check link printed on exported PDFs (js/pdf-export.js):
+# the site's own page, served at /check so the link stays short. The
+# page reads the check code from the #fragment. 200 = a rewrite, the
+# address bar keeps /check.
+/check  /index.html  200
