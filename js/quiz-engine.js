@@ -1058,7 +1058,9 @@ function saStorageKey() {
 }
 
 function saveSolveAllProgress() {
-  localStorage.setItem(saStorageKey(), JSON.stringify(buildSolveAllSnapshot()));
+  const snap = buildSolveAllSnapshot();
+  if (!snap) return; // no session on screen: nothing to save, and an empty copy would erase the real one
+  localStorage.setItem(saStorageKey(), JSON.stringify(snap));
 }
 
 // Wipes every locally-stored Solve-All progress snapshot (every quiz +
@@ -1077,7 +1079,14 @@ function clearLocalSolveAllProgress() {
 // Same shape as what used to be built inline in saveSolveAllProgress —
 // pulled out so js/solve-all-sync.js can grab the current live state to
 // push, without duplicating this logic.
+//
+// null when no session is loaded (solveAllProblems is empty before a session
+// opens and after it closes). An empty snapshot taken then isn't "nothing
+// solved", it's "nothing to look at", and saving or pushing it erases the
+// real progress: on 2026-11-22 a sync that finished after Entire Set was
+// closed wrote exactly that to both localStorage and the server.
 function buildSolveAllSnapshot() {
+  if (!solveAllProblems.length) return null;
   const checkedById = {};
   const answersById = {};
   solveAllChecked.forEach((status, idx) => {
@@ -1111,6 +1120,7 @@ function buildSolveAllSnapshot() {
 // problems solved on another device that this one hadn't seen yet.
 function applySolveAllMerge(serverSnapshot) {
   if (typeof mergeSolveAllSnapshots !== 'function') return;
+  if (!solveAllProblems.length) return; // session already closed: nothing to merge into
   const merged = mergeSolveAllSnapshots(buildSolveAllSnapshot(), serverSnapshot);
 
   solveAllAnswers = { ...solveAllAnswers, ...merged.answersById };
@@ -1395,8 +1405,9 @@ function exitSolveAll() {
   // Best-effort final push, catching whatever the last 15s tick missed —
   // must happen before solveAllProblems etc. get cleared below.
   if (typeof stopSolveAllSync === 'function') stopSolveAllSync();
-  if (typeof pushSolveAllProgress === 'function' && solveAllProblems.length) {
-    pushSolveAllProgress(selectedQuizNum, selectedCumulativeMode === 'cumulative', buildSolveAllSnapshot());
+  const finalSnap = buildSolveAllSnapshot();
+  if (typeof pushSolveAllProgress === 'function' && finalSnap) {
+    pushSolveAllProgress(selectedQuizNum, selectedCumulativeMode === 'cumulative', finalSnap);
   }
 
   _exitSolveAllScreenDom();
@@ -2515,7 +2526,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '14.3.0';
+const CURRENT_VERSION = '14.3.1';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.

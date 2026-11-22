@@ -51,6 +51,15 @@ const SA_SYNC_POLL_MS = 15000; // kept as the reset-guard duration below (resetS
 // default (same reasoning as js/attempts-sync.js's fallback poll).
 let _saSyncPollTimer = null;
 let _saSyncActive = null;        // { quizNum, cumulative } while a session is open
+// Goes up each time a session opens or closes. A round trip remembers the
+// value it started under and drops its result if the value has changed by
+// the time the server answers (see _saSyncRoundTrip). Without this, a pull
+// still in flight when Entire Set was closed came back to a cleared page,
+// merged into nothing, and saved and pushed that empty state over the real
+// progress, locally and on the server at once (greta_oto, 2026-11-22: a
+// laptop woke up, the wake-up sync started, and leaving Entire Set within
+// that half second erased about 100 solved problems).
+let _saSessionGen = 0;
 let _saLastRoundTripAt = 0;      // when _saSyncRoundTrip() last went to the server, whatever triggered it
 const _saPendingReset = new Set(); // "quizNum_cum" keys mid-reset — pushes for that key are skipped
 // Signature (see _saSnapshotSignature below) of the last snapshot
@@ -259,8 +268,13 @@ async function pullSolveAllProgress(quizNum, cumulative) {
   }
 }
 
+// Resolves to false on failure, or to the server's reply. The reply carries
+// `data` (the stored row after the push) when the server merged in problems
+// this snapshot didn't have (sync-solve-all.ts keeps the better status of
+// each problem rather than overwriting the row).
 async function pushSolveAllProgress(quizNum, cumulative, snapshot) {
   const key = _saSyncKey(quizNum, cumulative);
+  if (!snapshot) return false; // no session loaded (buildSolveAllSnapshot): never push "nothing"
   if (_saPendingReset.has(key)) return false; // a reset just fired for this session — don't resurrect it
   if (siteSyncPaused()) { _setSolveAllSyncDot('paused'); return false; } // the exit push too; the next round trip after the pause sends it
   const deviceId = (typeof getForumDeviceId === 'function') ? getForumDeviceId() : null;
@@ -279,7 +293,7 @@ async function pushSolveAllProgress(quizNum, cumulative, snapshot) {
     if (typeof applyDeviceToken === 'function') applyDeviceToken(json);
     const ok = !!(res.ok && json && json.ok);
     _setSolveAllSyncDot(ok ? 'green' : 'red');
-    return ok;
+    return ok ? json : false;
   } catch (e) {
     console.error('Solve-all push error:', e);
     _setSolveAllSyncDot('red');
@@ -381,6 +395,15 @@ async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
     _saPendingReset.delete(key);
   }
 
+  // Still the session this round trip started for? Checked again after every
+  // await below: the session can close, or another set can open, while the
+  // server is answering, and a late answer must not be applied to (or saved
+  // and pushed from) whatever is on screen by then. See _saSessionGen.
+  const gen = _saSessionGen;
+  const live = () => gen === _saSessionGen && !!_saSyncActive
+    && _saSyncActive.quizNum === quizNum && !!_saSyncActive.cumulative === !!cumulative;
+  if (!live()) return;
+
   const identityName = (typeof getForumNickname === 'function') ? getForumNickname() : '';
   if (!identityName) { _setSolveAllSyncDot('gray'); return; }
   // site-version.json "sync_paused": progress keeps being saved locally, and
@@ -389,6 +412,7 @@ async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
   _saLastRoundTripAt = Date.now();
 
   const pulled = await pullSolveAllProgress(quizNum, cumulative);
+  if (!live()) return; // closed or switched while pulling: drop the answer
   if (pulled === null) {
     _setSolveAllSyncDot('red');
   } else if (pulled.found && pulled.data === null && !isInitial) {
@@ -420,8 +444,13 @@ async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
   if (snap) {
     const sig = _saSnapshotSignature(snap);
     if (sig !== _saLastPushedJson) {
-      const ok = await pushSolveAllProgress(quizNum, cumulative, snap);
-      if (ok) _saLastPushedJson = sig; // only remember it once the server actually has it
+      const pushed = await pushSolveAllProgress(quizNum, cumulative, snap);
+      if (pushed && live()) {
+        _saLastPushedJson = sig; // only remember it once the server actually has it
+        // The server kept problems this snapshot was missing (another
+        // device's, or ones a broken client dropped): show them here too.
+        if (pushed.merged && pushed.data && typeof applySolveAllMerge === 'function') applySolveAllMerge(pushed.data);
+      }
     }
     // else: no actual solve/lock progress beyond what the server already
     // has (most likely this round trip was itself triggered by a ping —
@@ -433,9 +462,14 @@ async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
 }
 
 async function syncSolveAllOnOpen(quizNum, cumulative) {
+  _saSessionGen++;
+  const gen = _saSessionGen;
   _saSyncActive = { quizNum, cumulative };
   _saLastPushedJson = null; // new session — never skip its first push
   await _saSyncRoundTrip(quizNum, cumulative, /* isInitial */ true);
+  // Closed (or replaced) while that first round trip was out: the fallback
+  // timer below would belong to a session that no longer exists.
+  if (gen !== _saSessionGen) return;
 
   stopSitePoll(_saSyncPollTimer);
   _saSyncPollTimer = startSitePoll('solve_all', () => {
@@ -447,6 +481,7 @@ async function syncSolveAllOnOpen(quizNum, cumulative) {
 }
 
 function stopSolveAllSync() {
+  _saSessionGen++; // any round trip still waiting on the server now drops its result
   _saSyncPollTimer = stopSitePoll(_saSyncPollTimer);
   _saSyncActive = null;
   _saLastPushedJson = null;

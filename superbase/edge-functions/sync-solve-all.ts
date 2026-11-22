@@ -9,7 +9,8 @@
 // device_id -> identity_devices -> identity_id way as the quiz-attempts
 // functions:
 //   - "pull":  return the stored row's data (or null if none/reset).
-//   - "push":  upsert the client's already-merged snapshot.
+//   - "push":  merge the client's snapshot with the stored row (better
+//     status per problem wins, see pushMerged) and save that.
 //   - "reset": upsert data:null — a *tombstone*, not a delete. A bare
 //     missing row can't be told apart from "this device never synced,"
 //     but a row that exists with data:null unambiguously means "this was
@@ -174,6 +175,122 @@ async function verifyOrRegisterDevice(db: any, deviceId: string, secret: unknown
   return candidateHash === row.secret_hash;
 }
 
+// ── Union merge on push ─────────────────────────────────────────────────────
+// A push used to overwrite the stored row with whatever the client sent. The
+// client is meant to merge before it pushes (mergeSolveAllSnapshots,
+// js/solve-all-sync.js), but any client bug then erased progress for good:
+// on 2026-11-22 a sync that finished after Entire Set was closed pushed an
+// empty snapshot over ~100 solved problems. So the server merges too, with
+// the same rule as the client: per problem the more resolved status wins
+// (correct > revealed > partial/wrong), and the answer comes from the same
+// side as the status; ties keep the incoming one. Only Reset (a tombstone,
+// data: null) can clear a row now.
+type Snapshot = {
+  checkedById?: Record<string, string>;
+  lockedIds?: string[];
+  answersById?: Record<string, unknown>;
+  [k: string]: unknown;
+};
+
+function statusRank(status: unknown): number {
+  if (status === "correct") return 3;
+  if (status === "revealed") return 2;
+  if (status === "partial" || status === "wrong") return 1;
+  return 0;
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
+function isBlankAnswer(a: unknown): boolean {
+  if (!isObj(a)) return true;
+  return !String(a.ans ?? "").trim() && !String(a.unit ?? "").trim();
+}
+
+// Mirrors mergeSolveAllSnapshots in js/solve-all-sync.js (incoming = local,
+// stored = server). `changed` says whether the stored row added anything.
+function mergeIntoIncoming(incoming: Snapshot, stored: Snapshot): { data: Snapshot; changed: boolean } {
+  const checkedById: Record<string, string> = { ...(isObj(incoming.checkedById) ? incoming.checkedById as Record<string, string> : {}) };
+  const answersById: Record<string, unknown> = { ...(isObj(incoming.answersById) ? incoming.answersById : {}) };
+  const lockedSet = new Set(Array.isArray(incoming.lockedIds) ? incoming.lockedIds : []);
+  const storedChecked = isObj(stored.checkedById) ? stored.checkedById as Record<string, string> : {};
+  const storedAnswers = isObj(stored.answersById) ? stored.answersById : {};
+  let changed = false;
+
+  for (const id of Object.keys(storedChecked)) {
+    if (statusRank(storedChecked[id]) > statusRank(checkedById[id])) {
+      checkedById[id] = storedChecked[id];
+      if (id in storedAnswers) answersById[id] = storedAnswers[id];
+      else delete answersById[id];
+      changed = true;
+    }
+  }
+  // Not counted as a change: older builds also locked revealed problems, and
+  // the client only ever locks solved ones, so a stale id here would send the
+  // whole row back on every push for nothing.
+  for (const id of (Array.isArray(stored.lockedIds) ? stored.lockedIds : [])) lockedSet.add(id);
+  for (const id of Object.keys(storedAnswers)) {
+    if (checkedById[id] !== storedChecked[id] && id in checkedById) continue;
+    if (isBlankAnswer(answersById[id]) && !isBlankAnswer(storedAnswers[id])) {
+      answersById[id] = storedAnswers[id];
+      changed = true;
+    }
+  }
+  return { data: { ...incoming, checkedById, lockedIds: [...lockedSet], answersById }, changed };
+}
+
+// Read, merge, write only if the row hasn't changed since the read (its
+// updated_at), else read again. Two devices pushing at the same moment can't
+// then drop each other's problems, and no database function is needed.
+async function pushMerged(
+  db: any, identityId: string, quizNum: number, cum: boolean, incoming: Snapshot, deviceId: string,
+): Promise<{ ok: true; data: Snapshot; changed: boolean } | { ok: false }> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data: row, error: readErr } = await db
+      .from("solve_all_progress")
+      .select("data, updated_at")
+      .eq("identity_id", identityId)
+      .eq("quiz_num", quizNum)
+      .eq("cumulative", cum)
+      .maybeSingle();
+    if (readErr) { console.error("Solve-all push read error:", readErr); return { ok: false }; }
+
+    const merged = row && isObj(row.data)
+      ? mergeIntoIncoming(incoming, row.data as Snapshot)
+      : { data: incoming, changed: false }; // no row, or a reset tombstone: the push starts fresh
+    const values = {
+      data: merged.data,
+      device_id: deviceId, // which device made this write — lets the Realtime
+                           // broadcast trigger tag its ping, so the pushing
+                           // device itself can ignore its own echo instead of
+                           // round-tripping in response to its own write (see
+                           // migration 005_solve_all_device_id.sql)
+      updated_at: new Date().toISOString(),
+    };
+
+    if (!row) {
+      const { error } = await db.from("solve_all_progress")
+        .insert({ identity_id: identityId, quiz_num: quizNum, cumulative: cum, ...values });
+      if (!error) return { ok: true, ...merged };
+      if (error.code === "23505") continue; // another push created it first: merge with that
+      console.error("Solve-all push insert error:", error);
+      return { ok: false };
+    }
+
+    const { data: updated, error } = await db.from("solve_all_progress")
+      .update(values)
+      .eq("identity_id", identityId)
+      .eq("quiz_num", quizNum)
+      .eq("cumulative", cum)
+      .eq("updated_at", row.updated_at)
+      .select("identity_id");
+    if (error) { console.error("Solve-all push update error:", error); return { ok: false }; }
+    if (updated && updated.length) return { ok: true, ...merged };
+    // 0 rows: someone wrote in between. Read again and merge with that.
+  }
+  console.error("Solve-all push: row kept changing, gave up after 4 tries");
+  return { ok: false };
+}
+
 export default {
   fetch: withSupabase({ auth: "publishable" }, async (req, ctx) => {
     const payload = await req.json();
@@ -241,33 +358,19 @@ export default {
     }
 
     if (action === "push") {
-      if (typeof data !== "object" || data === null) {
+      if (!isObj(data)) {
         return Response.json({ ok: false, error: "Missing progress data." }, { status: 400 });
       }
-      const { error } = await admin
-        .from("solve_all_progress")
-        .upsert(
-          {
-            identity_id: identityId,
-            quiz_num,
-            cumulative: cum,
-            data,
-            device_id, // which device made this write — lets the Realtime
-                       // broadcast trigger tag its ping, so the pushing
-                       // device itself can ignore its own echo instead of
-                       // round-tripping in response to its own write (see
-                       // migration 005_solve_all_device_id.sql)
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "identity_id,quiz_num,cumulative" },
-        );
-      if (error) {
-        console.error("Solve-all push error:", error);
+      const result = await pushMerged(admin, identityId, quiz_num, cum, data as Snapshot, device_id);
+      if (!result.ok) {
         return Response.json({ ok: false, error: "Couldn't save, try again." }, { status: 500 });
       }
       return Response.json({
         ok: true,
         identity_id: identityId,
+        // Only when the stored row added problems the client didn't send, so
+        // the client can show them now (js/solve-all-sync.js applies it).
+        ...(result.changed ? { merged: true, data: result.data } : {}),
         ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
         ...(identityToken ? { identity_token: identityToken.token, identity_token_expires_at: identityToken.expiresAt } : {}),
       });

@@ -3583,6 +3583,12 @@ html:not(.lockdown) :is(#statsScreen, #solutionScreen, #settingsScreen, #manualS
   min-height: calc(100dvh - var(--top-bar-h) - env(safe-area-inset-top, 0px));
 }
 .site-footer-screen > .site-footer { margin-top: auto; }
+/* The wrap above the footer keeps the full width it had as a block. As a
+   flex item centred with auto margins it shrank to fit its content instead,
+   and its content includes the Stats chart's canvas, whose bitmap is the
+   drawn width times devicePixelRatio: on a phone (dpr 3) the wrap grew to
+   about twice the screen and Stats scrolled sideways. */
+.site-footer-screen > .site-footer-above { width: 100%; min-width: 0; }
 /* On a narrow window the quiz page's footer wraps under the fixed corner box
    (#liveQuizTimer or Solve-all's #stickyScore, bottom right): while one shows,
    the footer leaves room for it below its links, as the body's own padding

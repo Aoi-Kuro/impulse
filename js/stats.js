@@ -765,7 +765,7 @@ function renderTable() {
       <td>
         <span class="quiz-badge" style="background:${color}22;color:${color}">
           <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color}"></span>
-          #${a.quizNum} · ${name}
+          #${a.quizNum}<span class="quiz-badge-name"> · ${name}</span>
         </span>
       </td>
       <td style="white-space:nowrap"><span class="mode-badge ${a.mode}">${a.mode === 'cumulative' ? `Sets 1–${a.quizNum}` : 'Single'}</span>${lockdownMark(a)}</td>
