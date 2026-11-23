@@ -493,7 +493,7 @@ function initTopics() {
 
   if (selectedCumulativeMode === 'cumulative' && selectedQuizNum >= 2) {
     for (let i = 0; i < selectedQuizNum; i++) {
-      buildQuizTopicBlock(container, i, `Quiz #${i + 1} · ${QUIZZES[i].name}`);
+      buildQuizTopicBlock(container, i, `Set #${i + 1} | ${QUIZZES[i].name}`);
     }
   } else {
     // Single quiz mode — shares the same filter block (and localStorage
@@ -736,7 +736,7 @@ function render() {
   quiz.forEach((p, i) => {
     const isCumulative = selectedCumulativeMode === 'cumulative' && p._quizNum != null;
     const pLabel       = problemLabel(p._quizNum || selectedQuizNum, p.id);
-    const numDisplay   = isCumulative ? `${pLabel} · Quiz #${p._quizNum}` : pLabel;
+    const numDisplay   = isCumulative ? `${pLabel} | Set #${p._quizNum}` : pLabel;
     const card = document.createElement("div");
     card.className = "problem-card";
     card.id = "card-" + i;
@@ -926,7 +926,7 @@ function togglePQRow(btn) {
 function pqToggleButton(showToggle) {
   return showToggle
     ? `<button type="button" class="pq-toggle-btn" onclick="togglePQRow(this)">P⇄Q</button>`
-    : `<button type="button" class="pq-toggle-btn" disabled title="Only one quiz in this attempt">P⇄Q</button>`;
+    : `<button type="button" class="pq-toggle-btn" disabled title="Only one set in this attempt">P⇄Q</button>`;
 }
 // "21 min 41 s" with each number in a larger accent-colored span and its
 // unit in a smaller muted one — mirrors the big-number/small-denominator
@@ -1406,8 +1406,9 @@ function exitSolveAll() {
   // must happen before solveAllProblems etc. get cleared below.
   if (typeof stopSolveAllSync === 'function') stopSolveAllSync();
   const finalSnap = buildSolveAllSnapshot();
-  if (typeof pushSolveAllProgress === 'function' && finalSnap) {
-    pushSolveAllProgress(selectedQuizNum, selectedCumulativeMode === 'cumulative', finalSnap);
+  if (typeof pushSolveAllProgressOnExit === 'function' && finalSnap) {
+    // After any round trip still running, not alongside it (js/solve-all-sync.js).
+    pushSolveAllProgressOnExit(selectedQuizNum, selectedCumulativeMode === 'cumulative', finalSnap);
   }
 
   _exitSolveAllScreenDom();
@@ -1871,6 +1872,17 @@ function checkSingleProblem(i) {
   updateStickyScore();
   saveSolveAllProgress();
   if (typeof broadcastSolveAllChange === 'function') broadcastSolveAllChange();
+
+  // That was the last one: every problem is correct now. Only on this
+  // device's own Check, never on a sync or a reopen (js/solve-all-celebrate.js).
+  if (pts === 1 && typeof playSolveAllCelebration === 'function'
+      && solveAllProblems.every((_, j) => solveAllChecked.get(j) === 'correct')) {
+    const n = selectedQuizNum;
+    const label = selectedCumulativeMode === 'cumulative' && n >= 2 ? `Sets 1–${n}` : `Set ${n}`;
+    const total = solveAllProblems.length;
+    // After the card's own ✓ flash.
+    setTimeout(() => playSolveAllCelebration({ total, label }), 450);
+  }
 }
 
 // The feedback line of a card whose answer was revealed, and of one whose
@@ -2526,7 +2538,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '14.3.1';
+const CURRENT_VERSION = '14.4.0';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.
@@ -2783,7 +2795,7 @@ function _renderForcedUpdateBanner() {
     // The ticking clock is aria-live="off": announced once with the
     // sentence, not every second.
     const when = waiting
-      ? `${UPDATE_FORCE_COUNTDOWN / 60000} minutes after this quiz`
+      ? `${UPDATE_FORCE_COUNTDOWN / 60000} minutes after this exam`
       : 'in <span class="forced-time" aria-live="off"></span>';
     document.getElementById('update-forced-body').innerHTML = critical
       ? `You’ll be updated automatically ${when}, or update now yourself.`

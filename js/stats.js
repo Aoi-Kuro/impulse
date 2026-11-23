@@ -287,7 +287,7 @@ function renderAttemptReview(attempt) {
       // instead of silently dropping the row from the review.
       card.classList.add('wrong');
       card.innerHTML = `
-        <div class="card-header"><span class="problem-num">${problemLabel(a.quiz_num, a.problem_id)} · Quiz #${a.quiz_num}</span>${flagHtml}</div>
+        <div class="card-header"><span class="problem-num">${problemLabel(a.quiz_num, a.problem_id)} | Set #${a.quiz_num}</span>${flagHtml}</div>
         <div class="problem-text" style="color:var(--muted)">This problem's original text is no longer available.</div>
         <div class="answer-row">
           <span class="answer-label">Answer =</span>
@@ -306,7 +306,7 @@ function renderAttemptReview(attempt) {
     card.classList.add(pts === 1 ? 'correct' : pts === 0.9 ? 'partial' : 'wrong');
     const isCumulative = attempt.mode === 'cumulative' && a.quiz_num !== attempt.quizNum;
     const pLabel = problemLabel(a.quiz_num, a.problem_id);
-    const numDisplay = isCumulative ? `${pLabel} · Quiz #${a.quiz_num}` : pLabel;
+    const numDisplay = isCumulative ? `${pLabel} | Set #${a.quiz_num}` : pLabel;
 
     const fbClass = pts === 1 ? 'correct-fb' : pts === 0.9 ? 'partial-fb' : 'wrong-fb';
     const fbHtml  = answerFeedbackHtml(res, p, true);
@@ -453,7 +453,7 @@ function renderLegend() {
   el.innerHTML = QUIZZES.map((q, i) =>
     `<div class="legend-item">
       <div class="legend-dot" style="background:${quizColor(i)}"></div>
-      <span>Quiz #${i+1} · ${q.name}</span>
+      <span>Set ${i+1}</span>
     </div>`
   ).join('');
 }
@@ -466,7 +466,7 @@ function renderFilters() {
   // Quiz chips
   const qg = document.createElement('div');
   qg.className = 'sf-group';
-  qg.innerHTML = '<span class="sf-label">Quiz:</span>';
+  qg.innerHTML = '<span class="sf-label">Set:</span>';
   QUIZZES.forEach((q, i) => {
     const n = i + 1;
     const btn = document.createElement('button');
@@ -658,7 +658,7 @@ function initChartTooltip() {
       const dateStr = new Date(a.date).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'});
       const durStr  = fmtDuration(a.duration);
       tooltip.innerHTML =
-        `<span style="color:${quizColor(closest.qi-1)}">Quiz #${closest.qi}</span> · attempt ${closest.idx+1}<br>` +
+        `<span style="color:${quizColor(closest.qi-1)}">Set ${closest.qi}</span> | attempt ${closest.idx+1}<br>` +
         `Score: <b>${a.score}/${a.maxScore}</b> · ${a.mode} · ${durStr}<br>` +
         `${dateStr}`;
       const tw = tooltip.offsetWidth;
@@ -957,7 +957,7 @@ function renderProblemsOverview() {
   const sections = QUIZZES.map((q, i) => {
     const quizNum = i + 1;
     const color = quizColor(i);
-    const label = q.name ? `Quiz ${quizNum} : ${q.name}` : `Quiz ${quizNum}:`;
+    const label = q.name ? `Set ${quizNum} | ${q.name}` : `Set ${quizNum}`;
     const badgeHtml = `<span class="quiz-badge" style="background:${color}22;color:${color}">` +
       `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color}"></span>${label}</span>`;
 
@@ -1197,7 +1197,7 @@ function renderTopicPerformance() {
 
     // Same .quiz-badge as the Attempt log and the grids below.
     const color = quizColor(quizNum - 1);
-    const label = q.name ? `Quiz ${quizNum} : ${q.name}` : `Quiz ${quizNum}`;
+    const label = q.name ? `Set ${quizNum} | ${q.name}` : `Set ${quizNum}`;
     return `
         <div class="tp-group" data-quiz="${quizNum}"${quizNum === selected ? '' : ' hidden'}>
           <div class="tp-group-head"><span class="quiz-badge" style="background:${color}22;color:${color}"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color}"></span>${_tpEsc(label)}</span></div>
@@ -1210,7 +1210,7 @@ function renderTopicPerformance() {
           <div class="tp-switch" id="tpSwitch" role="tablist" aria-label="Quiz"
                style="--tp-n:${available.length};--tp-i:${selIdx};--tp-color:${quizColor(selected - 1)}">
             <span class="tp-switch-pill" aria-hidden="true"></span>
-            ${available.map((n) => `<button type="button" role="tab" data-quiz="${n}" aria-selected="${n === selected}" onclick="setTopicQuiz(${n})">Quiz ${n}</button>`).join('')}
+            ${available.map((n) => `<button type="button" role="tab" data-quiz="${n}" aria-selected="${n === selected}" onclick="setTopicQuiz(${n})">Set ${n}</button>`).join('')}
           </div>`;
 
   wrap.innerHTML = `

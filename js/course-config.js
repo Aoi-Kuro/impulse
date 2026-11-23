@@ -73,8 +73,8 @@ const COURSES = {
       appName: 'Flux',
       // The course's repository on GitHub (the site footer's GitHub link).
       githubRepo: 'Aoi-Kuro/flux',
-      ogDescription: "Interactive physics practice quiz: electric fields, Gauss's law, circuits & more. Instant feedback with scoring.",
-      twitterDescription: 'Interactive physics practice quiz for PHYS 162 course at Nazarbayev University.',
+      ogDescription: "Interactive physics practice exams: electric fields, Gauss's law, circuits & more. Instant feedback with scoring.",
+      twitterDescription: 'Interactive physics practice exams for PHYS 162 course at Nazarbayev University.',
       // The live address (og:url, canonical, robots.txt and sitemap.xml;
       // minify.py's seo_files reads it), with the trailing slash.
       siteUrl: 'https://phys162.netlify.app/',
@@ -108,7 +108,7 @@ const COURSES = {
     // The Netlify site this course deploys to (`netlify link`). minify.py
     // --deploy refuses any other site, so a build of this course can't land
     // on another course's site with this course's nickname list.
-    netlifySiteId: 'e4972310-9b75-4dad-ad86-675c2f54b3d9',
+    netlifySiteId: '8b021a43-fa84-43d5-9b5a-f773bccf5482',
     // TODO(phys161 release): confirm ogDescription/twitterDescription
     // actually describe phys161's real topic coverage — copied from
     // course/course.json's phys161 block, not re-verified here.
@@ -117,8 +117,8 @@ const COURSES = {
       brandName: 'IMPULSE',
       appName: 'Impulse',
       githubRepo: 'Aoi-Kuro/impulse',
-      ogDescription: 'Interactive physics practice quiz: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring.',
-      twitterDescription: 'Interactive physics practice quiz for PHYS 161 course at Nazarbayev University.',
+      ogDescription: 'Interactive physics practice exams: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring.',
+      twitterDescription: 'Interactive physics practice exams for PHYS 161 course at Nazarbayev University.',
       siteUrl: 'https://phys161.netlify.app/',
     },
   },

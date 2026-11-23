@@ -332,12 +332,14 @@ const SITE_ORIGIN = "https://phys161.netlify.app";
 // course-specific, same manual-edit note as SITE_ORIGIN above.
 const GEMINI_SYSTEM_INSTRUCTIONS = `
 You are "Gemini", a helpful participant in a student forum for PHYS 161 at Nazarbayev University.
-Someone just tagged you with @gemini. You'll be given the tagged message,
-recent messages from the same thread for context, and — if the thread is
-about a specific problem — that problem's exact text.
+Usually someone just tagged you with @gemini. Sometimes nobody did: you're
+stepping in on your own because the message looked like a coursework question
+nobody has answered yet (you'll be told when that's the case). You'll be given
+the message, recent messages from the same thread for context, and — if the
+thread is about a specific problem — that problem's exact text.
 
 Rules:
-- Answer the tagged message directly. Be concise: a few sentences or a short
+- Answer the message directly. Be concise: a few sentences or a short
   worked step, not a full essay, unless the student clearly asked for a
   complete derivation.
 - This forum renders LaTeX via MathJax. Write inline math as $...$ and
@@ -350,6 +352,16 @@ Rules:
   being wedged into running text — that reads as cramped and is harder to
   parse. When a derivation has several steps, put each resulting equation on
   its own $$...$$ line rather than chaining them inline one after another.
+- Layout of every answer: never leave an empty line before or after a
+  $$...$$ equation. The equation goes on the line directly under the sentence
+  that introduces it, and the next sentence starts on the line directly under
+  the equation — single line breaks only, like this:
+  So the speed is
+  $$v=\\sqrt{2gh}$$
+  which gives about 4 m/s.
+  The forum already puts space around a displayed equation, so an empty line
+  next to it makes the answer much taller for nothing. Use an empty line only
+  between two paragraphs of plain text, and never two empty lines in a row.
 - Do NOT use Markdown formatting of any kind — no **bold**, no _italic_, no
   # headers, no \`code\` backticks, no markdown bullet/numbered lists. This
   forum only renders LaTeX math delimiters; everything else shows up as
@@ -394,6 +406,12 @@ Rules:
   otherwise offensive toward you or anyone else — you're not obligated to
   engage with hostility, and staying silent is a completely valid choice.
   Otherwise, always answer normally per the rules above.
+- When you're stepping in without being tagged: answer just as carefully, a
+  little more briefly, and don't comment on the fact that nobody tagged you.
+  If, having read the thread, it turns out not to be something you should
+  answer (a classmate already helped or is helping, it's banter, it's meant
+  for someone else, it isn't really a question), output exactly
+  ${GEMINI_NO_REPLY_SENTINEL} and nothing else.
 - For greek letters as a variables use their latex version like $\\mu$ but for the part of a text such as microfarads use just unicode symbol μ like μF.
 - Stay on physics/coursework; politely decline anything unrelated. you can also redirect other user to @Aoi_Kuro during conflicts etc.).
 `.trim();
@@ -821,6 +839,17 @@ async function isDailyQuotaExhausted(res: Response): Promise<boolean> {
 
 type GeminiProgress = (attempt: number, fullText: string, thoughts: string) => void;
 
+// Empty lines right before or after a $$...$$ line, and runs of 2+ empty
+// lines, make an answer much taller for nothing: the forum already spaces a
+// displayed equation. Same rule as stripMarkdownArtifacts() in js/forum.js,
+// which also fixes answers saved before this existed.
+function tightenGeminiLayout(text: string): string {
+  return text
+    .replace(/\n(?:[ \t]*\n)+(?=[ \t]*\$\$)/g, "\n")
+    .replace(/(\$\$)[ \t]*\n(?:[ \t]*\n)+/g, "$1\n")
+    .replace(/\n(?:[ \t]*\n){2,}/g, "\n\n");
+}
+
 // Text that is safe to show mid-stream: up to the last line break or sentence
 // end where every $...$ and $$...$$ is closed. Never the no-reply sentinel.
 function geminiStreamableText(full: string): string {
@@ -868,7 +897,7 @@ function makeGeminiStreamer(admin: any, messageId: number) {
     chain = chain.then(() => broadcastForum(admin, "gemini-stream", payload));
   };
   const progress: GeminiProgress = (attempt, fullText, thoughts) => {
-    next = { attempt, text: geminiStreamableText(fullText), thought: geminiThoughtHeadline(thoughts) };
+    next = { attempt, text: tightenGeminiLayout(geminiStreamableText(fullText)), thought: geminiThoughtHeadline(thoughts) };
     const wait = 800 - (Date.now() - lastAt);
     if (attempt !== sent.attempt || wait <= 0) {
       if (timer) clearTimeout(timer);
@@ -894,7 +923,7 @@ function makeGeminiStreamer(admin: any, messageId: number) {
   const complete = (attempt: number, text: string) => {
     if (!geminiStreamableText(text + "\n")) return; // empty, or the no-reply sentinel
     if (timer) { clearTimeout(timer); timer = null; }
-    next = { attempt, text: text.trim(), thought: sent.thought };
+    next = { attempt, text: tightenGeminiLayout(text.trim()), thought: sent.thought };
     push();
   };
   const flush = async () => {
@@ -1009,7 +1038,8 @@ async function callGemini(
   repliedTo: { author_name: string; body: string } | null,
   problemImage: { mimeType: string; data: string } | null,
   solution: { text: string; captions: string[]; stale: boolean } | null,
-  msgId: number
+  msgId: number,
+  unprompted: StepIn = null
 ): Promise<{ text: string | null; unavailable: boolean }> {
   const contextBlock = contextMessages.length
     ? contextMessages.map(m => `${m.author_name}: ${m.body}`).join("\n")
@@ -1028,10 +1058,16 @@ async function callGemini(
     ? `\n\nThis message was sent as a direct reply to this earlier message:\n${repliedTo.author_name}: ${repliedTo.body}`
     : "";
 
-  const userContent =
-    `Recent thread messages (oldest first):\n${contextBlock}${problemBlock}${solutionBlock}${repliedToBlock}\n\n` +
-    `Nickname of the user tagging you: ${taggerName}\n` +
-    `The message tagging you:\n${taggedMessage}`;
+  const userContent = unprompted
+    ? `Recent thread messages (oldest first):\n${contextBlock}${problemBlock}${solutionBlock}${repliedToBlock}\n\n` +
+      (unprompted === "followup"
+        ? `Nobody tagged you, but you already answered in this thread and a quick check decided this message is a follow-up meant for you, so answer it.\n`
+        : `Nobody tagged you. A quick check decided this message is a coursework question nobody has answered yet, so you're stepping in on your own.\n`) +
+      `Nickname of the user who wrote it: ${taggerName}\n` +
+      `The message:\n${taggedMessage}`
+    : `Recent thread messages (oldest first):\n${contextBlock}${problemBlock}${solutionBlock}${repliedToBlock}\n\n` +
+      `Nickname of the user tagging you: ${taggerName}\n` +
+      `The message tagging you:\n${taggedMessage}`;
 
   // Text part first, then the figure (if any) — order doesn't matter much to
   // Gemini, but this keeps the prompt readable in logs.
@@ -1163,11 +1199,12 @@ async function maybePostGeminiReply(
   admin: any,
   humanMsg: { id: number; author_name: string; body: string; scope: string; problem_key: string | null },
   forceTrigger: boolean,
-  repliedTo: { author_name: string; body: string } | null
+  repliedTo: { author_name: string; body: string } | null,
+  unprompted: StepIn = null
 ): Promise<GeminiOutcome> {
-  if (!forceTrigger && !GEMINI_MENTION_RE.test(humanMsg.body)) return "error";
+  if (!forceTrigger && !unprompted && !GEMINI_MENTION_RE.test(humanMsg.body)) return "error";
 
-  await gLog(admin, humanMsg.id, "triggered");
+  await gLog(admin, humanMsg.id, "triggered", unprompted ? { finish_reason: "unprompted_" + unprompted } : {});
 
   const [contextMessages, problemContext, publishedSolution] = await Promise.all([
     fetchRecentContext(admin, humanMsg.scope, humanMsg.problem_key, humanMsg.id),
@@ -1198,10 +1235,13 @@ async function maybePostGeminiReply(
     repliedTo,
     problemImage,
     solution,
-    humanMsg.id
+    humanMsg.id,
+    unprompted
   );
   if (!reply) {
-    if (!unavailable) return "error";
+    // Nobody asked for an unprompted answer, so a "servers are busy" notice
+    // would only be noise: it just doesn't come.
+    if (!unavailable || unprompted) return "error";
     return (await postGeminiUnavailableNotice(admin, humanMsg)) ? "posted" : "error";
   }
 
@@ -1223,7 +1263,7 @@ async function maybePostGeminiReply(
   // (enforced above in the request handler); this insert goes straight in via
   // admin, and body is an unbounded `text` column, so Gemini's full reply can
   // go out as-is instead of being sliced mid-sentence.
-  const trimmedReply = reply;
+  const trimmedReply = tightenGeminiLayout(reply);
 
   // Same moderation gate a human message goes through, applied to Gemini's
   // own output before it's allowed to post.
@@ -1298,17 +1338,150 @@ async function announceGeminiDone(admin: any, messageId: number, outcome: Gemini
   await broadcastForum(admin, "gemini-done", { message_id: messageId, posted: outcome === "posted", reason: outcome });
 }
 
-// maybePostGeminiReply plus the "done" broadcast, for messages that trigger it.
+// ── Unprompted answers ──────────────────────────────────────────────────────
+// A message that doesn't tag Gemini (and isn't a reply to it) gets one quick,
+// cheap question to the lite model: is this a coursework question nobody has
+// answered, that Gemini should step in on? Only a yes starts the real answer,
+// and only then does the forum show a thinking row ("gemini-start" below,
+// js/forum.js forumGeminiStart). Fails closed: any error means no answer.
+// gemini_debug_log gets "volunteered" or "gate_no" with the model's reason,
+// which is also how the one-per-ten-messages cap below is counted.
+const GEMINI_GATE_MODEL = "gemini-3.5-flash-lite";
+const GEMINI_GATE_SYSTEM = `
+You decide whether "Gemini", the AI helper in a student forum for a university physics course, should answer a message on its own. Nobody tagged Gemini in the new message. Messages may be in English, Russian or Kazakh, or a mix. You're told whether Gemini has already answered in this thread.
+
+If Gemini HAS already answered in this thread, Gemini is part of the conversation. Answer true when the new message continues that conversation with Gemini, even without a tag and even if it is short: a follow-up question about what Gemini said, asking it to explain more, doubting or correcting its answer, the next step or a related question about the same problem ("why?", "and in part b?", "so T goes up or stays the same?", "is it possible that ...?"). Answer false only if it is clearly meant for a classmate (it answers or asks a classmate, continues a classmate's point), or it isn't a question at all (thanks, agreement, a joke, a statement).
+
+If Gemini has NOT answered in this thread, answer true only when ALL of these hold:
+1) The new message asks a real question or asks for help about physics or the course problems: a concept, how to start, a step, units, why an answer is marked wrong, a formula, a result that doesn't match.
+2) Nobody in the recent messages has already answered it or is clearly in the middle of helping with it.
+3) It isn't meant for a particular classmate: answering someone's offer, a private back-and-forth between classmates, asking what a specific person got.
+
+In both cases answer false for greetings, thanks, jokes, memes, banter, chatting, venting or complaining without a question, rhetorical questions, opinions about the course, exams or teachers, logistics Gemini can't know (deadlines, grades, rooms, dates), someone sharing an answer without asking anything, and rude or offensive messages. When Gemini hasn't answered in the thread and you're unsure, answer false.
+
+Give a short reason, at most 15 words.
+`.trim();
+
+// "question": a fresh coursework question nobody has answered. "followup":
+// Gemini already answered in this thread and the message continues that
+// conversation with it. null: Gemini stays out.
+type StepIn = "question" | "followup" | null;
+
+async function geminiShouldStepIn(
+  admin: any,
+  humanMsg: { id: number; author_name: string; body: string; scope: string; problem_key: string | null },
+  repliedTo: { author_name: string; body: string } | null
+): Promise<StepIn> {
+  const body = humanMsg.body.trim();
+  const letters = body.replace(/[^\p{L}\p{N}]/gu, "").length;
+  // Too short to be a question ("ok", "??", an emoji).
+  if (letters < 3) return null;
+  // Addressed to someone by name: theirs to answer.
+  for (const m of body.matchAll(PUSH_MENTION_RE)) if (m[1].toLowerCase() !== "gemini") return null;
+
+  const context = await fetchRecentContext(admin, humanMsg.scope, humanMsg.problem_key, humanMsg.id);
+  // Gemini among the thread's last ten messages: it's in the conversation,
+  // so a follow-up meant for it gets answered however many there are ("why?"
+  // counts). Otherwise at most one unprompted answer per ten messages, so
+  // Gemini never takes over a conversation nobody invited it to.
+  const geminiInThread = context.some((m: { author_name: string }) => m.author_name === GEMINI_BOT_NAME);
+  if (!geminiInThread && letters < 4) return null;
+  const ids = context.map((m: { id: number }) => m.id);
+  if (!geminiInThread && ids.length) {
+    const { data, error } = await admin
+      .from("gemini_debug_log")
+      .select("message_id")
+      .eq("outcome", "volunteered")
+      .in("message_id", ids)
+      .limit(1);
+    if (error) { console.error("Gemini gate: cap lookup error", error); return null; }
+    if (data && data.length) return null;
+  }
+
+  const problem = await fetchProblemContext(humanMsg.problem_key);
+  const contextBlock = context.length
+    ? context.map((m: { author_name: string; body: string }) => `${m.author_name}: ${m.body}`).join("\n")
+    : "(no earlier messages in this thread)";
+  const userContent =
+    `Recent thread messages (oldest first; "Gemini" is the AI helper):\n${contextBlock}` +
+    (problem ? `\n\nThe problem this thread is about:\n${problem.text.slice(0, 1500)}` : "") +
+    (repliedTo ? `\n\nThe new message is a reply to:\n${repliedTo.author_name}: ${repliedTo.body}` : "") +
+    `\n\nGemini has already answered in this thread: ${geminiInThread ? "yes" : "no"}` +
+    `\n\nThe new message, by ${humanMsg.author_name}:\n${body}`;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_GATE_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: GEMINI_GATE_SYSTEM }] },
+          contents: [{ role: "user", parts: [{ text: userContent }] }],
+          // No thinkingConfig: the lite model rejects it (callGeminiLatexAssist).
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: { answer: { type: "BOOLEAN" }, reason: { type: "STRING" } },
+              required: ["answer", "reason"],
+            },
+          },
+        }),
+        signal: ctrl.signal,
+      }
+    );
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Gemini gate API error:", errText);
+      await gLog(admin, humanMsg.id, "gate_error", { model: GEMINI_GATE_MODEL, http_status: res.status, raw: errText });
+      return null;
+    }
+    const data = await res.json();
+    const raw = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("") ?? "";
+    const verdict = JSON.parse(raw);
+    const yes = verdict?.answer === true;
+    // "followup" is logged apart from "volunteered", so follow-ups never
+    // count towards the one-per-ten-messages cap above.
+    const outcome = !yes ? "gate_no" : geminiInThread ? "followup" : "volunteered";
+    await gLog(admin, humanMsg.id, outcome, { model: GEMINI_GATE_MODEL, raw: String(verdict?.reason ?? "") });
+    return !yes ? null : geminiInThread ? "followup" : "question";
+  } catch (err) {
+    console.error("Gemini gate failed:", err);
+    await gLog(admin, humanMsg.id, "gate_error", { model: GEMINI_GATE_MODEL, raw: String(err) });
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// maybePostGeminiReply plus the "done" broadcast, for messages that trigger
+// it: an @gemini, a reply to Gemini, or a message the gate above says Gemini
+// should answer unprompted (a fresh question, or a follow-up to Gemini).
 async function runGeminiReply(
   admin: any,
   humanMsg: { id: number; author_name: string; body: string; scope: string; problem_key: string | null },
   forceTrigger: boolean,
   repliedTo: { author_name: string; body: string } | null
 ) {
-  if (!forceTrigger && !GEMINI_MENTION_RE.test(humanMsg.body)) return;
+  let unprompted: StepIn = null;
+  if (!forceTrigger && !GEMINI_MENTION_RE.test(humanMsg.body)) {
+    let stepIn: StepIn = null;
+    try {
+      stepIn = await geminiShouldStepIn(admin, humanMsg, repliedTo);
+    } catch (err) {
+      console.error("Gemini gate threw:", err);
+    }
+    if (!stepIn) return;
+    unprompted = stepIn;
+    // Only now does the forum show a thinking row for this message.
+    await broadcastForum(admin, "gemini-start", { message_id: humanMsg.id });
+  }
   let outcome: GeminiOutcome = "error";
   try {
-    outcome = await maybePostGeminiReply(admin, humanMsg, forceTrigger, repliedTo);
+    outcome = await maybePostGeminiReply(admin, humanMsg, forceTrigger, repliedTo, unprompted);
   } catch (err) {
     console.error("Gemini reply failed:", err);
   }

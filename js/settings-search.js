@@ -53,7 +53,7 @@ const SETTINGS_SEARCH_KEYWORDS = {
   figAnimLoopOnce: 'loop, looped, looping, play once, stop after one, single cycle, one cycle, endless, infinite, forever, keep spinning, stop repeating, repeating animations, spinning shell, auto stop, animated figures',
   hideFigAnimControls: 'play button, pause button, speed chip, controls, animation controls, player controls, buttons under figure, hide play button, remove buttons, still image, static figure, clean figures, figure buttons, animated figures',
   showLogoTumble: 'logo, cube, logo animation, spin, spinning, tumble, flip, rotate, rotation, jump, bounce, intro animation, home animation, main menu animation, welcome animation, loading animation, ready, startup, stop logo, turn off logo',
-  hideFieldLinesByDefault: 'field lines, electric field, magnetic field, lines, background animation, background effect, moving lines, flow lines, particles, physics lines, changelog, whats new, updates list, version history, release notes',
+  showFieldLinesByDefault: 'field lines, electric field, magnetic field, lines, background animation, background effect, moving lines, flow lines, particles, physics lines, changelog, whats new, updates list, version history, release notes',
 
   // ── Display · Extra
   showForumFab: 'forum, forum button, chat, chat button, comments, discussion, discuss, questions, ask, ask a question, community, messages, floating button, bubble, corner button, fab, hide forum, remove forum button',

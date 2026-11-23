@@ -326,6 +326,7 @@ function _ensureForumRealtime() {
     })
     // post-message.ts says when Gemini is done with a question, answered or
     // not, so a "thinking" row with no answer coming can end right away.
+    .on('broadcast', { event: 'gemini-start' }, (msg) => forumGeminiStart(msg && msg.payload))
     .on('broadcast', { event: 'gemini-done' }, (msg) => forumGeminiServerDone(msg && msg.payload))
     .on('broadcast', { event: 'gemini-stream' }, (msg) => forumGeminiStream(msg && msg.payload));
   _forumRealtimeChannel = channel;
@@ -654,8 +655,15 @@ function getForumNickname() {
 function getForumPin() {
   return localStorage.getItem(FORUM_PIN_KEY) || '';
 }
-function saveForumIdentity(nickname, pin) {
+// opts.created: the account was made just now. opts.sameAccount: a rename,
+// still the same account.
+function saveForumIdentity(nickname, pin, opts = {}) {
   const before = getForumNickname();
+  // Another account: settings sync starts afresh, so nothing from the last
+  // one carries over; a brand-new account takes this device's look.
+  if (nickname !== before && !opts.sameAccount && typeof settingsSyncStartAccount === 'function') {
+    settingsSyncStartAccount(!!opts.created);
+  }
   localStorage.setItem(FORUM_NICKNAME_KEY, nickname);
   if (pin) localStorage.setItem(FORUM_PIN_KEY, pin);
   // A real account replaces one made offline (js/offline-account.js).
@@ -667,6 +675,8 @@ function saveForumIdentity(nickname, pin) {
 function clearForumIdentity() {
   localStorage.removeItem(FORUM_NICKNAME_KEY);
   localStorage.removeItem(FORUM_PIN_KEY);
+  // Signed out: settings sync forgets the account (js/settings-sync.js).
+  if (typeof settingsSyncSignedOut === 'function') settingsSyncSignedOut();
 }
 // The name to actually post under — claimed nickname takes priority over
 // the free-text field. This is a courtesy default; post-message still
@@ -777,7 +787,7 @@ function populateForumComposerQuizSelect(selectId = 'forumScopeQuizSelect') {
     if (!quiz.enabled) return;
     const opt = document.createElement('option');
     opt.value = `q${idx + 1}`;
-    opt.textContent = `Quiz ${idx + 1} — ${quiz.name}`;
+    opt.textContent = `Set ${idx + 1} | ${quiz.name}`;
     sel.appendChild(opt);
   });
 }
@@ -809,7 +819,7 @@ function populateForumComposerProblemSelect(quizValue, selectId = 'forumScopePro
   sel.innerHTML = '';
   const generalOpt = document.createElement('option');
   generalOpt.value = '';
-  generalOpt.textContent = `General discussion (Quiz ${quizNum})`;
+  generalOpt.textContent = `General discussion (Set ${quizNum})`;
   sel.appendChild(generalOpt);
 
   if (quiz && Array.isArray(quiz.problems)) {
@@ -1288,6 +1298,10 @@ const FORUM_GEMINI_MENTION_RE = /(?:^|\s)@gemini\b/i;
 const forumGeminiWaits = new Map();   // question id -> { el, startedAt, timer, ending }
 const forumGeminiEnded = new Set();   // question ids whose wait is over, never shown again
 const forumGeminiLocalStart = new Map(); // own questions: id -> Date.now() when the send was confirmed
+// Messages nobody tagged Gemini in, that post-message.ts decided to answer
+// anyway: its "gemini-start" broadcast (or the first streamed text, for a
+// tab that missed that) puts them here, and only then do they get a row.
+const forumGeminiVolunteered = new Set();
 
 const FORUM_GEMINI_PHRASES = [
   [0, ['Thinking', 'Reading your message', 'Looking at the thread']],
@@ -1302,12 +1316,13 @@ function forumGeminiPhrase(elapsedS, step) {
 }
 
 // Whether post-message.ts will (probably) answer this message: an explicit
-// @gemini, or a question asked in reply to one of Gemini's own messages
+// @gemini, a question asked in reply to one of Gemini's own messages
 // (a "thanks!" in reply to Gemini usually gets no answer by design, so only
-// replies with a "?" count).
+// replies with a "?" count), or a message the server said it is answering
+// unprompted (forumGeminiVolunteered).
 function forumTriggersGemini(msg, known) {
   if (!msg || msg.device_id === FORUM_GEMINI_BOT_DEVICE_ID || msg.flag_status === 'deleted') return false;
-  if (FORUM_GEMINI_MENTION_RE.test(msg.body || '')) return true;
+  if (FORUM_GEMINI_MENTION_RE.test(msg.body || '') || forumGeminiVolunteered.has(msg.id)) return true;
   if (!msg.reply_to_id) return false;
   const parent = known.find((m) => m.id === msg.reply_to_id);
   const parentIsGemini = parent ? parent.device_id === FORUM_GEMINI_BOT_DEVICE_ID : msg.reply_to_author_name === 'Gemini';
@@ -1408,8 +1423,20 @@ function forumGeminiTick(id) {
 // text; lines already shown stay as they are, a line that grew is swapped for
 // its longer version once typeset, and new lines fade in while the row
 // stretches to fit.
+// "gemini-start" (post-message.ts): Gemini will answer a message nobody
+// tagged it in, so that message gets its thinking row now.
+function forumGeminiStart(payload) {
+  const id = payload && Number(payload.message_id);
+  if (!id || forumGeminiEnded.has(id) || forumGeminiVolunteered.has(id)) return;
+  forumGeminiVolunteered.add(id);
+  forumSyncGeminiThinking();
+}
+
 function forumGeminiStream(payload) {
   const id = payload && Number(payload.message_id);
+  // Text for a question this tab has no row for: an unprompted answer whose
+  // "gemini-start" it missed (opened mid-answer, or a dropped broadcast).
+  if (id && !forumGeminiWaits.has(id) && !forumGeminiEnded.has(id) && !forumGeminiVolunteered.has(id)) forumGeminiStart(payload);
   const w = id && forumGeminiWaits.get(id);
   if (!w || w.ending) return;
   if (payload.seq && w.seq && payload.seq <= w.seq) return;
@@ -1567,7 +1594,8 @@ function forumGeminiDropStream(w) {
 }
 
 // Ends a wait that produced no answer: any streamed text goes, a short note
-// says why, then the row folds.
+// says why, then the row folds. An unprompted answer that didn't come folds
+// at once with no note: nobody asked, so there's nothing to explain.
 function forumEndGeminiWait(id, note) {
   const w = forumGeminiWaits.get(id);
   forumGeminiEnded.add(id);
@@ -1578,11 +1606,12 @@ function forumEndGeminiWait(id, note) {
   w.el.classList.add('is-ended');
   const time = w.el.querySelector('.forum-message-time');
   if (time) time.textContent = '';
+  const silent = forumGeminiVolunteered.has(id);
   (w.chain || Promise.resolve()).then(() => forumGeminiDropStream(w)).then(() => {
-    forumGeminiSetPhrase(w, note);
+    if (!silent) forumGeminiSetPhrase(w, note);
     setTimeout(() => {
       forumCollapseRow(w.el).then(() => { if (forumGeminiWaits.get(id) === w) forumGeminiWaits.delete(id); });
-    }, 2600);
+    }, silent ? 0 : 2600);
   });
 }
 
@@ -1923,7 +1952,7 @@ async function submitForumMessage(opts = {}) {
       if (ok && data && data.ok) {
         // 'unchanged'/'renamed' shouldn't happen from this path (device had
         // no nickname), but handled defensively; 'created' is the normal case.
-        saveForumIdentity(data.nickname, data.pin || null);
+        saveForumIdentity(data.nickname, data.pin || null, { created: !!data.created });
         refreshForumIdentityUI();
         if (data.created) {
           // Show the PIN after the message itself goes out, so posting
@@ -2317,7 +2346,7 @@ async function submitForumClaimModal() {
       // tells us via data.created, not the mode) — for 'restore'/'verify'
       // the PIN was already typed in, use that instead since the server
       // doesn't echo it back on those paths.
-      saveForumIdentity(data.nickname, data.created ? (data.pin || null) : pin);
+      saveForumIdentity(data.nickname, data.created ? (data.pin || null) : pin, { created: !!data.created });
       refreshForumIdentityUI();
       const onSuccess = forumClaimModalOnSuccess;
       closeForumClaimModal();
@@ -2425,7 +2454,7 @@ async function submitForumChangeNickname() {
   try {
     const { data } = await callForumClaimNickname(newNickname, getForumPin());
     if (data && data.ok) {
-      saveForumIdentity(data.nickname, getForumPin());
+      saveForumIdentity(data.nickname, getForumPin(), { sameAccount: !!data.renamed });
       refreshForumIdentityUI();
       closeForumChangeNicknameModal();
       // Every message this identity ever posted just changed author_name
@@ -3506,8 +3535,16 @@ function forumInitialsAvatarEl(name) {
 // through and would otherwise show up as literal asterisks/hashes.
 const FORUM_BOT_AUTHORS = ['Gemini'];
 
+// Bot text only. Also takes out empty lines right before or after a $$...$$
+// line and squeezes 2+ empty lines into one: the forum already spaces a
+// displayed equation, so those made answers much taller for nothing. Same
+// rule as tightenGeminiLayout() in post-message.ts; doing it here as well
+// fixes answers saved before that existed.
 function stripMarkdownArtifacts(text) {
   return text
+    .replace(/\n(?:[ \t]*\n)+(?=[ \t]*\$\$)/g, '\n')
+    .replace(/(\$\$)[ \t]*\n(?:[ \t]*\n)+/g, '$1\n')
+    .replace(/\n(?:[ \t]*\n){2,}/g, '\n\n')
     .replace(/\*\*(.+?)\*\*/g, '$1')      // **bold**
     .replace(/__(.+?)__/g, '$1')          // __bold__
     .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1$2') // *italic* (not part of **)

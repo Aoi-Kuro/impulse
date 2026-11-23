@@ -49,8 +49,10 @@
       // One failed typeset must not fail every later one — see index.html.
       startup: { typeset: false, ready() {
         MathJax.startup.defaultReady();
+        // Drop MathJax's entries for equations no longer in the page (they kept whole rebuilt screens in memory); rendered output untouched. Same as index.html.
+        const pruneDetachedMath = () => { try { const list = MathJax.startup.document.math, dead = []; for (const item of list) { const node = item.typesetRoot || (item.start && item.start.node); if (node && !node.isConnected) dead.push(item); } if (dead.length) list.remove(...dead); } catch (e) {} };
         const typeset = MathJax.typesetPromise;
-        MathJax.typesetPromise = (elements) => { const p = typeset(elements); MathJax.startup.promise = p.catch(() => { MathJax.typesetClear(elements); }); return p; };
+        MathJax.typesetPromise = (elements) => { MathJax.startup.promise = MathJax.startup.promise.then(pruneDetachedMath); const p = typeset(elements); MathJax.startup.promise = p.catch(() => { MathJax.typesetClear(elements); }); return p; };
         resolve();
       } }
     };

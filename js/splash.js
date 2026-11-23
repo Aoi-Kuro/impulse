@@ -83,7 +83,7 @@
     P: isPiNear,
 
     GS: () => isTimeNear(20, 31),   // fires ~20:29–20:33
-    PM: () => isTimeNear(3, 14),   // fires ~20:29–20:33
+    PM: () => isTimeNear(3, 14),   // fires ~03:12–03:16
 
     // ── Kazakhstan / general holidays ──────────────────────────────
     NY:          () => isDateRange(1, 1, 2),   // New Year
@@ -208,7 +208,8 @@
      pool eligible right now, so one splash's chance is
      (1 - DEMON_CHANCE) / pool size. {pct} is that in percent, {p} an
      upper bound rounded up to 3 decimals. {count} is every splash there
-     is, time- and date-specific ones included, plus the demon's. Filled
+     is, time- and date-specific ones included, plus the demon's lines
+     and minute events. Filled
      in on the way out, so the no-repeat window still keys on the raw
      text. */
   function fillPlaceholders (text, poolSize) {
@@ -217,7 +218,7 @@
     return text
       .replace('{pct}', (p * 100).toFixed(2))
       .replace('{p}', String(Math.ceil(p * 1000) / 1000))
-      .replace('{count}', String(splashes.length + 1));
+      .replace('{count}', String(splashes.length + DEMON_SPLASHES.length + DEMON_EVENTS.length));
   }
 
   function pick () {
@@ -260,10 +261,129 @@
      splash badge does (pick a new splash / restore the avatar) instead of
      its usual "open Stats" action — see handleLandingIdentityClick below,
      wired as that button's onclick in index.html. Ends the moment either
-     one is tapped, same as any other splash change. */
+     one is tapped, same as any other splash change. The demon says one
+     of DEMON_SPLASHES, picked at random. */
   const DEMON_NAME    = "Maxwell's Demon";
-  const DEMON_SPLASH   = 'How many molecules do I have to sort before this stops being a statistical fluctuation and starts being my fault?';
+  const DEMON_SPLASHES = [
+    'How many molecules do I have to sort before this stops being a statistical fluctuation and starts being my fault?',
+    'The air around you is hitting your skin at about 500 m/s. Why does it feel so calm?',
+    "Take a breath: it almost certainly holds a molecule from Caesar's last breath. Want to give it back?",
+    'Clocks on GPS satellites run faster than yours by 38 microseconds a day. How sure are you about the time down here?',
+    "Atoms are almost entirely empty space. So what's keeping you from falling through your chair?",
+    'The Sun you see is 8 minutes old. If it vanished, what would you do with those 8 minutes?',
+    'Your reflection is a few nanoseconds in the past. Which one of you is older?',
+    'Your body glows in infrared all the time. Who do you think is watching?',
+    "There's a nonzero chance every atom in you tunnels through the wall at once. Would you want to know when?",
+    "Somewhere, a cosmic ray just flipped a bit in a computer. Are you sure it wasn't yours?",
+    "Even a perfect vacuum is never truly empty. What's in the room with you right now?",
+    'Every atom in your hand came from a dying star. Do you ever wonder which one?',
+    'The light you see from some stars left before they died. How many of them are still there?',
+    'You never actually touch anything, just electrons pushing back. So who are you holding hands with?',
+    'Most of the atoms in your body will be replaced within a few years. Who will be reading this then?',
+    "Somewhere in a big enough universe there's an exact copy of you, reading this. Is it smiling?",
+    'A neutrino just went through you, and so did trillions more while you read this. Did you feel them?',
+    'Your brain lives about 80 milliseconds in the past. What did you miss?',
+    "95% of the universe is something nobody has ever seen. What's it doing right now?",
+    "In a black hole the singularity isn't a place but a moment in your future. Would you check your watch?",
+    "If time has no preferred direction in the laws of physics, why can't you remember tomorrow?",
+    "In 1864, Alfred Nobel's little brother Emil, 20, died when nitroglycerin blew up the family workshop. Alfred went on to invent dynamite, a far safer way to blast rock in mines. The world soon used it for war. So he left his fortune to the Nobel Prizes. What would you have done?",
+  ];
   const DEMON_CHANCE  = 1 / 100;
+
+  /* ── Demon minute events ─────────────────────────────────────────────
+     On the anniversary of each event below, during the exact minute it
+     happened (stored in UTC, so it is the same instant everywhere and
+     {time} is that minute on the viewer's own clock), the demon comes
+     out by itself, even on a main screen that is already open, and
+     says the event's line. {years} is worked out from the current year.
+     It goes away after DEMON_EVENT_MS or on a tap, and each browser sees
+     each anniversary once. Skipped while splashes are hidden in
+     Settings. Times were checked on 2026-11-23; Leonov (08:34 or 08:35)
+     and the Higgs seminar (its 09:00 CEST start, no single moment of
+     "discovery") are the least exact.
+     [UTC year, month, day, hour, minute, text, future?] */
+  const DEMON_EVENTS = [
+    [1970, 1, 1, 0, 0, 'Check your clock: {time}. {years} years ago, to the minute, Unix time started counting from zero. Every computer you own is still counting the seconds since then. Do you know what number it\'s on?'],
+    [1961, 4, 12, 6, 7, 'Exactly at this minute, {time} your time, {years} years ago, Yuri Gagarin lifted off from Baikonur and said "Poyekhali!", "Let\'s go!". Where are you going today?'],
+    [1990, 4, 24, 12, 33, '{years} years ago, at this very minute ({time} here), Hubble left the ground. Its mirror turned out to be ground about 2 micrometres wrong. How precise were you today?'],
+    [1945, 7, 16, 11, 29, 'Exactly at this minute, {time} your time, {years} years ago, the first nuclear bomb went off in the New Mexico desert. Its makers had first calculated whether it could set the atmosphere on fire. Would you have trusted their maths?'],
+    [1969, 7, 20, 20, 17, 'Right now, {time}, is the minute when, {years} years ago, the Eagle landed on the Moon with less than a minute of fuel left. How much margin are you leaving yourself?'],
+    [1969, 7, 21, 2, 56, 'This minute, {years} years ago: a boot touched the Moon. With no wind up there, the footprint is still there. What mark will you leave?'],
+    [2015, 9, 14, 9, 50, 'Check your clock: {time}. {years} years ago, to the minute, a ripple from two black holes that merged 1.3 billion years ago stretched LIGO by a few thousandths of a proton\'s width. It went through you too. Did you notice?'],
+    [1957, 10, 4, 19, 28, 'Exactly at this minute, {time} your time, {years} years ago, Sputnik 1 lifted off from Baikonur and beeped over everyone\'s heads for three weeks. Are you sure nothing is beeping over yours right now?'],
+    [1969, 10, 30, 6, 30, '{years} years ago, at this very minute ({time} here), someone typed LOGIN to a distant computer and it crashed after "LO". The first message on the internet was "LO". What are you sending?'],
+    [1942, 12, 2, 20, 25, 'This minute, {years} years ago: under a squash court in Chicago, the first nuclear reactor went critical. A man stood by with an axe, ready to cut the rope on the emergency rod. Would you have held the axe?'],
+    [1903, 12, 17, 15, 35, 'Exactly at this minute, {time} your time, {years} years ago, the first powered plane flew for 12 seconds and 37 metres, shorter than a jumbo jet\'s wings. How far will you get in 12 seconds?'],
+    [2021, 12, 25, 12, 20, '{years} years ago, at this very minute ({time} here), Webb left Earth folded up like origami, with 344 single points of failure. How many do you have today?'],
+    [1959, 9, 13, 21, 2, 'This minute, {years} years ago: Luna 2, launched from Baikonur, hit the Moon. It was the first thing from Earth to touch another world. What else have we left up there?'],
+    [1963, 6, 16, 9, 29, 'Exactly at this minute, {time} your time, {years} years ago, Valentina Tereshkova lifted off from Baikonur and circled Earth 48 times, alone, for almost three days. How long have you been alone with this problem?'],
+    [1965, 3, 18, 8, 34, '{years} years ago, at this very minute ({time} here), Alexei Leonov stepped into open space. His suit puffed up so much that he couldn\'t get back in, so he let some of his air out. Would you have?'],
+    [1970, 4, 14, 3, 7, 'Check your clock: {time}. {years} years ago, to the minute, an oxygen tank exploded on Apollo 13, more than 300,000 km from home. "Houston, we\'ve had a problem." Do you have one?'],
+    [1977, 8, 16, 2, 16, 'Exactly at this minute, {time} your time, {years} years ago, a telescope caught a 72-second signal from deep space. An astronomer circled it and wrote "Wow!". It never came back. Who sent it?'],
+    [1987, 2, 23, 7, 35, 'This minute, {years} years ago: neutrinos from a star that exploded 168,000 years earlier reached Earth, hours before its light did. Trillions went through every person alive. Were you one of them?'],
+    [1990, 2, 14, 4, 48, '{years} years ago, at this very minute ({time} here), Voyager 1 looked back from 6 billion km and photographed Earth. It fills less than a pixel. Can you find yourself in it?'],
+    [1994, 7, 16, 20, 13, 'Exactly at this minute, {time} your time, {years} years ago, the first piece of a broken comet hit Jupiter. Over six days, 21 pieces left scars, some as big as Earth. Who is Jupiter protecting?'],
+    [2008, 9, 10, 8, 28, '{years} years ago, at this very minute ({time} here), the first beam went round the LHC\'s 27 km ring. Some people feared it would make a black hole. Are you sure it didn\'t?'],
+    [2013, 2, 15, 3, 20, 'This minute, {years} years ago: a 20-metre rock exploded over Chelyabinsk, not far from Kazakhstan. It came out of the Sun\'s glare and nobody saw it coming. What else isn\'t anyone looking at?'],
+    [2014, 11, 12, 15, 34, 'Check your clock: {time}. {years} years ago, to the minute, Philae landed on a comet, bounced, and came to rest in a shadow where its solar panels couldn\'t charge. It fell asleep there. Is it still dreaming?'],
+    [2017, 8, 17, 12, 41, 'Exactly at this minute, {time} your time, {years} years ago, two neutron stars collided 130 million light-years away, and we both felt it and saw it. Mergers like that forged much of the gold on Earth. Where did yours come from?'],
+    [1986, 4, 25, 21, 23, 'Exactly at this minute, {time} your time, {years} years ago, reactor No. 4 at Chernobyl exploded during a safety test. The next day Pripyat, a city of 49,000, was evacuated, and it has stood empty ever since. Who do you think lives there now?'],
+    [2012, 7, 4, 7, 0, 'Exactly at this minute, {time} your time, {years} years ago, CERN began the talk announcing the Higgs boson, and Peter Higgs, who had predicted it 48 years earlier, wiped away a tear. Yet only about 1% of your mass comes from it. Where does the rest come from?'],
+    [2038, 1, 19, 3, 14, 'In {years} years, at this exact minute ({time} here), old 32-bit clocks will run out of seconds and jump back to 1901. Is yours ready?', true],
+  ];
+  const DEMON_EVENT_MS       = 60 * 1000;
+  const DEMON_EVENT_SEEN_KEY = STORAGE_PREFIX + '_demon_events_seen';
+  const demonEventsSeenHere  = []; // fallback when localStorage can't be used
+  let demonEventTimer = 0;
+
+  function loadDemonEventsSeen () {
+    try {
+      const v = JSON.parse(localStorage.getItem(DEMON_EVENT_SEEN_KEY));
+      return Array.isArray(v) ? v : demonEventsSeenHere;
+    } catch (e) { return demonEventsSeenHere; }
+  }
+  function markDemonEventSeen (id) {
+    const seen = loadDemonEventsSeen().filter(x => x !== id).concat([id]).slice(-30);
+    demonEventsSeenHere.length = 0;
+    demonEventsSeenHere.push(...seen);
+    try { localStorage.setItem(DEMON_EVENT_SEEN_KEY, JSON.stringify(seen)); }
+    catch (e) { /* private browsing etc. — the in-memory list still stops repeats on this page */ }
+  }
+
+  function splashesHidden () {
+    return document.documentElement.classList.contains('settings-hide-splashes');
+  }
+
+  // The event whose minute it is now, if this browser hasn't had it this
+  // year and someone can actually see the main screen.
+  function dueDemonEvent () {
+    if (document.hidden || splashesHidden()) return null;
+    const landing = document.getElementById('landingScreen');
+    if (landing && landing.classList.contains('hidden')) return null;
+    const now = new Date();
+    const y = now.getUTCFullYear();
+    for (const [year, month, day, h, m, text, future] of DEMON_EVENTS) {
+      if (now.getUTCMonth() + 1 !== month || now.getUTCDate() !== day
+        || now.getUTCHours() !== h || now.getUTCMinutes() !== m) continue;
+      if (future ? y >= year : y <= year) continue;
+      const id = year + '-' + month + '-' + day + '@' + y;
+      if (loadDemonEventsSeen().includes(id)) continue;
+      const time = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+      return { id, text: text.replace('{time}', time).replace('{years}', String(Math.abs(y - year))) };
+    }
+    return null;
+  }
+
+  function checkDemonEvent () {
+    if (splashes && dueDemonEvent()) showNewSplash();
+  }
+  // Checked just after each minute starts, and when the tab comes back.
+  function scheduleDemonEventCheck () {
+    setTimeout(() => { checkDemonEvent(); scheduleDemonEventCheck(); }, 60000 - (Date.now() % 60000) + 250);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) checkDemonEvent();
+  });
   const DEMON_FLY_MS  = 550; // keep in sync with .demon-flying's transition duration in css/style.css
   let demonActive = false;
 
@@ -389,12 +509,20 @@
     if (!el || !splashes) return;
 
     exitDemonModeIfActive();
+    clearTimeout(demonEventTimer);
 
-    let text = takeDeployMessage();
-    if (text) {
+    const demonEvent = dueDemonEvent();
+    let text = demonEvent ? null : takeDeployMessage();
+    if (demonEvent) {
+      // Ahead of the deploy message, which waits for the next splash.
+      markDemonEventSeen(demonEvent.id);
+      text = demonEvent.text;
+      enterDemonMode();
+      demonEventTimer = setTimeout(showNewSplash, DEMON_EVENT_MS);
+    } else if (text) {
       // shown as is: no demon roll, not part of the no-repeat window
-    } else if (Math.random() < DEMON_CHANCE) {
-      text = DEMON_SPLASH;
+    } else if (!splashesHidden() && Math.random() < DEMON_CHANCE) {
+      text = DEMON_SPLASHES[(Math.random() * DEMON_SPLASHES.length) | 0];
       enterDemonMode();
     } else {
       text = pick();
@@ -476,6 +604,7 @@
       splashes = FALLBACK_SPLASHES;
     }
     showNewSplash();
+    scheduleDemonEventCheck();
   }
 
   window.showNewSplash = showNewSplash;

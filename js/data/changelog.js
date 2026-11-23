@@ -27,12 +27,13 @@
 // everyone who already used the site before it, never to first-time
 // visitors (js/splash.js, takeDeployMessage). '' = nothing special. Set or
 // clear it on every deploy; changing only the text shows it again too.
-const DEPLOY_MESSAGE = '';
+const DEPLOY_MESSAGE = 'Solve every problem in a set and see what is waiting for you at the finish line.';
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 // One entry per version as this course sees it: two entries with the same
 // version only for a major release (X.0.0, a headline plus its details).
 const CHANGELOG = [
+  { version: "14.4.0", note: "New finish animation; bug fixes.", scope: 0 },
   { version: "14.3.1", note: "Sync bug fixed; Stats no longer scrolls sideways on phones.", scope: 0 },
   { version: "14.3.0", note: "Export PDF: customizable PDFs of any set (problems, order, space, answers, light or dark pages), with a link that checks whether your PDF is still up to date.", scope: 0 },
   { version: "14.2.2", note: "Set 4, P66: answer fixed to 783 kg/mol (was 1000 times too small).", scope: 1 },

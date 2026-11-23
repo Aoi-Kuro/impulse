@@ -10,11 +10,11 @@ function toggleChangelog() {
 }
 
 // ── Field lines on/off toggle ─────────────────────────────────────────────
-let fieldLinesEnabled = true;
+let fieldLinesEnabled = false; // off until js/settings.js applies Settings > Display's showFieldLinesByDefault
 
 // Flips the flag for the ⚡ button below (toggleFieldLines) — session-only,
 // this doesn't touch the persisted Display setting (js/settings.js's
-// 'hideFieldLinesByDefault'), which controls only what state a fresh
+// 'showFieldLinesByDefault'), which controls only what state a fresh
 // session starts in, not what this one is doing right now. See
 // toggleFieldLines() just below for why the two intentionally don't sync.
 // Nothing to do with the overlay canvas itself here: drawFieldLines()
@@ -34,7 +34,7 @@ window.setFieldLinesEnabled = setFieldLinesEnabled;
 function toggleFieldLines() {
   setFieldLinesEnabled(!fieldLinesEnabled);
   // Session-only — deliberately does NOT write back to Settings > Display's
-  // 'hideFieldLinesByDefault' anymore. That setting only decides what state
+  // 'showFieldLinesByDefault' anymore. That setting only decides what state
   // a fresh visit starts in; flipping this button just changes what's
   // happening for the rest of *this* session, so turning field lines back
   // on here for a look doesn't silently overwrite someone's "hide by

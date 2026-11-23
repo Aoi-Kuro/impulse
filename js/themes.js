@@ -175,7 +175,23 @@ function applyColorTheme(id, persist, skipFade){
   }
   if (persist) localStorage.setItem(THEME_KEY, id);
   updateOnColorVars();
-  if (persist && typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges(); // js/settings-sync.js
+  if (persist) {
+    if (typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges(); // js/settings-sync.js
+    else noteUnsyncedSettingEdit('theme.color'); // offline.html
+  }
+}
+
+// A setting changed on a page without js/settings-sync.js (offline.html):
+// writes down when, so the next page that syncs dates it right instead of
+// guessing (settingsSyncNoteLocalChanges, opts.auto). `code` is its sync
+// code: 'theme.color', 'theme.mode'.
+function noteUnsyncedSettingEdit(code) {
+  try {
+    const key = STORAGE_PREFIX + '-settings-sync-edits';
+    const edits = JSON.parse(localStorage.getItem(key) || '{}') || {};
+    edits[code] = Date.now();
+    localStorage.setItem(key, JSON.stringify(edits));
+  } catch (e) { /* storage blocked: the change just won't override others */ }
 }
 
 // Restore saved color theme immediately (avoid flash of default)

@@ -107,6 +107,7 @@ const OFFLINE_CORE_FILES = [
   'js/top-bar-tips.js',
   'js/top-bar-quiz-status.js',
   'js/solve-all-nav.js',
+  'js/solve-all-celebrate.js',
   'js/changelog.js',
   'js/manual.js',
   'js/license.js',

@@ -584,7 +584,7 @@ function manualFillTokens(html) {
     vals.cumulativeCurrent = QUIZ_SIZE - QUIZ_CUMULATIVE_PREV_COUNT;
   }
   if (typeof QUIZZES !== 'undefined') {
-    QUIZZES.forEach((q, i) => { vals['quiz' + (i + 1)] = esc(q.name || `Quiz #${i + 1}`); });
+    QUIZZES.forEach((q, i) => { vals['quiz' + (i + 1)] = esc(q.name || `Set #${i + 1}`); });
   }
   return html.replace(/\{\{(\w+)\}\}/g, (m, key) => (key in vals ? String(vals[key]) : m));
 }

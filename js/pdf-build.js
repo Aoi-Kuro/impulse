@@ -896,7 +896,7 @@ async function buildProblemsPdf({ quizNum, problems, opts, seed, job, progress }
     font('bold', 13); color(theme.fg);
     doc.text("That's the whole set.", L + pad, S.y + 11);
     S.y += 22;
-    const body = `We're waiting for you back on ${appName}: train with random quizzes, check every answer instantly and track your progress.`;
+    const body = `We're waiting for you back on ${appName}: train with practice exams, check every answer instantly and track your progress.`;
     await paragraph(body.split(' ').map((s, k) => ({ t: 'w', s, st: 'normal', sp: k > 0 })), { fs: 10, width: colW, x: L + pad, align: 'left' });
     S.y += 4;
     font('normal', 10); color(theme.fg);

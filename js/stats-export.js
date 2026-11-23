@@ -24,7 +24,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 const EXPORT_COLUMNS = [
-  { key: 'quiz',     label: 'Quiz' },
+  { key: 'quiz',     label: 'Set' },
   { key: 'mode',     label: 'Mode' },
   { key: 'dateTime', label: 'Date & Time' },
   { key: 'duration', label: 'Duration' },

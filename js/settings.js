@@ -45,7 +45,9 @@ const SETTINGS_DEFAULTS = {
     showForumFab:    true,
     // The 👤 personal cabinet button beside the logo (js/cabinet-link.js).
     showCabinetBtn:  true,
-    hideFieldLinesByDefault: false,
+    // Field lines behind the changelog: off unless chosen (was
+    // hideFieldLinesByDefault, on by default; see migrateSettings).
+    showFieldLinesByDefault: false,
     showTopBarTip:   true,
     // The logo cube's tumble when the main menu appears (js/logo-tumble.js).
     showLogoTumble:  true,
@@ -206,6 +208,12 @@ function migrateSettings(raw) {
   // deliberate pick: it moves to the new default, and "(previous)" in the
   // list brings the theme font back.
   if (merged.display.uiFont === 'default' || !merged.display.uiFont) merged.display.uiFont = 'outfit';
+  // "Hide field lines by default" (off, so lines showed) became "Show field
+  // lines" (off): a new key, so everyone starts without the lines behind
+  // the changelog. Defaults were saved too, so the old value can't tell a
+  // choice from the default, and it doesn't carry over (nor does it sync:
+  // settings-sync.js skips codes it doesn't know).
+  delete merged.display.hideFieldLinesByDefault;
   return merged;
 }
 
@@ -794,7 +802,7 @@ const DISPLAY_TOGGLES = [
     key: 'showForumFab',
     section: 'extra',
     title: 'Show floating forum button',
-    desc: 'Shows the floating 💬 forum button that follows you mid-quiz, in Stats, and elsewhere off the main page.',
+    desc: 'Shows the floating 💬 forum button that follows you through the sets, Stats and elsewhere off the main page.',
   },
   {
     key: 'showTopBarTip',
@@ -815,10 +823,10 @@ const DISPLAY_TOGGLES = [
     desc: 'Tumbles the logo when the main menu opens.',
   },
   {
-    key: 'hideFieldLinesByDefault',
+    key: 'showFieldLinesByDefault',
     section: 'anim',
-    title: 'Hide field lines by default',
-    desc: 'Hides field lines animation that appear upon changelog opening.',
+    title: 'Field lines in the changelog',
+    desc: 'Plays the field lines animation behind the changelog. The ⚡ button there turns it on or off for the visit.',
   },
 ];
 
@@ -850,7 +858,7 @@ function renderSettingsDisplayTab() {
     // followDeviceTheme also has to (re)sync the actual light/dark mode
     // and its matchMedia listener the moment it's flipped, not just the
     // hide/show class applyDisplaySettings() handles for every other row.
-    // hideFieldLinesByDefault is intentionally NOT special-cased here
+    // showFieldLinesByDefault is intentionally NOT special-cased here
     // (unlike followDeviceTheme above): it only ever writes the persisted
     // default via the generic branch below, with no call into
     // setFieldLinesEnabled — see js/changelog.js's toggleFieldLines() for
@@ -1386,7 +1394,7 @@ function renderSettingsNotificationsTab() {
   return `
     <div class="settings-group">
       ${renderRow('hideUpdateReminder', 'Hide update reminder', 'Hides the "new version available" banner.')}
-      ${renderRow('forceRefreshOutsideQuiz', 'Update anyway outside quiz mode', 'While the reminder above is hidden, silently reloads the page the instant you\u2019re not in the middle of a timed Random-quiz attempt.', { sub: true, blocked: !hideUpdate })}
+      ${renderRow('forceRefreshOutsideQuiz', 'Update anyway outside a practice exam', 'While the reminder above is hidden, silently reloads the page the instant you\u2019re not in the middle of a practice exam.', { sub: true, blocked: !hideUpdate })}
     </div>
     <div class="settings-group">
       ${renderRow('goSilent', 'Go silent', 'Hides every notification badge (problem buttons, the forum button) and the update banner, and mutes forum push notifications while it\u2019s on.')}
@@ -1443,11 +1451,11 @@ function renderSettingsStudyTab() {
       </label>
     </div>
 
-    <div class="settings-section-header">Random Quiz</div>
+    <div class="settings-section-header">Practice Exam</div>
 
     <div class="settings-row" data-row-key="quizStartMode">
       <div class="settings-row-label">
-        <div class="settings-row-title">Starting a quiz</div>
+        <div class="settings-row-title">Starting a practice exam</div>
         <div class="settings-row-desc">Ask each time, or always start in this browser or in the lockdown browser.</div>
       </div>
       <div class="settings-choice-group">
@@ -1458,7 +1466,7 @@ function renderSettingsStudyTab() {
     <div class="settings-row" data-row-key="showLiveTimer">
       <div class="settings-row-label">
         <div class="settings-row-title">Show live timer</div>
-        <div class="settings-row-desc">Shows a floating clock, bottom-right, counting up while you take a Random 6 or cumulative quiz.</div>
+        <div class="settings-row-desc">Shows a floating clock, bottom-right, counting up while you take a practice exam.</div>
       </div>
       <label class="settings-switch">
         <input type="checkbox" ${showLiveTimerOn ? 'checked' : ''}
@@ -1481,7 +1489,7 @@ function renderSettingsStudyTab() {
 
     <div class="settings-row" data-row-key="warnBeforeLeavingQuiz">
       <div class="settings-row-label">
-        <div class="settings-row-title">Warn before leaving a quiz</div>
+        <div class="settings-row-title">Warn before leaving a practice exam</div>
         <div class="settings-row-desc">Asks before an unfinished attempt is discarded.</div>
       </div>
       <label class="settings-switch">
@@ -1530,7 +1538,7 @@ function renderSettingsStudyTab() {
       <div class="settings-row settings-row-sub${getSetting('study', 'fullscreenRandomN') === true ? '' : ' settings-row-blocked'}" data-row-key="hideFullscreenReminder">
         <div class="settings-row-label">
           <div class="settings-row-title">Don’t show full-screen reminder</div>
-          <div class="settings-row-desc">Hides the 10-second hint that appears at the bottom when a Random N quiz enters full screen.</div>
+          <div class="settings-row-desc">Hides the 10-second hint that appears at the bottom when a practice exam enters full screen.</div>
         </div>
         <label class="settings-switch">
           <input type="checkbox" ${getSetting('study', 'hideFullscreenReminder') === true ? 'checked' : ''} ${getSetting('study', 'fullscreenRandomN') === true ? '' : 'disabled'}
@@ -1542,8 +1550,8 @@ function renderSettingsStudyTab() {
 
     <div class="settings-row" data-row-key="selectLastUsedQuiz">
       <div class="settings-row-label">
-        <div class="settings-row-title">Select last used quiz by default</div>
-        <div class="settings-row-desc">The main page opens on the set you last started, in Random or Entire Set, instead of always Quiz #1. Applies from your next page load.</div>
+        <div class="settings-row-title">Select last used set by default</div>
+        <div class="settings-row-desc">The main page opens on the set you last started, in Random or Entire Set, instead of always Set #1. Applies from your next page load.</div>
       </div>
       <label class="settings-switch">
         <input type="checkbox" ${getSetting('study', 'selectLastUsedQuiz') !== false ? 'checked' : ''}
@@ -1555,7 +1563,7 @@ function renderSettingsStudyTab() {
     <div class="settings-row" data-row-key="cumulativeDefaultOn">
       <div class="settings-row-label">
         <div class="settings-row-title">Select cumulative by default</div>
-        <div class="settings-row-desc">Selecting quiz #2 or later starts with the Cumulative switch already on, instead of Single Set. Applies from your next page load.</div>
+        <div class="settings-row-desc">Selecting set #2 or later starts with the Cumulative switch already on, instead of Single Set. Applies from your next page load.</div>
       </div>
       <label class="settings-switch">
         <input type="checkbox" ${getSetting('study', 'cumulativeDefaultOn') === true ? 'checked' : ''}
@@ -1938,8 +1946,10 @@ function setModeFromSystem() {
   if (window.__onModeChanged) window.__onModeChanged();
   // Records the device-set mode as already seen, not as a change, so turning
   // Follow device theme off later doesn't send it to other devices
-  // (js/settings-sync.js ignores theme.mode while this is on).
-  if (typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges();
+  // (js/settings-sync.js ignores theme.mode while this is on). `auto`: the
+  // phone did this, not a tap, so nothing else found differing here may
+  // override the account's settings.
+  if (typeof settingsSyncNoteLocalChanges === 'function') settingsSyncNoteLocalChanges({ auto: true });
 }
 
 function onDeviceThemeChange() {
@@ -1976,16 +1986,16 @@ function applyFollowDeviceTheme() {
 applyFollowDeviceTheme();
 applyDisplaySettings();
 // changelog.js loads before this file in the tier-2 sequence (see index.html's
-// loader list) and defaults fieldLinesEnabled to true since it has no way to
-// read a persisted setting yet at that point — apply the "hide by default"
-// starting state here, the one time it actually applies: this file loading
-// is the start of the session, exactly what the setting controls. Nothing
-// after this point keeps the two in sync on purpose — see
-// hideFieldLinesByDefault above and toggleFieldLines() in changelog.js.
+// loader list) and starts with fieldLinesEnabled false, the default, since
+// it has no way to read a persisted setting yet at that point — apply the
+// chosen starting state here, the one time it actually applies: this file
+// loading is the start of the session, exactly what the setting controls.
+// Nothing after this point keeps the two in sync on purpose — see
+// showFieldLinesByDefault above and toggleFieldLines() in changelog.js.
 // No flash-of-wrong-state risk the way theme/display toggles have: field
 // lines only ever become visible once the person opens the changelog
 // panel, a later action that's already well past this point.
-if (typeof setFieldLinesEnabled === 'function') setFieldLinesEnabled(getSetting('display', 'hideFieldLinesByDefault') !== true);
+if (typeof setFieldLinesEnabled === 'function') setFieldLinesEnabled(getSetting('display', 'showFieldLinesByDefault') === true);
 
 // Notifications: applies banner-hide classes, the badge-hide class, the
 // 24h Go-silent auto-off check, and mirrors the effective mute state into

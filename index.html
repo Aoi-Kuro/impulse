@@ -160,12 +160,12 @@
 <!-- ── Open Graph / Telegram / Social preview ─────────────────────────────── -->
 <meta property="og:type"        content="website" />
 <meta property="og:title"       content="Impulse Practice App" />
-<meta property="og:description" content="Interactive physics practice quiz: classical mechanics, thermodynamics, and vectors. Instant feedback with scoring." />
+<meta property="og:description" content="Interactive physics practice exams: classical mechanics, thermodynamics, and vectors. Instant feedback with scoring." />
 <meta property="og:image"       content="course/preview.png" />
 <meta property="og:url"         content="https://phys161.netlify.app/" />
 <meta name="twitter:card"       content="summary_large_image" />
 <meta name="twitter:title"      content="Impulse Practice App" />
-<meta name="twitter:description" content="Interactive physics practice quiz for PHYS 161 course at Nazarbayev University." />
+<meta name="twitter:description" content="Interactive physics practice exams for PHYS 161 course at Nazarbayev University." />
 <meta name="twitter:image"      content="course/preview.png" />
 
 <!-- ── Search engines ───────────────────────────────────────────────────────
@@ -176,7 +176,7 @@
      js/course-config.js, and writes robots.txt, sitemap.xml and the Google
      verification file next to the page. The verification code is the site
      owner's Google Search Console account, the same for both courses. ── -->
-<meta name="description" content="Interactive physics practice quiz: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring." />
+<meta name="description" content="Interactive physics practice exams: kinematics, dynamics, thermodynamics & more. Instant feedback with scoring." />
 <link rel="canonical" href="https://phys161.netlify.app/" />
 <!-- Site name Google shows above the result (instead of "Netlify"):
      the course's appName and siteUrl, filled in by minify.py too. -->
@@ -341,8 +341,27 @@
           // reload. Now a failure drops that call's math and unblocks the
           // chain; the call itself still rejects for its caller. Keep in sync
           // with offline.html and editor/index.html.
+          //
+          // MathJax also keeps every equation it typesets in a list, each
+          // entry pointing back to its element. Screens rebuilt with
+          // innerHTML (quiz cards, Solve all, forum) were never freed: the
+          // tab grew by hundreds of MB over a session. Before each typeset,
+          // entries whose equation is no longer in the page are dropped;
+          // the rendered output itself is not touched. Chained on the same
+          // promise as the typesets, so it never runs during one.
+          const pruneDetachedMath = () => {
+            try {
+              const list = MathJax.startup.document.math, dead = [];
+              for (const item of list) {
+                const node = item.typesetRoot || (item.start && item.start.node);
+                if (node && !node.isConnected) dead.push(item);
+              }
+              if (dead.length) list.remove(...dead);
+            } catch (e) { /* never let cleanup block typesetting */ }
+          };
           const typeset = MathJax.typesetPromise;
           MathJax.typesetPromise = (elements) => {
+            MathJax.startup.promise = MathJax.startup.promise.then(pruneDetachedMath);
             const p = typeset(elements);
             MathJax.startup.promise = p.catch(() => { MathJax.typesetClear(elements); });
             return p;
@@ -359,7 +378,7 @@
 
 <!-- For readers and crawlers without JavaScript: what the site is.
      minify.py (seo_files) fills in the built course's ogDescription. -->
-<noscript><p class="noscript-summary">Interactive physics practice quiz: kinematics, dynamics, thermodynamics &amp; more. Instant feedback with scoring. This site needs JavaScript.</p></noscript>
+<noscript><p class="noscript-summary">Interactive physics practice exams: kinematics, dynamics, thermodynamics &amp; more. Instant feedback with scoring. This site needs JavaScript.</p></noscript>
 
 <!-- Settings > Display > Colour correction. One colour matrix per type,
      applied to <html> (css/settings.css), so every colour on the page goes
@@ -418,7 +437,7 @@
     <span id="update-forced-body"></span>
   </span>
   <button class="banner-reload" id="update-forced-btn" onclick="reloadForUpdate()">Reload now</button>
-  <button class="banner-dismiss" onclick="dismissForcedUpdateForQuiz()" title="Hide until the quiz ends">✕</button>
+  <button class="banner-dismiss" onclick="dismissForcedUpdateForQuiz()" title="Hide until the exam ends">✕</button>
 </div>
 
 <!-- ── "Updated while you were away": 10 s after a forced reload nobody saw ──
@@ -627,7 +646,7 @@
       <div class="changelog-header">
         <span class="changelog-title">Changelog</span>
         <div class="changelog-header-actions">
-          <button class="field-lines-toggle" id="fieldLinesToggle" onclick="toggleFieldLines()" title="Hide field lines">⚡ field lines</button>
+          <button class="field-lines-toggle off" id="fieldLinesToggle" onclick="toggleFieldLines()" title="Show field lines">⚡ field lines</button>
           <a class="changelog-github-link" href="https://github.com/Aoi-Kuro/impulse" data-github-path="" target="_blank" rel="noopener" title="View source on GitHub">GitHub ↗</a>
           <button class="changelog-close" onclick="toggleChangelog()" title="Close">✕</button>
         </div>
@@ -665,7 +684,7 @@
         <div class="db-offline-box"></div>
         <div class="db-offline-box lockdown-pending-box">Your account was made while the database was offline and isn't registered yet, so a lockdown attempt would have nowhere to go. Lockdown opens once it's registered.</div>
         <div class="lockdown-actions">
-          <button class="btn btn-primary" onclick="takeOrdinaryQuizInstead()">Take it as an ordinary quiz</button>
+          <button class="btn btn-primary" onclick="takeOrdinaryQuizInstead()">Take it as an ordinary exam</button>
         </div>
       </div>
       <div class="lockdown-skip-wrap"><div>
@@ -709,7 +728,7 @@
 
 <div class="actions">
   <button class="btn btn-primary" id="checkBtn" onclick="checkAll()">Check answers</button>
-  <button class="btn btn-secondary" onclick="requestNewQuiz()">New quiz ↺</button>
+  <button class="btn btn-secondary" onclick="requestNewQuiz()">New exam ↺</button>
 </div>
 
 <div class="result-panel" id="resultPanel">
@@ -778,7 +797,7 @@
 <div class="modal-backdrop" id="leaveQuizModal" onclick="if (event.target === this) resolveLeaveQuiz(false)">
   <div class="modal-box" role="alertdialog" aria-labelledby="leaveQuizTitle">
     <div class="modal-title" id="leaveQuizTitle">Leave this attempt?</div>
-    <div class="modal-desc">Your answers and time on this quiz will be lost.</div>
+    <div class="modal-desc">Your answers and time on this exam will be lost.</div>
     <div class="modal-choices">
       <button class="modal-choice-btn" onclick="resolveLeaveQuiz(false)">Stay</button>
       <button class="modal-choice-btn modal-choice-btn-danger" onclick="resolveLeaveQuiz(true)">Leave</button>
@@ -867,7 +886,7 @@
             <div class="sfp-value" id="sfpMyMessages">—</div>
           </div>
           <div class="sfp-cell">
-            <div class="sfp-label">My total quizzes taken</div>
+            <div class="sfp-label">My practice exams taken</div>
             <div class="sfp-value" id="sfpMyQuizzes">—</div>
           </div>
         </div>
@@ -882,7 +901,7 @@
           <svg class="sfp-dial" id="sfpDialVisits" viewBox="0 0 150 160"></svg>
         </div>
         <div class="sfp-dial-wrap">
-          <div class="sfp-label">Total quizzes taken</div>
+          <div class="sfp-label">Practice exams taken</div>
           <svg class="sfp-dial" id="sfpDialQuizzes" viewBox="0 0 150 160"></svg>
         </div>
       </div>
@@ -1021,10 +1040,10 @@
       <span class="sf-label">Show</span>
       <button class="sf-chip active" data-filter="all" onclick="setForumFilter('all')">All</button>
       <button class="sf-chip" data-filter="global" onclick="setForumFilter('global')">🌐 Global</button>
-      <button class="sf-chip" data-filter="q1" style="--chip-color:var(--q1)" onclick="setForumFilter('q1')">Quiz 1</button>
-      <button class="sf-chip" data-filter="q2" style="--chip-color:var(--q2)" onclick="setForumFilter('q2')">Quiz 2</button>
-      <button class="sf-chip" data-filter="q3" style="--chip-color:var(--q3)" onclick="setForumFilter('q3')">Quiz 3</button>
-      <button class="sf-chip" data-filter="q4" style="--chip-color:var(--q4)" onclick="setForumFilter('q4')">Quiz 4</button>
+      <button class="sf-chip" data-filter="q1" style="--chip-color:var(--q1)" onclick="setForumFilter('q1')">Set 1</button>
+      <button class="sf-chip" data-filter="q2" style="--chip-color:var(--q2)" onclick="setForumFilter('q2')">Set 2</button>
+      <button class="sf-chip" data-filter="q3" style="--chip-color:var(--q3)" onclick="setForumFilter('q3')">Set 3</button>
+      <button class="sf-chip" data-filter="q4" style="--chip-color:var(--q4)" onclick="setForumFilter('q4')">Set 4</button>
       <select id="forumFilterProblemSelect" class="forum-filter-subselect" style="display:none;" onchange="onForumFilterProblemChange()"></select>
     </div>
     <!-- Pinned welcome message (id in COURSES.<course>.pinnedMessageId,
@@ -1245,13 +1264,13 @@
         <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
           <span>What is a nickname?</span><span class="gs-faq-caret">›</span>
         </button>
-        <div class="gs-faq-a">A short display name that is shown next to your forum posts and used to sync your quiz progress across your devices. No email, phone number, or real name involved. The nickname is not seen by anybody until you create your first post.</div>
+        <div class="gs-faq-a">A short display name that is shown next to your forum posts and used to sync your progress across your devices. No email, phone number, or real name involved. The nickname is not seen by anybody until you create your first post.</div>
       </div>
       <div class="gs-faq-item">
         <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
           <span>Is my data being tracked?</span><span class="gs-faq-caret">›</span>
         </button>
-        <div class="gs-faq-a">The database of the platform only stores your forum posts linked to your nickname (seen by anybody), a random ID for your browser (saved with the posts you make), and your quiz attempts, progress and settings (for sync across devices). Nothing else is stored by the platform. Some other data is collected by service providers, and you can read more about it in the manual (📖): go to “📊 Stats &amp; Synchronization”, then “What gets tracked”.</div>
+        <div class="gs-faq-a">The database of the platform only stores your forum posts linked to your nickname (seen by anybody), a random ID for your browser (saved with the posts you make), and your practice exam attempts, progress and settings (for sync across devices). Nothing else is stored by the platform. Some other data is collected by service providers, and you can read more about it in the manual (📖): go to “📊 Stats &amp; Synchronization”, then “What gets tracked”.</div>
       </div>
       <div class="gs-faq-item">
         <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
@@ -1350,7 +1369,7 @@
   <div class="stats-modal-box acct-modal">
     <div class="stats-modal-title">Your account is still offline</div>
     <p class="acct-text" id="offlineExpiredDesc"></p>
-    <p class="acct-text acct-text-quiet">Quizzes and Solve them all are paused until it's back. Your attempts are safe on this device.</p>
+    <p class="acct-text acct-text-quiet">Practice exams and Entire Set are paused until it's back. Your attempts are safe on this device.</p>
     <div class="acct-label">Send this to the admin</div>
     <div class="offline-message-box" id="offlineExpiredMessage"></div>
     <div class="forum-composer-status" id="offlineExpiredStatus"></div>
@@ -1641,6 +1660,7 @@
       'js/top-bar-tips.js',
       'js/top-bar-quiz-status.js',
       'js/solve-all-nav.js',
+      'js/solve-all-celebrate.js',
       // After figure-style.js: the PDF check fingerprints redrawn figures.
       'js/pdf-export.js',
       'js/changelog.js',
@@ -1755,7 +1775,7 @@
          js/solutions.js). The list takes the pager's place while open. -->
     <div class="solution-pager" id="solutionPager" hidden>
       <button type="button" class="solution-close-btn solution-pager-btn" id="solutionPrevProblem"></button>
-      <button type="button" class="solution-close-btn solution-pager-btn" id="solutionListBtn" onclick="openSolutionList()" title="Every problem of this quiz">Solution list</button>
+      <button type="button" class="solution-close-btn solution-pager-btn" id="solutionListBtn" onclick="openSolutionList()" title="Every problem of this set">Solution list</button>
       <button type="button" class="solution-close-btn solution-pager-btn" id="solutionNextProblem"></button>
     </div>
 

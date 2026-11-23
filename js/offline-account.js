@@ -212,7 +212,7 @@ async function _claimPending(account, nickname) {
 }
 
 function _finishPendingAccount(nickname, pin) {
-  saveForumIdentity(nickname, pin);     // clears the pending account too
+  saveForumIdentity(nickname, pin, { created: true }); // clears the pending account too
   refreshForumIdentityUI();
   if (typeof syncAttempts === 'function') syncAttempts();
   if (typeof reconnectAllLiveSync === 'function') reconnectAllLiveSync();
@@ -302,10 +302,10 @@ function openOfflineRenameModal({ onDone = null } = {}) {
 
   if (account.conflict === 'taken') {
     title.textContent = 'Choose a new nickname';
-    _setAcctText(desc, [name, ' was registered by someone else while the database was offline. Pick a new name to keep using quizzes. Your attempts and PIN stay the same.']);
+    _setAcctText(desc, [name, ' was registered by someone else while the database was offline. Pick a new name to keep taking practice exams. Your attempts and PIN stay the same.']);
   } else if (account.conflict === 'flagged_nickname' || account.conflict === 'invalid_nickname') {
     title.textContent = 'Choose a new nickname';
-    _setAcctText(desc, [name, " isn't allowed. Pick a new name to keep using quizzes. Your attempts and PIN stay the same."]);
+    _setAcctText(desc, [name, " isn't allowed. Pick a new name to keep taking practice exams. Your attempts and PIN stay the same."]);
   } else if (linked) {
     title.textContent = 'Log in to continue';
     _setAcctText(desc, ['This browser is still linked to an account made earlier. Log in to it, and the attempts made offline will go there.']);

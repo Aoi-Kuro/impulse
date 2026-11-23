@@ -108,7 +108,7 @@ async function renderLicenseSolutionAuthors() {
   // spanning that author's rows, with their solution count under the name.
   const table = document.createElement('table');
   table.className = 'license-authors-table';
-  table.innerHTML = '<thead><tr><th>Author</th><th>Quiz</th><th>Problems</th></tr></thead>';
+  table.innerHTML = '<thead><tr><th>Author</th><th>Set</th><th>Problems</th></tr></thead>';
   const tbody = document.createElement('tbody');
 
   [...authors.values()]

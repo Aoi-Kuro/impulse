@@ -346,6 +346,78 @@ function _setSolveAllSyncDot(state) {
   else _settleLiveDot(dot, 'syncing', 'Not synced yet');
 }
 
+// ── One round trip at a time ─────────────────────────────────────────────
+// Many things ask for a round trip: opening the session, a Realtime ping,
+// the Realtime channel reconnecting, the tab coming back, the browser going
+// back online (reconnectAllLiveSync, js/attempts-sync.js), going offline
+// (js/offline-mode.js) and the fallback tick. A laptop waking up fires three
+// or four of them in the same moment, and each used to run its own pull and
+// push. For a set with no row yet, the pushes all tried to create it and the
+// losers were logged as solve_all_progress_pkey "duplicate key" errors (three
+// at once, 2026-11-22 19:50:39). Overlapping round trips are also where the
+// greta_oto race lived.
+//
+// So a session runs at most one round trip at a time: within this tab
+// through _saRoundTrips, and across this browser's tabs (same session open
+// twice) through the Web Locks API. A request that arrives while one is
+// running doesn't start another; it asks for one more right after it, and
+// any number of such requests share that one. The follow-up is needed
+// because the running round trip may have pulled before the change that
+// prompted the request.
+const _saRoundTrips = new Map(); // 'gen:quizNum_c|s' -> { again, initial, done }
+
+function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
+  const gen = _saSessionGen;
+  const slot = gen + ':' + _saSyncKey(quizNum, cumulative);
+  const running = _saRoundTrips.get(slot);
+  if (running) {
+    running.again = true;
+    if (isInitial) running.initial = true;
+    return running.done;
+  }
+  const entry = { again: false, initial: false, done: null };
+  _saRoundTrips.set(slot, entry);
+  entry.done = (async () => {
+    try {
+      let initial = !!isInitial;
+      do {
+        entry.again = false;
+        entry.initial = false;
+        // gen is the session this was asked for: if another opened while
+        // waiting for the lock, the round trip drops out at once instead of
+        // running as the new session's (and as not its first one, where a
+        // leftover reset tombstone would throw the student out).
+        await _saWithBrowserLock(quizNum, cumulative, () => _saRoundTripOnce(quizNum, cumulative, initial, gen));
+        initial = entry.initial;
+      } while (entry.again && gen === _saSessionGen);
+    } catch (e) {
+      console.error('Solve-all sync error:', e);
+    } finally {
+      _saRoundTrips.delete(slot);
+    }
+  })();
+  return entry.done;
+}
+
+// Runs fn while holding this browser's lock for the session, so two tabs of
+// the same browser take turns instead of pushing at the same moment. Without
+// Web Locks (older browsers) fn just runs.
+function _saWithBrowserLock(quizNum, cumulative, fn) {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : null;
+  if (!locks || typeof locks.request !== 'function') return fn();
+  const who = (typeof getForumNickname === 'function' && getForumNickname()) || '';
+  let ran = false;
+  return locks.request(`${STORAGE_PREFIX}-solve-all-sync:${who}:${_saSyncKey(quizNum, cumulative)}`, () => { ran = true; return fn(); })
+    .catch((e) => { if (ran) throw e; return fn(); }); // the lock itself failed: run without it
+}
+
+// The last push when a session closes (exitSolveAll, js/quiz-engine.js)
+// takes its turn too, after a round trip that may still be finishing.
+function pushSolveAllProgressOnExit(quizNum, cumulative, snapshot) {
+  return _saWithBrowserLock(quizNum, cumulative, () => pushSolveAllProgress(quizNum, cumulative, snapshot))
+    .catch((e) => { console.error('Solve-all exit push error:', e); return false; });
+}
+
 // One full round trip for a session: pull the server's current copy,
 // either merge it in or wipe local (if it was explicitly reset elsewhere),
 // then push the result back. Used both once on open and on every periodic
@@ -369,9 +441,12 @@ function _setSolveAllSyncDot(state) {
 // brand-new progress. Only once a session is already actively running does
 // a newly-appeared tombstone mean a genuine "someone else reset this out
 // from under me," worth exiting for.
-async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
+// Always called through _saSyncRoundTrip above, never directly. startGen is
+// the session generation the round trip was requested under.
+async function _saRoundTripOnce(quizNum, cumulative, isInitial, startGen) {
   const key = _saSyncKey(quizNum, cumulative);
-  if (isInitial) {
+  if (startGen === undefined) startGen = _saSessionGen;
+  if (isInitial && startGen === _saSessionGen) {
     // Starting a brand-new session for this exact quiz/cumulative combo is
     // unambiguous evidence we're past whatever reset happened before it —
     // clear any lingering guard for this key rather than let it also
@@ -399,7 +474,7 @@ async function _saSyncRoundTrip(quizNum, cumulative, isInitial) {
   // await below: the session can close, or another set can open, while the
   // server is answering, and a late answer must not be applied to (or saved
   // and pushed from) whatever is on screen by then. See _saSessionGen.
-  const gen = _saSessionGen;
+  const gen = startGen;
   const live = () => gen === _saSessionGen && !!_saSyncActive
     && _saSyncActive.quizNum === quizNum && !!_saSyncActive.cumulative === !!cumulative;
   if (!live()) return;

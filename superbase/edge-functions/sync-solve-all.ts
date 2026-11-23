@@ -268,12 +268,23 @@ async function pushMerged(
     };
 
     if (!row) {
-      const { error } = await db.from("solve_all_progress")
-        .insert({ identity_id: identityId, quiz_num: quizNum, cumulative: cum, ...values });
-      if (!error) return { ok: true, ...merged };
-      if (error.code === "23505") continue; // another push created it first: merge with that
-      console.error("Solve-all push insert error:", error);
-      return { ok: false };
+      // INSERT … ON CONFLICT DO NOTHING: if another push created the row
+      // first, nothing comes back and the loop merges with theirs. A plain
+      // insert did the same through a caught 23505, but Postgres logged each
+      // one as an error ("duplicate key value violates unique constraint
+      // solve_all_progress_pkey", three at once on 2026-11-22).
+      const { data: created, error } = await db.from("solve_all_progress")
+        .upsert(
+          { identity_id: identityId, quiz_num: quizNum, cumulative: cum, ...values },
+          { onConflict: "identity_id,quiz_num,cumulative", ignoreDuplicates: true },
+        )
+        .select("identity_id");
+      if (error) {
+        console.error("Solve-all push insert error:", error);
+        return { ok: false };
+      }
+      if (created && created.length) return { ok: true, ...merged };
+      continue; // another push created it first: merge with that
     }
 
     const { data: updated, error } = await db.from("solve_all_progress")

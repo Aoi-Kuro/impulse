@@ -25,6 +25,20 @@
 // 1. So the first sync keeps a device's non-default choice over another
 // device's untouched default, while any real change made since beats both.
 //
+// Only a change made on this page (a tap: setSetting, a theme, day/night,
+// a flag) is stamped "now". A difference found by itself — on page load, or
+// when the phone switches light/dark — gets the time the page that made it
+// wrote down (themes.js noteUnsyncedSettingEdit, used where this file isn't
+// loaded: offline.html), and with no such note, time 1: it can fill a
+// setting the account never set, but never override a choice made on any
+// device. On 2026-11-22 a difference like that, stamped "now", replaced a
+// theme on every device of the account without anyone touching it.
+//
+// Signing out, or into another account, starts the record afresh
+// (settingsSyncSignedOut / settingsSyncStartAccount): the next account's
+// own settings win, and nothing from the previous one travels with the
+// device. A brand-new account takes the device's current look instead.
+//
 // Keeping requests down — these are the only times a request is made:
 //   - a burst of changes: one push, SETTINGS_SYNC_DEBOUNCE_MS after the
 //     last change (sent straight away if the tab is hidden first);
@@ -211,8 +225,13 @@ let _ssApplyingRemote = false;
 // seen for the first time (first load after this shipped, or a setting
 // added later) isn't a change: it gets time 0 at its default, 1 otherwise
 // — see the header.
-function settingsSyncNoteLocalChanges() {
+// opts.auto: nobody tapped anything (page load, the phone's light/dark),
+// so a difference found is dated by noteUnsyncedSettingEdit, or else time 1
+// — see the header.
+const SETTINGS_SYNC_EDITS_KEY = STORAGE_PREFIX + '-settings-sync-edits';
+function settingsSyncNoteLocalChanges(opts) {
   if (_ssApplyingRemote) return;
+  const auto = !!(opts && opts.auto);
   // Re-read settings from localStorage: this tab's cache can predate
   // another tab's change, and comparing that against the shared record
   // would stamp the old value as a fresh change.
@@ -220,6 +239,9 @@ function settingsSyncNoteLocalChanges() {
   const m = _ssReadMeta();
   const now = Date.now() + m.offset;
   const own = _ssOwnDeviceId();
+  let edits = {};
+  try { edits = JSON.parse(localStorage.getItem(SETTINGS_SYNC_EDITS_KEY) || '{}') || {}; } catch (e) { edits = {}; }
+  const hadEdits = Object.keys(edits).length > 0;
   let wrote = false, changed = false;
   for (const code of Object.keys(SETTINGS_SYNC_CODES)) {
     const c = SETTINGS_SYNC_CODES[code];
@@ -232,15 +254,64 @@ function settingsSyncNoteLocalChanges() {
     if (first) {
       if (cur === JSON.stringify(c.def)) { m.t[code] = [0, '']; continue; }
       m.t[code] = [1, own];
+    } else if (auto) {
+      const at = typeof edits[code] === 'number' ? edits[code] + m.offset : 0;
+      m.t[code] = [at > (m.t[code] || [0])[0] ? Math.min(at, now) : 1, own];
     } else {
       m.t[code] = [now, own];
     }
     m.dirty[code] = 1;
     changed = true;
   }
+  if (hadEdits) { try { localStorage.removeItem(SETTINGS_SYNC_EDITS_KEY); } catch (e) { /* ignore */ } }
   if (!wrote) return;
   _ssWriteMeta(m);
   if (changed) _ssSchedulePush();
+}
+
+// ── Account changes ───────────────────────────────────────────────────────
+// A record with this device's current values and no history: the next sync
+// takes every setting the account has. `pushLocal` (a brand-new account,
+// which has nothing yet): the device's non-default values go up instead.
+function _ssFreshMeta(pushLocal) {
+  settingsCache = null;
+  const old = _ssReadMeta();
+  const own = _ssOwnDeviceId();
+  const m = { v: {}, t: {}, dirty: {}, rev: 0, offset: old.offset, at: 0 };
+  for (const code of Object.keys(SETTINGS_SYNC_CODES)) {
+    const c = SETTINGS_SYNC_CODES[code];
+    const cur = JSON.stringify(c.get());
+    if (cur === undefined) continue;
+    m.v[code] = cur;
+    if (pushLocal && cur !== JSON.stringify(c.def) && !(c.ignored && c.ignored())) {
+      m.t[code] = [1, own];
+      m.dirty[code] = 1;
+    } else {
+      m.t[code] = [0, ''];
+    }
+  }
+  return m;
+}
+
+function _ssStopForAccountChange() {
+  clearTimeout(_ssPushTimer);
+  _ssPushTimer = null;
+  _teardownSettingsRealtime();
+  try { localStorage.removeItem(SETTINGS_SYNC_EDITS_KEY); } catch (e) { /* ignore */ }
+}
+
+// Called by clearForumIdentity() (js/forum.js) on sign-out.
+function settingsSyncSignedOut() {
+  _ssStopForAccountChange();
+  _ssWriteMeta(_ssFreshMeta(false));
+  _ssRenderStatus();
+}
+
+// Called by saveForumIdentity() (js/forum.js) when the device signs in to a
+// different account; `isNew` for one created just now.
+function settingsSyncStartAccount(isNew) {
+  _ssStopForAccountChange();
+  _ssWriteMeta(_ssFreshMeta(!!isNew));
 }
 
 // ── Applying the server's copy ────────────────────────────────────────────
@@ -348,6 +419,7 @@ async function syncSettingsNow(opts) {
   clearTimeout(_ssPushTimer);
   _ssPushTimer = null;
   const sentAt = Date.now();
+  const nickAtStart = getForumNickname();
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-settings`, {
       method: 'POST',
@@ -370,6 +442,15 @@ async function syncSettingsNow(opts) {
       signal: AbortSignal.timeout(10000),
     });
     const json = await res.json().catch(() => null);
+    // Signed out, or into another account, while this was on its way: the
+    // reply belongs to the previous account. Its identity token would send
+    // the next few minutes of writes there, and its settings would land in
+    // the new account's record — keep only the device token, and start over.
+    if (getForumNickname() !== nickAtStart) {
+      if (json && json.device_token) applyDeviceToken({ device_token: json.device_token, device_token_expires_at: json.device_token_expires_at });
+      setTimeout(syncSettingsNow, 0);
+      return;
+    }
     applyDeviceToken(json);
     if (!res.ok || !json || !json.ok) throw new Error((json && json.error) || ('HTTP ' + res.status));
 
@@ -551,7 +632,7 @@ startSitePoll('settings', () => {
 // to push are left to that tab; only if they're still unsent a little later
 // (that tab closed before its send got out) does this one send them.
 (function startSettingsSync() {
-  settingsSyncNoteLocalChanges();
+  settingsSyncNoteLocalChanges({ auto: true });
   const m = _ssReadMeta();
   const nick = (typeof getForumNickname === 'function') ? getForumNickname() : '';
   const fresh = Date.now() - m.at < SETTINGS_SYNC_FRESH_MS && m.idn && m.idn.nick === nick;
