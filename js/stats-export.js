@@ -14,13 +14,10 @@
 // chart.
 //
 // CSV/TXT/Excel are plain client-side generation (Excel via the vendored
-// SheetJS build). PDF is the involved one: jsPDF + svg2pdf.js (vector SVG →
-// PDF, used for both the avatar and a purpose-built vector chart) +
-// jspdf-autotable (paginated table), with IBM Plex Sans/Mono embedded so
-// the document's fonts are fixed regardless of the site's active color
-// theme. All four PDF libraries plus the embedded-font module are vendored
-// locally under vendor/ (no CDN dependency) and lazy-loaded on demand, so
-// visitors who never export never pay for the ~2.5MB of PDF/Excel tooling.
+// SheetJS build). PDF comes from js/stats-pdf.js, in the same style as the
+// Entire Set PDF (js/pdf-build.js): black-and-white charts, STIX fonts, a
+// link and a QR code to the site. All of it is vendored under vendor/ and
+// loaded on demand, so visitors who never export never download it.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const EXPORT_COLUMNS = [
@@ -95,7 +92,7 @@ function _exportRow(a) {
   const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   return {
-    quiz: `#${a.quizNum} · ${name}`,
+    quiz: `Set ${a.quizNum}: ${name}`,
     mode: a.mode === 'cumulative' ? `Sets 1–${a.quizNum}` : 'Single Set',
     dateTime: `${dateStr} ${timeStr}`,
     duration: fmtDuration(a.duration),
@@ -193,23 +190,8 @@ async function exportStatsXlsx() {
 }
 
 // ── PDF ───────────────────────────────────────────────────────────────────
-// All vector — no raster images anywhere. The avatar and the chart are both
-// fed into svg2pdf.js as real <svg> markup and come out as native PDF
-// vector objects, not canvas/PNG snapshots.
-
-async function _ensurePdfLibs() {
-  const needFonts = !window.PLEX_FONTS;
-  const needCore = !(window.jspdf && window.jspdf.jsPDF);
-  if (needCore) await _loadScript('vendor/jspdf/jspdf.umd.min.js');
-  // svg2pdf and autotable both self-attach to window.jspdf.jsPDF.API at
-  // load time, so jspdf.umd.min.js must finish loading first (awaited
-  // above) — order between these two doesn't matter.
-  if (!(window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable)) {
-    await _loadScript('vendor/jspdf/svg2pdf.umd.min.js');
-    await _loadScript('vendor/jspdf/jspdf.plugin.autotable.min.js');
-  }
-  if (needFonts) await _loadScript('vendor/fonts/plex-fonts-embedded.js');
-}
+// Built by js/stats-pdf.js in the Entire Set PDF's style, with that PDF's
+// tools (js/pdf-build.js): both are loaded only when someone exports.
 
 // Converts an 'hsl(H S% L%)' string (forumColorForName()'s format) to hex,
 // for the rare vector-initials avatar fallback below — kept as a plain hex
@@ -247,157 +229,16 @@ async function _exportAvatarSvgMarkup(nickname) {
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
     <circle cx="50" cy="50" r="50" fill="${bg}"/>
-    <text x="50" y="52" text-anchor="middle" dominant-baseline="central" font-family="PlexSans" font-weight="bold" font-size="46" fill="#ffffff">${initial}</text>
+    <text x="50" y="52" text-anchor="middle" dominant-baseline="central" font-family="STIXTwoText" font-weight="bold" font-size="46" fill="#ffffff">${initial}</text>
   </svg>`;
 }
 
-// Export-only chart, built as SVG markup rather than drawn to a canvas —
-// canvas is pixel-only, there's no way to extract vector paths back out of
-// it, so this is a second implementation that mirrors drawChart()'s
-// geometry/math (same PAD box, same gridlines/axis/per-quiz-line math) but
-// emits real SVG elements instead of canvas draw calls. Additive: does not
-// touch drawChart() itself.
-//
-// Always full, unfiltered, all-quiz, all-time history — ignores sfMode/
-// sfQuizzes regardless of what's active on the live stats screen.
-function _buildExportChartSvg(width, height) {
-  const PAD = { top: 18, right: 18, bottom: 40, left: 40 };
-  const plotW = width - PAD.left - PAD.right;
-  const plotH = height - PAD.top - PAD.bottom;
-  const MAX_SCORE = 7;
-
-  const all = (typeof loadStats === 'function') ? loadStats() : [];
-  const byQuiz = { 1: [], 2: [], 3: [], 4: [] };
-  all.forEach(a => { if (byQuiz[a.quizNum]) byQuiz[a.quizNum].push(a); });
-
-  const maxAttempts = Math.max(...Object.values(byQuiz).map(a => a.length), 2);
-  const gridColor = '#cccccc';
-  const mutedColor = '#666666';
-
-  const parts = [];
-  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`);
-
-  for (let s = 0; s <= MAX_SCORE; s++) {
-    const y = PAD.top + plotH * (1 - s / MAX_SCORE);
-    parts.push(`<line x1="${PAD.left}" y1="${y.toFixed(2)}" x2="${PAD.left + plotW}" y2="${y.toFixed(2)}" stroke="${gridColor}" stroke-width="1"/>`);
-    parts.push(`<text x="${PAD.left - 6}" y="${y.toFixed(2)}" font-family="PlexMono" font-size="10" fill="${mutedColor}" text-anchor="end" dominant-baseline="middle">${s}</text>`);
-  }
-
-  const step = maxAttempts <= 8 ? 1 : maxAttempts <= 20 ? 2 : Math.ceil(maxAttempts / 10);
-  for (let i = 0; i < maxAttempts; i += step) {
-    const x = PAD.left + (i / Math.max(maxAttempts - 1, 1)) * plotW;
-    parts.push(`<text x="${x.toFixed(2)}" y="${(PAD.top + plotH + 15).toFixed(2)}" font-family="PlexMono" font-size="10" fill="${mutedColor}" text-anchor="middle">${i + 1}</text>`);
-  }
-  parts.push(`<text x="${(PAD.left + plotW / 2).toFixed(2)}" y="${(PAD.top + plotH + 32).toFixed(2)}" font-family="PlexMono" font-size="9" fill="${mutedColor}" text-anchor="middle">attempt #</text>`);
-
-  let hasData = false;
-  for (let qi = 1; qi <= 4; qi++) {
-    const arr = byQuiz[qi];
-    if (arr.length === 0) continue;
-    hasData = true;
-    const color = (typeof quizColor === 'function') ? quizColor(qi - 1) : '#888888';
-
-    const points = arr.map((a, i) => ({
-      x: PAD.left + (i / Math.max(maxAttempts - 1, 1)) * plotW,
-      y: PAD.top + plotH * (1 - a.score / (a.maxScore || MAX_SCORE)),
-    }));
-
-    const pathD = points.map((p, i) => (i === 0 ? 'M' : 'L') + p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(' ');
-    parts.push(`<path d="${pathD}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`);
-
-    points.forEach(p => {
-      parts.push(`<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="4" fill="${color}" stroke="#ffffff" stroke-width="1.5"/>`);
-    });
-  }
-
-  if (!hasData) {
-    parts.push(`<text x="${(width / 2).toFixed(2)}" y="${(height / 2).toFixed(2)}" font-family="PlexMono" font-size="13" fill="${mutedColor}" text-anchor="middle">No attempts yet</text>`);
-  }
-
-  parts.push('</svg>');
-  return parts.join('');
-}
-
-function _parseSvg(markup) {
-  const doc = new DOMParser().parseFromString(markup, 'image/svg+xml');
-  if (doc.querySelector('parsererror')) throw new Error('Could not parse SVG for PDF export');
-  return doc.documentElement;
-}
-
+// pdf-build.js may already be here from an Entire Set PDF: its top-level
+// consts can't be declared twice, so it loads only once, through the same
+// loader js/pdf-export.js uses.
 async function exportStatsPdf() {
-  await _ensurePdfLibs();
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-
-  // Fixed IBM Plex Sans/Mono regardless of the site's active color theme —
-  // jsPDF's only native fonts are Helvetica/Times/Courier, so these are
-  // embedded from vendor/fonts/plex-fonts-embedded.js and used for every
-  // piece of text in the document, including the vector chart's labels.
-  (window.PLEX_FONTS || []).forEach(f => {
-    doc.addFileToVFS(f.file, f.data);
-    doc.addFont(f.file, f.family, f.style);
-  });
-
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const marginX = 40;
-  const nickname = (typeof getForumNickname === 'function' && getForumNickname()) || '';
-
-  // ── Page 1: title page ──────────────────────────────────────────────
-  const avatarSize = 96;
-  const avatarSvg = _parseSvg(await _exportAvatarSvgMarkup(nickname));
-  await doc.svg(avatarSvg, {
-    x: (pageW - avatarSize) / 2,
-    y: 170,
-    width: avatarSize,
-    height: avatarSize,
-  });
-
-  doc.setFont('PlexSans', 'bold');
-  doc.setFontSize(22);
-  doc.setTextColor(20, 20, 20);
-  doc.text(nickname || 'Anonymous', pageW / 2, 170 + avatarSize + 40, { align: 'center' });
-
-  doc.setFont('PlexSans', 'normal');
-  doc.setFontSize(12);
-  doc.setTextColor(110, 110, 110);
-  doc.text('Stats export', pageW / 2, 170 + avatarSize + 62, { align: 'center' });
-
-  doc.setFont('PlexMono', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(140, 140, 140);
-  doc.text('Exported ' + new Date().toLocaleString('en-GB'), pageW / 2, pageH - 50, { align: 'center' });
-
-  // ── Page 2+: chart, then table starting immediately below it ────────
-  doc.addPage();
-  const chartW = pageW - marginX * 2;
-  const chartH = 220;
-  const chartTop = 40;
-  const chartSvg = _parseSvg(_buildExportChartSvg(chartW, chartH));
-  await doc.svg(chartSvg, { x: marginX, y: chartTop, width: chartW, height: chartH });
-
-  const rows = _exportAttempts().map(_exportRow);
-  doc.autoTable({
-    startY: chartTop + chartH + 24,
-    margin: { left: marginX, right: marginX },
-    columns: EXPORT_COLUMNS.map(c => ({ header: c.label, dataKey: c.key })),
-    body: rows.map(r => ({
-      quiz: r.quiz, mode: r.mode, dateTime: r.dateTime, duration: r.duration, score: r.score,
-      _quizNum: r.quizNum,
-    })),
-    styles: { font: 'PlexMono', fontSize: 9, cellPadding: 5, lineColor: [225, 225, 225] },
-    headStyles: { font: 'PlexSans', fontStyle: 'bold', fillColor: [242, 242, 242], textColor: [30, 30, 30] },
-    alternateRowStyles: { fillColor: [250, 250, 250] },
-    // Table rows are quiz-colored, matching the chart's per-quiz colors.
-    didParseCell(data) {
-      if (data.section !== 'body') return;
-      const qn = data.row.raw._quizNum;
-      const hex = (typeof quizColor === 'function') ? quizColor(qn - 1) : null;
-      if (hex && typeof hexToRgb === 'function') {
-        data.cell.styles.textColor = hexToRgb(hex);
-      }
-    },
-  });
-
-  doc.save(_exportFilename('pdf'));
+  const load = typeof pdfxLoadScript === 'function' ? pdfxLoadScript : _loadScript;
+  if (typeof buildProblemsPdf !== 'function') await load('js/pdf-build.js');
+  if (typeof buildStatsPdf !== 'function') await load('js/stats-pdf.js');
+  await buildStatsPdf();
 }

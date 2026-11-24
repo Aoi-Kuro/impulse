@@ -10,3 +10,6 @@ __pycache__/
 
 # Claude Code (local settings, permissions with local paths)
 .claude/
+
+# Supabase CLI local state
+supabase/.temp/

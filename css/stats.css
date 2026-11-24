@@ -225,6 +225,9 @@
   transition: all 0.15s;
 }
 .sfp-settings-item:hover { color: var(--accent); background: rgba(var(--accent-rgb),0.1); }
+/* Delete account (js/account-delete.js): set apart from the everyday items. */
+.sfp-settings-item-danger { color: var(--wrong); border-top: 1px solid var(--border); border-radius: 0; margin-top: 0.2rem; padding-top: 0.5rem; }
+.sfp-settings-item-danger:hover { color: var(--wrong); background: color-mix(in srgb, var(--wrong) 10%, transparent); }
 .sfp-identity-joined {
   font-family: var(--mono);
   font-size: 0.68rem;

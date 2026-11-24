@@ -2364,6 +2364,12 @@ async function submitForumClaimModal() {
       // through into 'verify' in place (same modal, same onSuccess),
       // exactly like the composer's own auto-claim-on-send does.
       openForumClaimModal('verify', nickname, forumClaimModalOnSuccess, forumClaimModalOnBack);
+    } else if (data && data.error === 'pending_deletion' && typeof openAccountPendingModal === 'function') {
+      // The right PIN for an account waiting to be deleted (js/account-delete.js):
+      // offer to cancel the deletion, which also logs in here.
+      const onSuccess = forumClaimModalOnSuccess;
+      closeForumClaimModal();
+      openAccountPendingModal(data, { mode: 'login', pin, onDone: onSuccess });
     } else if (data && data.error === 'not_found') {
       statusEl.textContent = 'No account with that name. Check the spelling.';
       statusEl.classList.add('forum-composer-status-error');

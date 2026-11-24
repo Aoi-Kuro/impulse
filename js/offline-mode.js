@@ -119,6 +119,7 @@ const OFFLINE_CORE_FILES = [
   'js/forum.js',
   'js/push-notifications.js',
   'js/settings-sync.js',
+  'js/account-delete.js',
   'course/course.json',
   'course/manual.json',
   'course/splashes.json',

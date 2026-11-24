@@ -577,6 +577,23 @@ export default {
       if (!correct) {
         return Response.json({ ok: false, error: 'wrong_pin' }, { status: 403 });
       }
+      // Waiting to be deleted (migration 020): logging in doesn't bring it
+      // back by itself. Only the right PIN learns this, and the device then
+      // offers to cancel the deletion (account-delete "cancel").
+      if ((target as any).deletion_pending) {
+        const { data: req } = await db
+          .from('account_deletions').select('requested_at, purge_after, requested_from')
+          .eq('identity_id', target.id).eq('status', 'pending').maybeSingle();
+        return Response.json({
+          ok: false,
+          error: 'pending_deletion',
+          nickname: target.nickname,
+          requested_at: req?.requested_at ?? null,
+          purge_after: req?.purge_after ?? null,
+          requested_from: req?.requested_from ?? '',
+          ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
+        }, { status: 409 });
+      }
 
       // Upsert, not update: device_id is the primary key on identity_devices,
       // so this either creates this device's first link or repoints its

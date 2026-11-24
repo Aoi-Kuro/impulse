@@ -410,6 +410,8 @@
 .gs-faq.open .gs-faq-toggle { margin-bottom: 0.5rem; }
 .gs-faq.open .gs-faq-toggle .gs-faq-caret { transform: rotate(90deg); color: var(--accent); }
 .gs-faq-list { display: none; }
+/* Under the FAQ: the manual's page on what is stored (js/manual.js). */
+.gs-privacy-link { display: block; margin: 0.9rem auto 0; }
 .gs-faq.open .gs-faq-list { display: block; }
 .gs-faq-item {
   border-top: 1px solid var(--border);
@@ -1650,6 +1652,23 @@ html.db-offline #forumMessageList:has(> .forum-status) { display: none !importan
 }
 .acct-modal .acct-aside { margin-right: auto; }
 .acct-modal .forum-identity-link-btn { font-size: 0.75rem; align-self: center; }
+/* Deleting an account (js/account-delete.js). */
+.acct-list {
+  margin: 0 0 0.8rem;
+  padding-left: 1.1rem;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--text);
+  text-align: left;
+}
+.acct-list li + li { margin-top: 0.3rem; }
+.acct-row { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+.acct-row .acct-text-quiet { flex: 1; min-width: 10rem; }
+.acct-modal .acct-row + .acct-field { margin-top: 0.6rem; }
+.acct-modal #accountExportStatus:not(:empty) { margin-top: 0.45rem; }
+.acct-gap { margin-top: 0.8rem; }
+.acct-modal .stats-modal-btn:disabled { opacity: 0.5; cursor: default; }
+
 /* The claim window keeps its own link out of the way in the offline modes. */
 .acct-modal #forumClaimModalRestoreLink { display: none !important; }
 a.stats-modal-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }

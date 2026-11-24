@@ -1354,6 +1354,7 @@ function renderSfpIdentity(nickname) {
   const changeItem = document.getElementById('sfpSettingsChangeItem');
   const pinItem    = document.getElementById('sfpSettingsPinItem');
   const exitItem   = document.getElementById('sfpSettingsExitItem');
+  const deleteItem = document.getElementById('sfpSettingsDeleteItem');
   if (!nameEl || !avatarEl) return;
 
   // Made offline, not registered yet (js/offline-account.js): its name and
@@ -1365,6 +1366,7 @@ function renderSfpIdentity(nickname) {
     if (changeItem) changeItem.style.display = '';
     if (pinItem)    pinItem.style.display    = '';
     if (exitItem)   exitItem.style.display   = 'none';
+    if (deleteItem) deleteItem.style.display = 'none';
     avatarEl.innerHTML = '';
     nameEl.textContent = pending.nickname;
     const joinedEl = document.getElementById('sfpJoinedAt');
@@ -1381,6 +1383,7 @@ function renderSfpIdentity(nickname) {
   if (changeItem) changeItem.style.display = nickname ? '' : 'none';
   if (pinItem)    pinItem.style.display    = nickname ? '' : 'none';
   if (exitItem)   exitItem.style.display   = nickname ? '' : 'none';
+  if (deleteItem) deleteItem.style.display = nickname ? '' : 'none';
 
   avatarEl.innerHTML = '';
   if (!nickname) {

@@ -337,6 +337,9 @@ async function syncAttempts() {
     });
     const data = await res.json().catch(() => null);
     if (typeof applyDeviceToken === 'function') applyDeviceToken(data);
+    // Signed out by the server: maybe the account is being deleted
+    // (js/account-delete.js asks, and shows what to do).
+    if (data && data.error === 'no_identity' && typeof accountDeletionCheck === 'function') accountDeletionCheck();
     if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || 'sync_failed');
 
     // The server's list matches this device's, so nothing is downloaded.

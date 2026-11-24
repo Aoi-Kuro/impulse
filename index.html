@@ -875,6 +875,7 @@
                 <button type="button" class="sfp-settings-item" id="sfpSettingsChangeItem" onclick="closeSfpSettingsMenu(); openSfpNicknameEditor();">Change nickname</button>
                 <button type="button" class="sfp-settings-item" id="sfpSettingsPinItem" onclick="closeSfpSettingsMenu(); openForumPinModal();" style="display:none;">Your PIN</button>
                 <button type="button" class="sfp-settings-item" id="sfpSettingsExitItem" onclick="closeSfpSettingsMenu(); openForumExitDeviceModal();" style="display:none;">Exit</button>
+                <button type="button" class="sfp-settings-item sfp-settings-item-danger" id="sfpSettingsDeleteItem" onclick="closeSfpSettingsMenu(); if (window.openAccountDeleteModal) openAccountDeleteModal();" style="display:none;">Delete account</button>
               </div>
             </div>
           </div>
@@ -1270,7 +1271,7 @@
         <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
           <span>Is my data being tracked?</span><span class="gs-faq-caret">›</span>
         </button>
-        <div class="gs-faq-a">The database of the platform only stores your forum posts linked to your nickname (seen by anybody), a random ID for your browser (saved with the posts you make), and your practice exam attempts, progress and settings (for sync across devices). Nothing else is stored by the platform. Some other data is collected by service providers, and you can read more about it in the manual (📖): go to “📊 Stats &amp; Synchronization”, then “What gets tracked”.</div>
+        <div class="gs-faq-a">Only what the site needs: your forum posts under your nickname (seen by anybody), a random ID for your browser (saved with your posts), and your practice exam attempts, progress and settings (for sync across your devices). No email or real name. The full list, and what the service providers keep, is under “Privacy and your data” below.</div>
       </div>
       <div class="gs-faq-item">
         <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
@@ -1296,8 +1297,15 @@
         </button>
         <div class="gs-faq-a">Enter your existing nickname and PIN there to restore it: your stats and forum identity will carry over instead of starting fresh. You can use the platform simultaneously on both devices, though.</div>
       </div>
+      <div class="gs-faq-item">
+        <button type="button" class="gs-faq-q" onclick="toggleGsFaq(this)">
+          <span>Can I delete my account?</span><span class="gs-faq-caret">›</span>
+        </button>
+        <div class="gs-faq-a">Yes, any time: Stats → ⚙︎ next to your name → Delete account. You can download a copy of your data first. The account is hidden at once and deleted after 30 days; your practice exam attempts are kept without your name, for course statistics.</div>
+      </div>
       </div>
     </div>
+    <button type="button" class="forum-identity-link-btn gs-privacy-link" onclick="if (window.closeGettingStartedModal) closeGettingStartedModal(); if (window.openManualScreen) openManualScreen('stats-tracking');">Privacy and your data</button>
   </div>
 </div>
 
@@ -1409,6 +1417,92 @@
     <div class="stats-modal-actions">
       <button class="stats-modal-btn" onclick="closeForumExitDeviceModal()">Cancel</button>
       <button class="stats-modal-btn primary" onclick="submitForumExitDevice()">Yes, exit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Deleting an account (js/account-delete.js) ──
+     Three steps in one window: what happens (with a copy of the data to
+     download), nickname + PIN to confirm, then the date it happens. What
+     the text promises is what superbase/migrations/020_account_deletion.sql
+     does; change both together. -->
+<div class="stats-modal-backdrop" id="accountDeleteModalBackdrop" onclick="if(event.target===this) closeAccountDeleteModal()">
+  <div class="stats-modal-box acct-modal">
+    <div class="stats-modal-title">Delete account</div>
+
+    <div id="accountDeleteStep-intro">
+      <p class="acct-text">Deleting <span class="acct-name account-delete-name"></span> signs it out on every device and hides it at once. After <span id="accountDeleteDays">30</span> days it's deleted for good:</p>
+      <ul class="acct-list">
+        <li>Your nickname, PIN, Entire Set progress and settings are deleted, and the nickname becomes free for others.</li>
+        <li>Your practice exam attempts are kept without your name, for course statistics.</li>
+        <li>Your forum messages stay, shown as “Deleted account”.</li>
+      </ul>
+      <p class="acct-text acct-text-quiet">Changed your mind? Log in with your nickname and PIN on any device within those days to cancel.</p>
+      <div class="acct-label">Your data</div>
+      <div class="acct-row">
+        <button type="button" class="stats-modal-btn" onclick="accountDownloadData()">Download my data</button>
+        <span class="acct-text-quiet">A JSON file with everything stored for this account.</span>
+      </div>
+      <div class="acct-field" id="accountExportPinRow" style="display:none;">
+        <input type="text" id="accountExportPinInput" class="forum-name-input forum-pin-input" placeholder="5-digit PIN" maxlength="5" inputmode="numeric" pattern="[0-9]*" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();accountDownloadData();}">
+      </div>
+      <div class="forum-composer-status" id="accountExportStatus"></div>
+      <div class="stats-modal-actions acct-actions">
+        <button class="stats-modal-btn" onclick="closeAccountDeleteModal()">Keep my account</button>
+        <button class="stats-modal-btn danger" onclick="accountDeleteContinue()">Continue</button>
+      </div>
+    </div>
+
+    <div id="accountDeleteStep-confirm" style="display:none;">
+      <p class="acct-text">Type your nickname, <span class="acct-name account-delete-name"></span>, and your PIN to confirm.</p>
+      <div class="acct-field">
+        <input type="text" id="accountDeleteNicknameInput" class="forum-name-input" placeholder="Nickname" maxlength="40" autocomplete="off" oninput="this.value = this.value.replace(/\s+/g, '')">
+        <input type="text" id="accountDeletePinInput" class="forum-name-input forum-pin-input" placeholder="5-digit PIN" maxlength="5" inputmode="numeric" pattern="[0-9]*" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();submitAccountDelete();}">
+        <div class="forum-composer-status" id="accountDeleteStatus"></div>
+      </div>
+      <p class="acct-text acct-text-quiet acct-gap">Your PIN is under Stats → ⚙︎ → Your PIN.</p>
+      <div class="stats-modal-actions acct-actions">
+        <button class="stats-modal-btn acct-aside" onclick="accountDeleteShowStep('intro')">Back</button>
+        <button class="stats-modal-btn danger" id="accountDeleteSubmit" onclick="submitAccountDelete()">Delete account</button>
+      </div>
+    </div>
+
+    <div id="accountDeleteStep-done" style="display:none;">
+      <p class="acct-text"><span class="acct-name account-delete-name"></span> will be deleted for good on <strong id="accountDeleteWhen"></strong>.</p>
+      <p class="acct-text">This device is signed out and its copy of your data has been removed. Your other devices are signed out too.</p>
+      <p class="acct-text acct-text-quiet">To cancel before then, log in with your nickname and PIN.</p>
+      <div class="stats-modal-actions acct-actions">
+        <button class="stats-modal-btn primary" onclick="closeAccountDeleteModal()">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- An account waiting to be deleted: on its other devices, or on login. -->
+<div class="stats-modal-backdrop" id="accountPendingModalBackdrop">
+  <div class="stats-modal-box acct-modal">
+    <div class="stats-modal-title">This account is being deleted</div>
+    <p class="acct-text">Deleting <span class="acct-name" id="accountPendingName"></span> was asked for from <strong id="accountPendingAsked"></strong>. It will be deleted for good on <strong id="accountPendingPurge"></strong>.</p>
+    <p class="acct-text">If that wasn't you, or you've changed your mind, cancel the deletion.</p>
+    <p class="acct-text acct-text-quiet" id="accountPendingSignOutText">Otherwise sign out. This device's copy of the account's data is then removed.</p>
+    <div class="acct-field" id="accountPendingPinRow" style="display:none;">
+      <input type="text" id="accountPendingPinInput" class="forum-name-input forum-pin-input" placeholder="5-digit PIN" maxlength="5" inputmode="numeric" pattern="[0-9]*" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();accountPendingCancel();}">
+    </div>
+    <div class="forum-composer-status" id="accountPendingStatus"></div>
+    <div class="stats-modal-actions acct-actions">
+      <button class="stats-modal-btn acct-aside" id="accountPendingSignOut" onclick="accountPendingSignOut()">Sign out</button>
+      <button class="stats-modal-btn primary" onclick="accountPendingCancel()">Cancel deletion</button>
+    </div>
+  </div>
+</div>
+
+<!-- The account was deleted while this device was away. -->
+<div class="stats-modal-backdrop" id="accountDeletedModalBackdrop">
+  <div class="stats-modal-box acct-modal">
+    <div class="stats-modal-title">Account deleted</div>
+    <p class="acct-text"><span class="acct-name" id="accountDeletedName"></span> has been deleted. Its copy on this device has been removed too.</p>
+    <div class="stats-modal-actions acct-actions">
+      <button class="stats-modal-btn primary" onclick="closeAccountDeletedModal()">OK</button>
     </div>
   </div>
 </div>
@@ -1676,6 +1770,7 @@
       'js/offline-account.js',
       'js/push-notifications.js',
       'js/settings-sync.js',
+      'js/account-delete.js',
     ]);
   })();
 </script>
