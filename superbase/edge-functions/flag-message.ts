@@ -20,9 +20,15 @@
 //      is explicitly framed as background, never grounds for deletion on
 //      its own (see FLAG_SYSTEM_INSTRUCTIONS below for exactly how that's
 //      worded, since this is the part most likely to go wrong).
-//   5. Any failure/uncertainty from Gemini → keep the message. A stuck or
-//      wrongly-deleted message is a worse failure mode than an occasional
-//      bad one staying up an extra moment.
+//   5. Gemini's "keep" (or any unsure verdict) → kept. A wrongly-deleted
+//      message is a worse failure mode than an occasional bad one staying
+//      up an extra moment.
+//   6. Gemini didn't answer at all (503 "high demand", timeout, bad JSON):
+//      the message stays 'reviewing' (yellow flag) instead of being kept
+//      unread. Migration 021's pg_cron job calls this function with
+//      {"retry_pending": true} every 15 minutes, and the review is retried
+//      until Gemini answers. Before 021, such a failure turned the flag
+//      green without a review (message 85, 503 on 2026-11-25).
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
@@ -373,6 +379,15 @@ async function callGeminiFlagReview(
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: FLAG_SYSTEM_INSTRUCTIONS }] },
           contents: [{ role: "user", parts: [{ text: userContent }] }],
+          // The flagged text is often abusive by nature. Gemini's own
+          // filters would block the very messages it is asked to judge, and
+          // a blocked reply is a failed review that would be retried forever.
+          safetySettings: [
+            "HARM_CATEGORY_HARASSMENT",
+            "HARM_CATEGORY_HATE_SPEECH",
+            "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            "HARM_CATEGORY_DANGEROUS_CONTENT",
+          ].map((category) => ({ category, threshold: "BLOCK_NONE" })),
           generationConfig: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -393,7 +408,10 @@ async function callGeminiFlagReview(
     }
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("");
-    if (!text) return null;
+    if (!text) {
+      console.error("Gemini flag-review empty reply:", JSON.stringify(data?.promptFeedback ?? data?.candidates?.[0]?.finishReason ?? null));
+      return null;
+    }
     const parsed = JSON.parse(text);
     if (typeof parsed.delete !== "boolean" || typeof parsed.reason !== "string") return null;
     return { delete: parsed.delete, reason: parsed.reason.trim() };
@@ -401,6 +419,94 @@ async function callGeminiFlagReview(
     console.error("Gemini flag-review call failed:", err);
     return null;
   }
+}
+
+// One review of a message already claimed as 'reviewing' (by a flag tap or
+// by the retry job). Returns 'pending' when Gemini didn't answer: the row
+// stays 'reviewing' and the retry job tries again later. The final writes
+// only apply while the row is still 'reviewing', so a moderator's manual
+// verdict in between is never overwritten.
+type Claimed = {
+  id: number; author_name: string; body: string; scope: string;
+  problem_key: string | null; device_id: string; identity_id: string | null;
+};
+
+async function reviewClaimed(admin: any, claimed: Claimed): Promise<{ result: "kept" | "deleted" | "pending"; reason?: string }> {
+  const context = await fetchContext(admin, claimed.scope, claimed.problem_key, claimed.id);
+  const verdict = await callGeminiFlagReview(claimed, context);
+
+  if (!verdict) {
+    console.log(`flag-message: message ${claimed.id} left 'reviewing', Gemini gave no verdict; the retry job will try again`);
+    return { result: "pending" };
+  }
+
+  // The reason of a kept message is stored but never shown — reasons are
+  // only user-facing on deletion.
+  if (verdict.delete !== true) {
+    await admin
+      .from("forum_messages")
+      .update({ flag_status: "kept", flag_reason: verdict.reason })
+      .eq("id", claimed.id)
+      .eq("flag_status", "reviewing");
+    return { result: "kept" };
+  }
+
+  const shownReason = verdict.reason.length > 0 ? verdict.reason : "violated forum guidelines";
+  const { data: updated } = await admin
+    .from("forum_messages")
+    .update({ flag_status: "deleted", flag_reason: shownReason })
+    .eq("id", claimed.id)
+    .eq("flag_status", "reviewing")
+    .select("id")
+    .maybeSingle();
+
+  // Only a deletion this call actually made counts as a strike.
+  if (updated) await registerRedFlag(admin, claimed.device_id, claimed.identity_id ?? null);
+  return { result: "deleted", reason: shownReason };
+}
+
+const CLAIM_COLUMNS = "id, author_name, body, scope, problem_key, device_id, identity_id";
+// A review attempt younger than this is left alone by the retry job: it may
+// still be running (a flag tap a moment ago), and it bounds how often anyone
+// calling {"retry_pending": true} can make Gemini calls.
+const RETRY_MIN_GAP_MS = 10 * 60_000;
+const RETRY_BATCH = 5;
+
+// {"retry_pending": true}, sent by migration 021's pg_cron job every 15
+// minutes, only while some message is 'reviewing'. Needs no device: it only
+// re-runs reviews people already asked for, at most RETRY_BATCH per
+// RETRY_MIN_GAP_MS, so calling it by hand does no harm.
+async function retryPendingReviews(admin: any) {
+  const cutoff = new Date(Date.now() - RETRY_MIN_GAP_MS).toISOString();
+  const dueFilter = `flag_review_at.is.null,flag_review_at.lt.${cutoff}`;
+
+  const { data: due, error } = await admin
+    .from("forum_messages")
+    .select("id")
+    .eq("flag_status", "reviewing")
+    .or(dueFilter)
+    .order("id", { ascending: true })
+    .limit(RETRY_BATCH);
+  if (error) {
+    console.error("flag-message: retry lookup error", error);
+    return Response.json({ ok: false, error: "server_error" }, { status: 500 });
+  }
+
+  const results: Record<string, string> = {};
+  for (const row of due || []) {
+    // Same race-safe claim as a flag tap: only one caller gets the row.
+    const { data: claimed } = await admin
+      .from("forum_messages")
+      .update({ flag_review_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .eq("flag_status", "reviewing")
+      .or(dueFilter)
+      .select(CLAIM_COLUMNS)
+      .maybeSingle();
+    if (!claimed) continue;
+    results[row.id] = (await reviewClaimed(admin, claimed)).result;
+  }
+  return Response.json({ ok: true, retried: results });
 }
 
 export default {
@@ -415,6 +521,8 @@ export default {
     } catch {
       return Response.json({ ok: false, error: "bad_json" }, { status: 400 });
     }
+
+    if (payload?.retry_pending === true) return await retryPendingReviews(ctx.supabaseAdmin);
 
     const deviceId = payload?.device_id;
     const messageId = Number(payload?.message_id);
@@ -456,10 +564,10 @@ export default {
     // actually perform the update, and the other gets zero rows back.
     const { data: claimed, error: claimErr } = await admin
       .from("forum_messages")
-      .update({ flag_status: "reviewing" })
+      .update({ flag_status: "reviewing", flag_review_at: new Date().toISOString() })
       .eq("id", messageId)
       .is("flag_status", null)
-      .select("id, author_name, body, scope, problem_key, device_id, identity_id")
+      .select(CLAIM_COLUMNS)
       .maybeSingle();
 
     if (claimErr) {
@@ -474,38 +582,13 @@ export default {
     // against the hourly limit, independent of what Gemini decides.
     await admin.from("forum_flags").insert({ message_id: messageId, device_id: deviceId });
 
-    const context = await fetchContext(admin, claimed.scope, claimed.problem_key, claimed.id);
-    const verdict = await callGeminiFlagReview(claimed, context);
-
-    // Fail-safe: any error, empty response, or malformed JSON from Gemini
-    // keeps the message rather than risking a wrongful deletion from a
-    // flaky API call. The reason (if Gemini did return one) is stored but
-    // never shown for a kept message — reasons are only user-facing on
-    // deletion.
-    if (!verdict || verdict.delete !== true) {
-      await admin
-        .from("forum_messages")
-        .update({ flag_status: "kept", flag_reason: verdict?.reason ?? null })
-        .eq("id", messageId);
-      return Response.json({
-        ok: true,
-        result: "kept",
-        ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
-      });
-    }
-
-    const shownReason = verdict.reason.length > 0 ? verdict.reason : "violated forum guidelines";
-    await admin
-      .from("forum_messages")
-      .update({ flag_status: "deleted", flag_reason: shownReason })
-      .eq("id", messageId);
-
-    await registerRedFlag(admin, claimed.device_id, claimed.identity_id ?? null);
-
+    // 'pending': Gemini didn't answer, the flag stays yellow and the
+    // retry job reviews it later (see reviewClaimed / retryPendingReviews).
+    const outcome = await reviewClaimed(admin, claimed);
     return Response.json({
       ok: true,
-      result: "deleted",
-      reason: shownReason,
+      result: outcome.result,
+      ...(outcome.reason ? { reason: outcome.reason } : {}),
       ...(deviceToken ? { device_token: deviceToken.token, device_token_expires_at: deviceToken.expiresAt } : {}),
     });
   }),

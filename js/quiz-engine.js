@@ -870,14 +870,12 @@ function checkAll() {
   // comes back regardless of that setting; render()/newQuiz() removes this
   // class again for the next fresh attempt.
   document.getElementById("quizContainer").classList.add('results-shown');
-  // Settings > Study > "Full screen for Random N" — leave fullscreen the
-  // instant scores are revealed, same moment the topic labels above come
-  // back. Only acts if the browser is actually in fullscreen right now (a
-  // person who exited it manually mid-quiz, e.g. with Esc, isn't put back
-  // into it just to immediately leave again).
-  if (document.fullscreenElement) {
-    document.exitFullscreen().catch(() => {});
-  }
+  // Full screen is deliberately left as it is here: most people go straight
+  // on with "New exam ↺", and newQuiz() doesn't enter full screen again, so
+  // leaving it at this point dropped them out of full screen for the rest
+  // of the session. The full-screen button next to "New exam ↺"
+  // (toggleQuizFullscreen) switches it either way; going back to the main
+  // menu still leaves it (exitAppOrChoiceToLanding).
   // ── Forum: FAB and per-problem "Discuss" buttons only make sense once
   // there's something to discuss — see syncForumFabVisibility() in
   // forum.js, which now hides the FAB during a plain Random 6 attempt but
@@ -2281,8 +2279,8 @@ function startRandomQuiz() {
   initTopics();
   newQuiz();
   // Settings > Study > "Full screen for Random N" — entered the moment
-  // Random N mode actually opens; checkAll() (above) leaves it again
-  // the instant scores are revealed. Wrapped in a try/catch and a
+  // Random N mode actually opens; it stays on through Check answers and
+  // New exam, and going back to the main menu leaves it. Wrapped in a try/catch and a
   // .catch() on the promise since some browsers refuse this outside a
   // sufficiently direct user gesture, or if the person already denied
   // it once — either way, failing silently just means staying in the
@@ -2297,6 +2295,35 @@ function startRandomQuiz() {
     } catch (e) { /* Fullscreen API unavailable — just stay windowed */ }
   }
 }
+
+// ─── Full-screen button next to "New exam ↺" ─────────────────────────────────
+// Video-player style: four corners pointing out = enter full screen, pointing
+// in = leave it. Works whatever Settings > Study > "Full screen for Random N"
+// says. Hidden where the page can't go full screen (iPhone Safari) and in
+// lockdown, where Safe Exam Browser already fills the screen.
+function toggleQuizFullscreen() {
+  try {
+    const req = document.fullscreenElement
+      ? document.exitFullscreen()
+      : document.documentElement.requestFullscreen();
+    if (req && typeof req.catch === 'function') req.catch(() => {});
+  } catch (e) { /* Fullscreen API unavailable */ }
+}
+
+function syncQuizFullscreenBtn() {
+  const btn = document.getElementById('quizFullscreenBtn');
+  if (!btn) return;
+  btn.hidden = !document.fullscreenEnabled;
+  const on = !!document.fullscreenElement;
+  btn.classList.toggle('is-fullscreen', on);
+  const label = on ? 'Exit full screen' : 'Full screen';
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+}
+
+document.addEventListener('fullscreenchange', syncQuizFullscreenBtn);
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', syncQuizFullscreenBtn);
+else syncQuizFullscreenBtn();
 
 // ─── "Leave this attempt?" guard ─────────────────────────────────────────────
 // The site logo, the quiz ✕ (both goToMainMenu) and "New quiz ↺" all throw
@@ -2415,11 +2442,10 @@ function exitAppOrChoiceToLanding() {
   if (typeof abandonSolutionScreen === 'function') abandonSolutionScreen();
 
   // Settings > Study > "Full screen for Random N" enters fullscreen the
-  // moment an attempt starts (see the requestFullscreen() call above) and
-  // checkAll() leaves it again once scores are revealed — but tapping the
-  // site logo to bail out *before* finishing skips checkAll() entirely, so
-  // without this the browser stayed stuck in fullscreen after landing back
-  // on the main menu. This is the one shared "go home" path both the direct
+  // moment an attempt starts (see the requestFullscreen() call above), and
+  // it stays on through Check answers and New exam, so this is where it
+  // ends: without this the browser stayed stuck in fullscreen after landing
+  // back on the main menu. This is the one shared "go home" path both the direct
   // logo tap and the Forum's forceLanding route funnel through, so it's
   // covered here rather than duplicated at each call site — same reasoning
   // as the Attempt Review cleanup just below. Only acts if fullscreen is
@@ -2538,7 +2564,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '14.5.0';
+const CURRENT_VERSION = '14.5.1';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.
@@ -3061,6 +3087,11 @@ let _fullscreenHintVisibleAt = 0;
 let _fullscreenHintRequested = false;
 let _fullscreenHintShownThisFullscreen = false;
 let _fullscreenHintWasFullscreen = !!document.fullscreenElement;
+// The hint turns itself off after this many showings (Settings > Study >
+// "Don't show full-screen reminder" switches on). A showing counts once,
+// when it first appears; a pause behind the update banner doesn't count again.
+const FULLSCREEN_HINT_MAX_SHOWS = 2;
+let _fullscreenHintCounted = false;
 
 function _studySettingNow(key, defaultValue) {
   return (typeof getSetting === 'function')
@@ -3072,7 +3103,7 @@ function _fullscreenHintEligible() {
   if (!document.fullscreenElement) return false;
   if (typeof isQuizTimerActive !== 'function' || !isQuizTimerActive()) return false;
   if (_studySettingNow('fullscreenRandomN', true) !== true) return false;
-  if (_studySettingNow('hideFullscreenReminder', true) === true) return false;
+  if (_studySettingNow('hideFullscreenHint', false) === true) return false;
   if (typeof getSetting === 'function' && getSetting('notifications', 'goSilent') === true) return false;
   return true;
 }
@@ -3129,8 +3160,30 @@ function _hideFullscreenHintVisual() {
   if (banner) { banner.classList.remove('visible', 'hiding'); banner.hidden = true; }
 }
 
+function _countFullscreenHintShow() {
+  if (_fullscreenHintCounted || typeof setSetting !== 'function') return;
+  _fullscreenHintCounted = true;
+  const shows = Number(_studySettingNow('fullscreenHintShows', 0)) || 0;
+  setSetting('study', 'fullscreenHintShows', shows + 1);
+}
+
+// Run when a counted showing ends (faded, tapped, or cut short by leaving
+// full screen). Switching the setting on only then, not when the 2nd showing
+// starts, keeps that showing from being cancelled as no longer eligible if
+// the update banner pauses it.
+function _retireFullscreenHintIfDone() {
+  if (!_fullscreenHintCounted) return;
+  _fullscreenHintCounted = false;
+  if (typeof setSetting !== 'function') return;
+  const shows = Number(_studySettingNow('fullscreenHintShows', 0)) || 0;
+  if (shows >= FULLSCREEN_HINT_MAX_SHOWS && _studySettingNow('hideFullscreenHint', false) !== true) {
+    setSetting('study', 'hideFullscreenHint', true);
+  }
+}
+
 function _completeFullscreenHintFade() {
   if (!_fullscreenHintFading) return;
+  _retireFullscreenHintIfDone();
   _clearFullscreenHintFadeWait();
   _fullscreenHintFading = false;
   _fullscreenHintVisibleAt = 0;
@@ -3184,6 +3237,7 @@ function _showFullscreenHintVisual() {
   banner.hidden = false;
   banner.classList.remove('hiding');
   banner.classList.add('visible');
+  _countFullscreenHintShow();
   _fullscreenHintVisibleAt = performance.now();
   _drawFullscreenHintRing(_fullscreenHintRemaining);
   clearTimeout(_fullscreenHintTimer);
@@ -3191,6 +3245,7 @@ function _showFullscreenHintVisual() {
 }
 
 function _cancelFullscreenHint() {
+  _retireFullscreenHintIfDone();
   clearTimeout(_fullscreenHintTimer);
   _fullscreenHintTimer = null;
   _clearFullscreenHintFadeWait();

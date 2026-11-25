@@ -22,6 +22,7 @@ BEGIN;
 
 create extension if not exists pgcrypto;  -- gen_random_uuid()
 create extension if not exists pg_cron;   -- 020: the daily purge
+create extension if not exists pg_net;    -- 021: flag review retries
 
 
 -- ----------------------------------------------------------------------------
@@ -57,6 +58,7 @@ CREATE TABLE public.forum_messages (
   moderation_status text NOT NULL DEFAULT 'approved'::text,
   flag_status text CHECK (flag_status = ANY (ARRAY['reviewing'::text, 'kept'::text, 'deleted'::text])),
   flag_reason text,
+  flag_review_at timestamp with time zone,  -- 021
   edited_at timestamp with time zone,
   reply_to_id bigint,
   identity_id uuid,
@@ -1210,6 +1212,48 @@ GRANT EXECUTE ON FUNCTION public.purge_due_accounts() TO service_role;
 -- Once a day at 03:17 UTC. A paused database runs it on the first day it is
 -- awake again. Rescheduling under the same name replaces the old entry.
 SELECT cron.schedule('purge-deleted-accounts', '17 3 * * *', 'SELECT public.purge_due_accounts()');
+
+
+-- ----------------------------------------------------------------------------
+-- Flag review retries (021). Needs the vault secrets flag_retry_url and
+-- flag_retry_key, see 021_flag_review_retry.sql.
+-- ----------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.retry_pending_flag_reviews()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+  v_url text;
+  v_key text;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.forum_messages WHERE flag_status = 'reviewing') THEN
+    RETURN;
+  END IF;
+  SELECT decrypted_secret INTO v_url FROM vault.decrypted_secrets WHERE name = 'flag_retry_url';
+  SELECT decrypted_secret INTO v_key FROM vault.decrypted_secrets WHERE name = 'flag_retry_key';
+  IF v_url IS NULL OR v_key IS NULL THEN
+    RETURN;
+  END IF;
+  PERFORM net.http_post(
+    url := v_url,
+    body := jsonb_build_object('retry_pending', true),
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'apikey', v_key,
+      'Authorization', 'Bearer ' || v_key
+    ),
+    timeout_milliseconds := 60000
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.retry_pending_flag_reviews() FROM PUBLIC, anon, authenticated;
+
+-- Every 15 minutes. Rescheduling under the same name replaces the old entry.
+SELECT cron.schedule('retry-flag-reviews', '*/15 * * * *', 'SELECT public.retry_pending_flag_reviews()');
 
 
 -- ----------------------------------------------------------------------------

@@ -3849,6 +3849,14 @@ async function flagForumMessage(messageId, btnEl) {
       btnEl.title = 'Reviewed — kept';
       return;
     }
+    // Gemini didn't answer: the flag stays yellow, and the server retries
+    // the review every 15 minutes (migration 021). The forum poll repaints
+    // the row once a verdict lands.
+    if (data && data.ok && data.result === 'pending') {
+      btnEl.classList.add('forum-flag-btn-reviewing');
+      btnEl.title = 'Being reviewed…';
+      return;
+    }
     if (data && data.ok && data.result === 'deleted') {
       // The deleted-state rendering (italic notice, red flag button) lives
       // in renderForumMessage/renderForumMessageList — refreshing the feed

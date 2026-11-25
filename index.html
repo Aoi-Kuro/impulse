@@ -729,6 +729,10 @@
 <div class="actions">
   <button class="btn btn-primary" id="checkBtn" onclick="checkAll()">Check answers</button>
   <button class="btn btn-secondary" onclick="requestNewQuiz()">New exam ↺</button>
+  <button type="button" class="btn btn-secondary quiz-fs-btn" id="quizFullscreenBtn" onclick="toggleQuizFullscreen()" title="Full screen" aria-label="Full screen" hidden>
+    <svg class="quiz-fs-enter" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
+    <svg class="quiz-fs-exit" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M20 15h-5v5M4 15h5v5"/></svg>
+  </button>
 </div>
 
 <div class="result-panel" id="resultPanel">

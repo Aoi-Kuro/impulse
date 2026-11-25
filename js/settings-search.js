@@ -76,7 +76,7 @@ const SETTINGS_SEARCH_KEYWORDS = {
   resetFilterOnLoad: 'filter, filters, topic filter, number filter, type filter, reset filter, clear filter, forget filter, default filter, remember filter, saved filter, all problems, everything, page load, refresh, reload, topics',
   autoStopAt50Min: '50 minutes, fifty minutes, 50 min, time limit, exam time, auto submit, automatic submit, auto stop, timeout, deadline, end quiz, finish automatically, exam simulation, real exam, timed',
   fullscreenRandomN: 'full screen, fullscreen, immersive, focus, exam mode, hide browser, distraction free, maximize, maximise, kiosk, random n, random 6, big screen',
-  hideFullscreenReminder: 'fullscreen hint, full screen reminder, full screen message, hint, tip, popup, toast, 10 seconds, esc, escape, how to exit full screen, banner, hide reminder',
+  hideFullscreenHint: 'fullscreen hint, full screen reminder, full screen message, hint, tip, popup, toast, 10 seconds, esc, escape, how to exit full screen, banner, hide reminder',
   selectLastUsedQuiz: 'last used quiz, last quiz, previous quiz, recent quiz, remember quiz, remember set, continue, resume, where i left off, latest quiz, current quiz, default quiz, quiz 1, first quiz, start page, selected quiz, preselect, automatically select, last set, newest set, latest set',
   cumulativeDefaultOn: 'cumulative, cumulative quiz, all quizzes, previous quizzes, review all, mixed, combined, single set, default mode, everything so far, final exam, midterm, comprehensive',
   hideTopicWhileActive: 'topic, topics, topic label, hide topic, chapter, category, subject, hint, spoiler, spoilers, give away, blind, exam conditions, label, tag, hide hint',

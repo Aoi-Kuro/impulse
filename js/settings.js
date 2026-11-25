@@ -111,8 +111,13 @@ const SETTINGS_DEFAULTS = {
     // 'ask' | 'ordinary' | 'lockdown': how a Random N attempt starts, set by
     // the choice screen's "Remember" (js/lockdown.js).
     quizStartMode: 'ask',
-    // The 10-second "you're in full screen" banner: hidden unless turned on.
-    hideFullscreenReminder: true,
+    // The 10-second "you're in full screen" banner. Shown by default; after
+    // it has been shown twice (fullscreenHintShows, synced across devices)
+    // it turns itself off (js/quiz-engine.js, _countFullscreenHintShow).
+    // Replaced hideFullscreenReminder (hidden by default), dropped in
+    // migrateSettings so everyone sees the hint again.
+    hideFullscreenHint: false,
+    fullscreenHintShows: 0,
     hideTopicWhileActive: false,
     // The main screen preselects the set last started in Random N or
     // Entire Set (js/quiz-engine.js, _lastUsedQuizNum). Replaced
@@ -214,6 +219,10 @@ function migrateSettings(raw) {
   // choice from the default, and it doesn't carry over (nor does it sync:
   // settings-sync.js skips codes it doesn't know).
   delete merged.display.hideFieldLinesByDefault;
+  // "Don't show full-screen reminder" was on by default (hideFullscreenReminder).
+  // The new key hideFullscreenHint starts off for everyone, so the hint
+  // shows again until it has been seen twice.
+  delete merged.study.hideFullscreenReminder;
   return merged;
 }
 
@@ -1527,7 +1536,7 @@ function renderSettingsStudyTab() {
       <div class="settings-row" data-row-key="fullscreenRandomN">
         <div class="settings-row-label">
           <div class="settings-row-title">Full screen for Random N</div>
-          <div class="settings-row-desc">Enters full screen the moment a Random N attempt starts, and leaves it again the instant your score is revealed.</div>
+          <div class="settings-row-desc">Enters full screen the moment a Random N attempt starts. It stays on after Check answers; the button next to New exam switches it off and on.</div>
         </div>
         <label class="settings-switch">
           <input type="checkbox" ${getSetting('study', 'fullscreenRandomN') === true ? 'checked' : ''}
@@ -1535,14 +1544,14 @@ function renderSettingsStudyTab() {
           <span class="settings-switch-track"></span>
         </label>
       </div>
-      <div class="settings-row settings-row-sub${getSetting('study', 'fullscreenRandomN') === true ? '' : ' settings-row-blocked'}" data-row-key="hideFullscreenReminder">
+      <div class="settings-row settings-row-sub${getSetting('study', 'fullscreenRandomN') === true ? '' : ' settings-row-blocked'}" data-row-key="hideFullscreenHint">
         <div class="settings-row-label">
           <div class="settings-row-title">Don’t show full-screen reminder</div>
-          <div class="settings-row-desc">Hides the 10-second hint that appears at the bottom when a practice exam enters full screen.</div>
+          <div class="settings-row-desc">Hides the 10-second hint that appears at the bottom when a practice exam enters full screen. Turns on by itself after the hint has been shown twice.</div>
         </div>
         <label class="settings-switch">
-          <input type="checkbox" ${getSetting('study', 'hideFullscreenReminder') === true ? 'checked' : ''} ${getSetting('study', 'fullscreenRandomN') === true ? '' : 'disabled'}
-                 onchange="setSetting('study', 'hideFullscreenReminder', this.checked); if (typeof syncFullscreenHintPreference === 'function') syncFullscreenHintPreference();">
+          <input type="checkbox" ${getSetting('study', 'hideFullscreenHint') === true ? 'checked' : ''} ${getSetting('study', 'fullscreenRandomN') === true ? '' : 'disabled'}
+                 onchange="setSetting('study', 'hideFullscreenHint', this.checked); if (!this.checked) setSetting('study', 'fullscreenHintShows', 0); if (typeof syncFullscreenHintPreference === 'function') syncFullscreenHintPreference();">
           <span class="settings-switch-track"></span>
         </label>
       </div>
@@ -1698,7 +1707,7 @@ function renderSettingsStudyTab() {
 // choice, so this just toggles the dimmed look and the two buttons'
 // disabled state.
 function syncFullscreenHintSubBlock(fullscreenOn) {
-  const row = document.querySelector('[data-row-key="hideFullscreenReminder"]');
+  const row = document.querySelector('[data-row-key="hideFullscreenHint"]');
   if (!row) return;
   row.classList.toggle('settings-row-blocked', !fullscreenOn);
   const input = row.querySelector('input[type="checkbox"]');

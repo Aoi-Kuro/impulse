@@ -1578,6 +1578,30 @@
   }
   .btn:hover  { opacity: 0.85; }
   .btn:active { opacity: 0.7; }
+
+  /* Full-screen toggle next to "New exam ↺" (toggleQuizFullscreen in
+     js/quiz-engine.js): an icon-only button as tall as its neighbours. */
+  .quiz-fs-btn {
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.75rem;
+  }
+  .quiz-fs-btn[hidden] { display: none; }
+  .quiz-fs-btn svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .quiz-fs-btn .quiz-fs-exit,
+  .quiz-fs-btn.is-fullscreen .quiz-fs-enter { display: none; }
+  .quiz-fs-btn.is-fullscreen .quiz-fs-exit { display: block; }
+  html.lockdown .quiz-fs-btn { display: none; }
   .btn-primary   { background: var(--accent); color: var(--on-accent, var(--chrome-dark)); font-weight: 600; }
   .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 
