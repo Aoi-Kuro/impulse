@@ -14,7 +14,12 @@
 //     V/m = N/C, eV = J), never through other non-SI units (km/h is not m/s)
 //   - m^(2) and m/s/s are read as m^2 and m/s^2 (courseUnit)
 //   - points: right value and unit 1; right value, wrong, missing or invalid
-//     unit 0.9, as in Moodle; wrong value 0
+//     unit 0.9, as in Moodle; wrong value 0. A unit that can't be used, even
+//     one that can't be read at all ("5 m.", "9500 K3"), never converts: the
+//     number as typed is compared with the stored answer, and a match is 0.9
+//     (Moodle gives 0 when it can't read the unit)
+//   - Cyrillic letters (е, К, м …) are never read as Latin ones; the preview
+//     and the feedback warn about them instead (hasCyrillic)
 //
 // The real qtype_formulas plugin is the reference for all of this. Where the
 // site differs from it on purpose is listed in
@@ -42,7 +47,15 @@ const ANSWER_MESSAGES = {
   'unit-syntax': 'Not a valid unit. Multiply with a space (N m), divide with / (m/s^2).',
   'unit-unknown': 'Unknown unit.',
   'unit-missing': 'Add a unit.',
+  cyrillic: 'You are using Cyrillic letters! Watch out: switch your keyboard to English.',
 };
+
+// A Cyrillic letter that looks like a Latin one ("1.2е5", "300 К") is an easy
+// slip on a Russian or Kazakh keyboard, and the site can't read it.
+const CYRILLIC_LETTER = /[Ѐ-ӿ]/;
+function hasCyrillic(text) {
+  return CYRILLIC_LETTER.test(text || '');
+}
 
 const NO_UNIT = new Set(['', 'none', '(none)']);
 function unitOrNone(u) {
@@ -73,21 +86,6 @@ function courseUnit(unit) {
   return `${parts[0].trim()}/${under.length > 1 ? `(${under.join(' ')})` : under[0]}`;
 }
 
-// Text the plugin's parser can't read at all, so it gives up on the whole
-// answer and the right number earns nothing ("5 m/", "5 m.", "5 m/(s").
-// A unit it can read but not accept ("5 m m") is only a wrong unit.
-function unitUnreadable(unit) {
-  const u = unit.trim();
-  if (/[,;:?\\'"@`]|\.(?!\d)|[-+*/=&|~^<>!]$/.test(u)) return true;
-  const open = [];
-  const pairs = { ')': '(', ']': '[', '}': '{' };
-  for (const c of u) {
-    if ('([{'.includes(c)) open.push(c);
-    else if (pairs[c] && open.pop() !== pairs[c]) return true;
-  }
-  return open.length > 0;
-}
-
 // Every name in the unit is one the engine knows (m, kOhm, eV …).
 function isKnownUnit(unit) {
   const u = PTAnswer.tryParseUnit(unit);
@@ -108,10 +106,31 @@ function splitAnswer(text) {
   const wholeIsNumber = PTAnswer.validateAnswer(s, ANSWER_TYPE).ok;
   if (split.unit && !isKnownUnit(split.unit) && wholeIsNumber) return { value: s, unit: '' };
   if (!split.unit && !wholeIsNumber) {
+    const longest = _longestNumberFirst(s, 0);
+    if (longest) return longest;
     const m = NUMBER_THEN_UNIT.exec(s);
     if (m && PTAnswer.validateAnswer(m[1], ANSWER_TYPE).ok) return { value: m[1].trim(), unit: m[2].trim() };
   }
+  if (split.unit && PTAnswer.tryParseStudentUnit(courseUnit(split.unit)) === null) {
+    return _longestNumberFirst(s, split.value.length) || split;
+  }
   return split;
+}
+
+// With a unit that isn't valid, splitting at the first letter can cut a power
+// of ten off the number: "0.95E4 K3" would be 0.95 and "E4 K3". This keeps the
+// longest start of the text that is a number and is followed by what could
+// begin a unit (a letter, µ ° Ω %, or a bracket): 0.95E4 and K3. "2,5 m" is
+// not 2 and ",5 m". null when there is none longer than `minLength`.
+const UNIT_START = /^[\p{L}µ°Ω%([]/u;
+function _longestNumberFirst(s, minLength) {
+  for (let end = s.length - 1; end > minLength; end--) {
+    const head = s.slice(0, end);
+    if (head !== head.trimEnd()) continue;
+    const rest = s.slice(end).trim();
+    if (UNIT_START.test(rest) && PTAnswer.validateAnswer(head, ANSWER_TYPE).ok) return { value: head.trim(), unit: rest };
+  }
+  return null;
 }
 
 function joinAnswer(value, unit) {
@@ -125,14 +144,15 @@ function answerUnitFactor(student, accepted) {
 }
 
 /** Grades the text of an answer field against problem p.
-    → { pts: 1 | 0.9 | 0, valueOk, unitStatus, value, unit }, where
+    → { pts: 1 | 0.9 | 0, valueOk, unitStatus, value, unit, cyrillic }, where
     unitStatus is 'ok', 'wrong', 'missing' (none typed, one expected) or
-    'invalid' (not a valid unit). A wrong, missing or invalid unit costs 0.1;
-    the number is then taken as typed, not converted. */
+    'invalid' (not a valid unit, even one that can't be read). A wrong,
+    missing or invalid unit costs 0.1; the number is then taken as typed,
+    not converted. cyrillic: the text has a Cyrillic letter (hasCyrillic). */
 function gradeAnswer(text, p) {
   const { value, unit } = splitAnswer(text);
   const read = courseUnit(unit);
-  const out = { pts: 0, valueOk: false, unitStatus: 'ok', value, unit };
+  const out = { pts: 0, valueOk: false, unitStatus: 'ok', value, unit, cyrillic: hasCyrillic(text) };
   const invalid = !!read && PTAnswer.tryParseStudentUnit(read) === null;
   // units[0] first: the stored answer is written in it
   let factor = false;
@@ -147,7 +167,7 @@ function gradeAnswer(text, p) {
     if (factor === false) out.unitStatus = student ? 'wrong' : 'missing';
   }
   const v = PTAnswer.validateAnswer(value, ANSWER_TYPE);
-  if (!v.ok || (invalid && unitUnreadable(unit))) return out;
+  if (!v.ok) return out;
   out.valueOk = PTAnswer.withinTolerance(v.value * (factor === false ? 1 : factor), p.answer, { tolerance: {} });
   out.pts = out.valueOk ? (out.unitStatus === 'ok' ? 1 : 0.9) : 0;
   return out;
@@ -159,9 +179,19 @@ function expectedAnswerText(p) {
   return joinAnswer(fmt(p.answer), u === '(none)' ? '' : u);
 }
 
+// The Cyrillic warning, added under the feedback or notice of an answer that
+// has a Cyrillic letter.
+function _withCyrillicWarning(html, res) {
+  if (!res.cyrillic) return html;
+  return `${html}<span class="answer-cyrillic">⚠ ${ANSWER_MESSAGES.cyrillic}</span>`;
+}
+
 // Feedback line under a checked answer. withExpected: also say what the
 // answer was (Random quiz and review do; the practice modes let you retry).
 function answerFeedbackHtml(res, p, withExpected) {
+  return _withCyrillicWarning(_answerFeedbackLine(res, p, withExpected), res);
+}
+function _answerFeedbackLine(res, p, withExpected) {
   const unit = `<strong>${fmtUnit(p.units)}</strong>`;
   const expected = withExpected ? ` Expected ≈ <strong>${fmt(p.answer)}</strong> ${fmtUnit(p.units)}` : '';
   if (res.pts === 1) return `✓ Correct <span class="pts-badge pts-full">+1 pt</span>`;
@@ -182,6 +212,9 @@ function answerFeedbackHtml(res, p, withExpected) {
 // button shows right or wrong: only what there is to fix, or nothing.
 // `answerSeen`: a card whose answer was revealed earns nothing until solved.
 function answerNoticeHtml(res, p, answerSeen) {
+  return _withCyrillicWarning(_answerNoticeLine(res, p, answerSeen), res);
+}
+function _answerNoticeLine(res, p, answerSeen) {
   const unit = `<strong>${fmtUnit(p.units)}</strong>`;
   if (res.pts === 0.9) {
     const hint = res.unitStatus === 'missing' ? `the unit is missing: ${unit}`
@@ -258,6 +291,7 @@ function _hidePreview() {
 function answerPreview(text) {
   const s = (text || '').trim();
   if (!s) return null;
+  if (hasCyrillic(s)) return { ok: false, error: 'cyrillic' };
   const { value, unit } = splitAnswer(s);
   const read = courseUnit(unit);
   if (!unit && value === s && PTAnswer.validateAnswer(s, ANSWER_TYPE).ok) {

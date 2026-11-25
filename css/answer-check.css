@@ -82,6 +82,16 @@
   margin: 0 !important;
 }
 .answer-preview[hidden] { display: none; }
+
+/* The warning added to a checked answer's feedback when it has Cyrillic
+   letters (js/answer-check.js, _withCyrillicWarning). */
+.answer-cyrillic {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--wrong);
+  font-weight: 600;
+}
+.answer-cyrillic:first-child { margin-top: 0; }
 .answer-preview.error {
   background: color-mix(in srgb, var(--wrong) 10%, var(--surface));
   border-color: color-mix(in srgb, var(--wrong) 55%, var(--border));

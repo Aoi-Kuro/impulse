@@ -27,12 +27,13 @@
 // everyone who already used the site before it, never to first-time
 // visitors (js/splash.js, takeDeployMessage). '' = nothing special. Set or
 // clear it on every deploy; changing only the text shows it again too.
-const DEPLOY_MESSAGE = 'Please be respectful on the forum: insulting other people is not allowed.';
+const DEPLOY_MESSAGE = '';
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 // One entry per version as this course sees it: two entries with the same
 // version only for a major release (X.0.0, a headline plus its details).
 const CHANGELOG = [
+  { version: "14.5.2", note: "Common mistakes for Set 4; a right number with a unit the site can't read now earns 0.9; a warning for Cyrillic letters.", scope: 1 },
   { version: "14.5.1", note: "Updated auto-moderation; UX fixes.", scope: 0 },
   { version: "14.5.0", note: "Accounts can now be deleted by their owners.", scope: 0 },
   { version: "14.4.0", note: "New finish animation; bug fixes.", scope: 0 },

@@ -149,7 +149,14 @@ test('grading rules', () => {
     ['5 s⁻¹', 5, ['s^-1'], 1],
     // the official statement's examples
     ['50 kN m', 50, ['kN m'], 1],
-    ['5 (m)', 5, ['m'], 0],
+    ['5 (m)', 5, ['m'], 0.9], // a unit that can't be read still leaves the number (Moodle: 0)
+    // the longest number before a unit that isn't valid, then the number as typed
+    ['0.95E4 K3', 9500, ['K'], 0.9],
+    ['9500 K.', 9500, ['K'], 0.9],
+    ['9.09e-4 m3', 9.09e-4, ['m^3'], 0.9],
+    ['0.909 L', 9.09e-4, ['m^3'], 0], // no conversion: the number as typed is compared
+    ['2,5 m', 2, ['m'], 0], // a comma is not where a unit starts
+    ['9.09е-4 m^3', 9.09e-4, ['m^3'], 0], // Cyrillic е is not an exponent
     ['5 km', 5, ['m'], 0],
     ['1e-6 km^2', 1, ['m^2'], 1],
     ['67.1495N', 67.1495, ['N'], 1], // no space: current qtype_formulas splits at the unit too
@@ -172,6 +179,8 @@ test('split and join keep what was typed', () => {
     assert.equal(gradeAnswer(t, { answer: 5, units: ['m'] }).unitStatus, 'invalid', t);
   }
   assert.deepEqual({ ...splitAnswer('  ') }, { value: '', unit: '' });
+  assert.deepEqual({ ...splitAnswer('0.95E4 K3') }, { value: '0.95E4', unit: 'K3' });
+  assert.deepEqual({ ...splitAnswer('0.95E4K3') }, { value: '0.95E4', unit: 'K3' });
 });
 
 test('preview text', () => {
@@ -189,6 +198,9 @@ test('preview text', () => {
   assert.match(v('2pi').latex, /2.*\\pi/); // 2π, not 2 of a unit "pi"
   assert.doesNotMatch(v('2pi').latex, /text\{pi\}/);
   assert.match(v('5 hectares').latex, /hectares/); // an unknown unit still splits off
+  assert.equal(v('9.09е-4 m^3').error, 'cyrillic'); // Cyrillic е
+  assert.equal(v('300 К').error, 'cyrillic'); // Cyrillic К
+  assert.equal(v('300 K').ok, true);
 });
 
 // ── against the real plugin ──
@@ -273,4 +285,15 @@ test('points against the old engine', { skip: !process.env.OLD_ENGINE }, () => {
   for (const [key, list] of changes) {
     console.log(`\n${key}: ${list.length} inputs, e.g.\n  ` + list.slice(0, 12).join('\n  '));
   }
+});
+
+test('Cyrillic letters are flagged in the feedback', () => {
+  const p = { answer: 300, units: ['K'] };
+  const fb = site('answerFeedbackHtml');
+  const notice = site('answerNoticeHtml');
+  assert.equal(gradeAnswer('300 К', p).cyrillic, true);
+  assert.equal(gradeAnswer('300 K', p).cyrillic, false);
+  assert.match(fb(gradeAnswer('300 К', p), p, true), /answer-cyrillic.*Cyrillic letters/);
+  assert.match(notice(gradeAnswer('3е2 K', p), p, false), /answer-cyrillic/);
+  assert.doesNotMatch(fb(gradeAnswer('300 K', p), p, true), /Cyrillic/);
 });
