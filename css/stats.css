@@ -109,6 +109,10 @@
 }
 
 /* ── Forum & site stats box ── */
+/* The note under the Forum & Site panel (index.html): the exam screen's
+   info box (css/style.css .filter-info), one line, centred icon. */
+.stats-mode-note { margin-bottom: 1.4rem; align-items: center; }
+.stats-mode-note .filter-info-icon { margin-top: 0; }
 .stats-forum-panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -453,6 +457,22 @@
   margin-bottom: 1.4rem;
   overflow: hidden;
 }
+/* One card for the chart and its filters (index.html): the two keep their
+   own padding, lose their own frames, and a line divides them. */
+.stats-chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(10px * var(--radius-mult));
+  margin-bottom: 1.4rem;
+}
+.stats-chart-card > .stats-chart-wrap,
+.stats-chart-card > .stats-filters {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  margin-bottom: 0;
+}
+.stats-chart-card > .stats-filters { border-top: 1px solid var(--border); }
 #statsChart {
   display: block;
   width: 100%;
@@ -657,6 +677,27 @@
 @keyframes tpEnter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 /* Header: title · quiz switch · legend; wraps on narrow screens. */
 .tp-header { flex-wrap: wrap; gap: 0.6rem 0.9rem; }
+/* The Topics card's own header: the title on the left, the legend and then
+   the set switch at the far right (as in the Problems and Adaptive ML
+   cards). Narrower cards: title and switch, then the legend on a line of
+   its own, decided by the card's width (container query), not its text. */
+.tp-section { container: tp-card / inline-size; }
+.tp-section > .stats-table-header.tp-header:not(.po-header) {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  grid-template-areas: "title . legend switch";
+  align-items: center;
+  justify-content: normal;
+}
+.tp-section > .tp-header:not(.po-header) > .stats-table-title { grid-area: title; }
+.tp-section > .tp-header:not(.po-header) > .tp-legend { grid-area: legend; }
+.tp-section > .tp-header:not(.po-header) > .tp-switch { grid-area: switch; justify-self: end; }
+@container tp-card (max-width: 620px) {
+  .tp-section > .stats-table-header.tp-header:not(.po-header) {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "title switch" "legend legend";
+  }
+}
 /* Sliding quiz switch: equal-width options, and a pill behind them that
    slides to the chosen one (--tp-i of --tp-n) in that quiz's colour. */
 .tp-switch {
@@ -696,7 +737,10 @@
   transition: color 0.2s;
 }
 .tp-switch button:hover { color: var(--text); }
-.tp-switch button[aria-selected="true"] { color: var(--text); font-weight: 600; }
+/* The chosen set is the pill and the brighter label; the weight stays the
+   same, since a bolder label made the switch a hair wider for some sets and
+   moved what sits beside it. */
+.tp-switch button[aria-selected="true"] { color: var(--text); }
 @media (prefers-reduced-motion: reduce) {
   .tp-switch-pill { transition: none; }
   .tp-group.tp-enter { animation: none; }
@@ -891,9 +935,157 @@ body.light .tp-section, body.light .attempt-topics-panel { --tp-ci-color: #000; 
   flex-wrap: wrap;
   row-gap: 0.5rem;
 }
+/* The Problems card's header (js/stats.js renderProblemsOverview): a fixed
+   grid, not a wrapping row, so switching sets never moves anything (a
+   wrapping row moved the toggle or the count between lines as the count's
+   text changed width). One line on a wide card; on a narrower one always
+   two: title and set switch, then Last/Best and the count. Decided by the
+   card's own width (container query), never by its text. */
+.problems-overview-section { container: po-card / inline-size; }
+/* .stats-table-header.po-header: the plain card header (display: flex) comes
+   later in this file, so it needs the extra class to lose to the grid. */
+.stats-table-header.po-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  grid-template-areas: "title . mode count switch";
+  align-items: center;
+  justify-content: normal; /* not the plain header's space-between */
+  gap: 0.6rem 0.9rem;
+}
+/* Every set's count stacked in one cell, only the chosen one shown: the
+   cell is as wide as the widest, so the toggle beside it never moves. */
+.po-count { display: inline-grid; justify-items: end; }
+.po-count > span { grid-area: 1 / 1; visibility: hidden; }
+.po-count > span.on { visibility: visible; }
+.po-header > .stats-table-title { grid-area: title; }
+.po-header > .tp-switch { grid-area: switch; justify-self: end; }
+.po-header > .po-mode-switch-row { grid-area: mode; justify-self: end; white-space: nowrap; }
+.po-header > .stats-table-count { grid-area: count; justify-self: end; white-space: nowrap; }
+/* Narrower: always two lines, each sized by its own contents: title and
+   switch, a forced break (::after), then Last/Best and the count. */
+@container po-card (max-width: 700px) {
+  .stats-table-header.po-header { display: flex; flex-wrap: wrap; }
+  .stats-table-header.po-header::after { content: ""; flex-basis: 100%; height: 0; order: 2; }
+  .po-header > .stats-table-title, .po-header > .tp-switch { order: 1; }
+  .po-header > .tp-switch { margin-left: auto; }
+  .po-header > .po-mode-switch-row, .po-header > .stats-table-count { order: 3; }
+  .po-header > .stats-table-count { margin-left: auto; }
+}
+/* A phone: the same two lines, with the count shortened to "34/150" so it
+   still fits beside Last/Best. */
+@container po-card (max-width: 330px) {
+  .po-count-word { display: none; }
+}
 .problems-overview-body {
   padding: 1rem 1.2rem 1.2rem;
 }
+
+/* Adaptive ML card under Problems (js/stats.js renderAdaptiveMap): one
+   set's chance map at a time (js/adaptive.js adaptiveProblemMapHtml): legend with each group's share, one split bar,
+   then a row of squares per topic. Five groups from the theme's own
+   colours: wrong for hard, a neutral middle, accent for very likely. */
+.am-section { margin-top: 1.4rem; }
+.am-body { padding: 1rem 1.2rem 1.2rem; }
+.am {
+  --am-n: color-mix(in oklab, var(--text) 10%, var(--surface));
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.am-b0 { background: var(--wrong); }
+.am-b1 { background: color-mix(in oklab, var(--wrong) 45%, var(--am-n)); }
+.am-b2 { background: var(--am-n); }
+.am-b3 { background: color-mix(in oklab, var(--accent) 45%, var(--am-n)); }
+.am-b4 { background: var(--accent); }
+.am-key { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 3px; position: relative; flex-shrink: 0; }
+/* The key (js/adaptive.js adaptiveProblemMapHtml) comes twice and the card's
+   width picks one: wide, a column beside the map (groups top to bottom with
+   a vertical share bar, Solved / Missed at its foot); narrow, five tiles
+   above the map with Solved / Missed under it. */
+.am { container: am / inline-size; }
+.am-main { display: grid; grid-template-columns: minmax(0, 1fr) 10.5rem; gap: 1.4rem; }
+.am-side { display: flex; gap: 0.7rem; border-left: 1px solid var(--border); padding-left: 1.2rem; }
+.am-vbar { display: flex; flex-direction: column-reverse; gap: 2px; width: 0.55rem; border-radius: 99px; overflow: hidden; }
+.am-vbar span { min-height: 3px; }
+.am-side-list { flex: 1; display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.76rem; color: var(--muted); }
+.am-side-item { display: flex; align-items: center; gap: 0.45rem; }
+.am-side-item b { margin-left: auto; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.am-side-marks { margin-top: auto; padding-top: 0.6rem; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 0.45rem; }
+.am-side-marks span, .am-foot-marks span { display: inline-flex; align-items: center; gap: 0.45rem; }
+.am-tiles, .am-foot-marks { display: none; }
+.am-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.4rem; padding-bottom: 0.9rem; border-bottom: 1px solid var(--border); }
+.am-tile { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem;
+  background: var(--bg); border: 1px solid var(--border); border-radius: calc(8px * var(--radius-mult)); padding: 0.55rem 0.55rem 0.6rem; }
+/* The colour as a short strip on top, then the share, then the name. */
+.am-tile .am-key { width: 1.3rem; height: 0.3rem; border-radius: 99px; margin-bottom: 0.25rem; }
+.am-tile b { font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.am-tile span { font-size: 0.68rem; line-height: 1.25; color: var(--muted); }
+.am-foot-marks { justify-content: flex-end; gap: 1rem; font-size: 0.72rem; color: var(--muted); padding-top: 0.8rem; border-top: 1px solid var(--border); }
+/* The figures under the map, below a line: a ring each, value and name
+   beside it (js/adaptive.js adaptiveProblemMapHtml). */
+.am-stats { display: flex; flex-wrap: wrap; gap: 0.9rem 2.6rem; padding-top: 0.9rem; border-top: 1px solid var(--border); }
+.am-stat { display: flex; align-items: center; gap: 0.7rem; }
+.am-stat > div { display: flex; flex-direction: column; gap: 0.1rem; }
+.am-stat b { font-size: 1.15rem; font-weight: 600; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
+.am-stat small { font-size: 0.8rem; font-weight: 500; color: var(--muted); margin-left: 0.05rem; }
+.am-stat span { font-size: 0.72rem; color: var(--muted); }
+.am-ring { width: 2.3rem; height: 2.3rem; flex-shrink: 0; }
+.am-ring-bg { fill: none; stroke: color-mix(in oklab, var(--text) 10%, var(--surface)); stroke-width: 5; }
+.am-ring-fg { fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; }
+@container am (max-width: 640px) {
+  .am-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; }
+  .am-stat { min-width: 0; }
+  .am-stat span { line-height: 1.25; }
+  .am-main { grid-template-columns: minmax(0, 1fr); }
+  .am-side { display: none; }
+  .am-tiles { display: grid; }
+  .am-foot-marks { display: flex; }
+}
+.am-rows { display: flex; flex-direction: column; gap: 0.45rem; }
+.am-row { display: grid; grid-template-columns: 13rem minmax(0, 1fr); gap: 0.8rem; align-items: center; }
+.am-name { font-size: 0.8rem; line-height: 1.25; }
+.am-cells { display: flex; flex-wrap: wrap; gap: 3px; }
+.am-cell { width: 16px; height: 16px; border-radius: 4px; position: relative; cursor: default; }
+.am-solved::after, .am-mark-solved::after {
+  content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--text); opacity: 0.85;
+}
+.am-missed::after, .am-mark-missed::after {
+  content: ""; position: absolute; inset: 3px; border-radius: 50%; border: 2px solid var(--text); opacity: 0.85;
+}
+.am-mark-solved, .am-mark-missed { background: var(--am-n); }
+.am-mark-solved::after { inset: 4px; }
+.am-mark-missed::after { inset: 2px; }
+@media (max-width: 560px) {
+  .am-row { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
+}
+/* Hover box of a square (js/adaptive.js _adaptiveMapTipShow): the score
+   chart's tooltip look, fixed to the pointer. */
+.am-tip {
+  /* The box sits outside .am (on body), so it needs the neutral too. */
+  --am-n: color-mix(in oklab, var(--text) 10%, var(--surface));
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  min-width: 11rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: calc(6px * var(--radius-mult));
+  padding: 0.5rem 0.7rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.am-tip.visible { opacity: 1; }
+.am-tip-head { white-space: nowrap; }
+.am-tip-head b { font-weight: 700; }
+.am-tip-group { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); margin-bottom: 0.25rem; }
+.am-tip-row { display: flex; justify-content: space-between; gap: 1.2rem; }
+.am-tip-row span { color: var(--muted); }
+.am-tip-row b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.am-tip-status { margin-top: 0.25rem; color: var(--muted); font-size: 0.72rem; }
 /* Locked (not-yet-available) quiz card — same muted, centered treatment as
    .stats-empty, just sized for a card body rather than the full table. */
 .problems-overview-locked {
@@ -902,13 +1094,6 @@ body.light .tp-section, body.light .attempt-topics-panel { --tp-ci-color: #000; 
   font-family: var(--mono);
   font-size: 0.8rem;
   color: var(--muted);
-}
-.problems-overview-footnote {
-  margin-top: 0.9rem;
-  font-family: var(--mono);
-  font-size: 0.66rem;
-  color: var(--muted);
-  text-align: center;
 }
 .problems-overview-legend {
   display: flex;

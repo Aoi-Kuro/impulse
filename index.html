@@ -705,6 +705,8 @@
     <div class="modal-choices" style="margin-bottom:1.5rem;">
       <button class="modal-choice-btn" onclick="startSolveAll('ordered')">In order<br><span class="order-choice-sub">(1, 2, 3...)</span></button>
       <button class="modal-choice-btn" onclick="startSolveAll('unordered')">Random order<br><span class="order-choice-sub" id="randomOrderSample">(32, 6, 102...)</span></button>
+      <!-- Shown only for a set with a trained model (openSolveAllModal, js/adaptive.js). -->
+      <button class="modal-choice-btn" id="adaptiveOrderBtn" style="display:none;" onclick="startSolveAll('adaptive')">Adaptive ML<br><span class="order-choice-sub">(picked for you)</span></button>
     </div>
     <!-- Builds a PDF of the set instead (js/pdf-export.js). -->
     <div class="modal-choices" style="margin-top:-0.7rem;margin-bottom:1.5rem;">
@@ -723,6 +725,34 @@
   <div class="solve-all-tag">Exam Try</div>
   <div class="filter-active-note" id="filterActiveNote" style="display:none;">Filter is active: this draw is pulling from a narrowed problem pool</div>
 </header>
+
+<!-- Problem pool filter, at the top of the practice exam: a bar that says
+     what is chosen and opens the filter (toggleFilterPanel, js/quiz-engine.js).
+     The reset button lives OUTSIDE #topicSelector: initTopics() does
+     `topicSelector.innerHTML = ''` on every rebuild (topic/number toggle,
+     quiz switch, etc.), which was wiping out the reset button since it used
+     to live inside that same element. Living here instead, it now survives
+     every rebuild. -->
+<div class="topic-selector-wrap collapsed" id="topicSelectorWrap">
+  <button type="button" class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filterBody" onclick="toggleFilterPanel()">
+    <svg class="filter-toggle-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+    <span class="filter-toggle-title">Problem pool filter</span>
+    <span class="filter-toggle-state" id="filterToggleState">No filter</span>
+  </button>
+  <!-- .filter-body-inner is what folds away (css/style.css): the body's one
+       grid row eases between full height and none. -->
+  <div class="filter-body" id="filterBody">
+    <div class="filter-body-inner">
+      <button class="filter-reset-btn" id="filterResetBtn" onclick="handleResetClick()" title="Reset all filter preferences">
+        <svg class="reset-confirm-ring" viewBox="0 0 100 32" preserveAspectRatio="none"><rect x="1.5" y="1.5" rx="7"></rect></svg>
+        <span class="filter-reset-label">↺ Reset</span>
+      </button>
+      <div class="topic-selector" id="topicSelector">
+        <div class="topic-selector-header">Problem Pool Filter</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <main id="quizContainer"></main>
 
@@ -759,20 +789,6 @@
   <div id="attemptTopicsList"></div>
 </div>
 
-<!-- Wrapper holds the reset button OUTSIDE #topicSelector: initTopics() does
-     `topicSelector.innerHTML = ''` on every rebuild (topic/number toggle,
-     quiz switch, etc.), which was wiping out the reset button since it used
-     to live inside that same element. Living here instead, it now survives
-     every rebuild. -->
-<div class="topic-selector-wrap" id="topicSelectorWrap">
-  <button class="filter-reset-btn" id="filterResetBtn" onclick="handleResetClick()" title="Reset all filter preferences">
-    <svg class="reset-confirm-ring" viewBox="0 0 100 32" preserveAspectRatio="none"><rect x="1.5" y="1.5" rx="7"></rect></svg>
-    <span class="filter-reset-label">↺ Reset</span>
-  </button>
-  <div class="topic-selector" id="topicSelector">
-    <div class="topic-selector-header">Problem Pool Filter</div>
-  </div>
-</div>
 
 <!-- ── Solve-all mode ── -->
 <div id="solveAllMode">
@@ -911,31 +927,45 @@
         </div>
       </div>
     </div>
-    <div class="stats-chart-wrap">
-      <!-- The quizzes' colours, inside the chart's box (renderLegend in
-           js/stats.js); hidden with the canvas while nothing is plotted. -->
-      <div class="stats-legend" id="statsLegend"></div>
-      <!-- Shown instead of the chart while nothing is plotted (drawChart in
-           js/stats.js), in the Attempt log's empty style. -->
-      <div class="stats-empty stats-chart-empty" id="statsChartEmpty" hidden>
-        <div class="stats-empty-icon">📈</div>
-        <div>It takes at least two dots to make a line, go and create them!</div>
-      </div>
-      <canvas id="statsChart"></canvas>
-      <div class="chart-tooltip" id="chartTooltip"></div>
+    <!-- Everything under the Forum & Site panel comes from Random N attempts
+         only; one note says so here instead of a footnote on each card. -->
+    <div class="filter-info stats-mode-note" role="note">
+      <svg class="filter-info-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10.8v5.7"/><circle cx="12" cy="7.6" r="1.05" fill="currentColor" stroke="none"/></svg>
+      <div class="filter-info-body"><div class="filter-info-line">The stats below count practice exams (Random mode) only. Entire Set attempts are not included.</div></div>
     </div>
-    <div class="stats-filters" id="statsFilters"></div>
+    <!-- The chart and its Set / Mode filters: one card (css/stats.css
+         .stats-chart-card), the filters under a divider. -->
+    <div class="stats-chart-card">
+      <div class="stats-chart-wrap">
+        <!-- The quizzes' colours, inside the chart's box (renderLegend in
+             js/stats.js); hidden with the canvas while nothing is plotted. -->
+        <div class="stats-legend" id="statsLegend"></div>
+        <!-- Shown instead of the chart while nothing is plotted (drawChart in
+             js/stats.js), in the Attempt log's empty style. -->
+        <div class="stats-empty stats-chart-empty" id="statsChartEmpty" hidden>
+          <div class="stats-empty-icon">📈</div>
+          <div>It takes at least two dots to make a line, go and create them!</div>
+        </div>
+        <canvas id="statsChart"></canvas>
+        <div class="chart-tooltip" id="chartTooltip"></div>
+      </div>
+      <div class="stats-filters" id="statsFilters"></div>
+    </div>
     <div id="statsTableWrap"></div>
-    <!-- ── Topic performance: every topic of every available quiz, each with
-         an average bar (all answers) and a best bar (each problem's best).
-         Rendered by renderTopicPerformance() in js/stats.js. -->
-    <div id="statsTopicsWrap"></div>
+    <!-- ── Adaptive ML: the chance of each problem of a set for this student,
+         a row per topic. Rendered by renderAdaptiveMap() in js/stats.js;
+         empty for a course without a model. -->
+    <div id="statsAdaptiveMapWrap"></div>
     <!-- ── All-problems overview: every problem in the pool as a score-box
          pill (same component as the result breakdown / "Last attempts"
          panel / review screen), colored by that problem's LATEST recorded
          score across all attempt history. Rendered by
          renderProblemsOverview() in js/stats.js. -->
     <div id="statsProblemsOverviewWrap"></div>
+    <!-- ── Topic performance: every topic of every available quiz, each with
+         an average bar (all answers) and a best bar (each problem's best).
+         Rendered by renderTopicPerformance() in js/stats.js. -->
+    <div id="statsTopicsWrap"></div>
   </div>
 </div>
 
@@ -1640,6 +1670,8 @@
 <script src="course/quizzes/quiz4.js"></script>
 <script src="course/quizzes/quiz4-mistakes.js"></script>
 <script src="course/quizzes/handouts.js"></script>
+<!-- Adaptive ML: the trained model (null for a course without one). -->
+<script src="course/adaptive-model.js"></script>
 
 <!-- ── Changelog data ── -->
 <script src="js/data/changelog.js"></script>
@@ -1662,6 +1694,8 @@
 <script src="js/stats-export.js"></script>
 <script src="js/attempts-sync.js"></script>
 <script src="js/solve-all-sync.js"></script>
+<!-- Adaptive ML picks: reads Stats attempts, used by quiz-engine. -->
+<script src="js/adaptive.js"></script>
 
 <!-- ── Persistent MathJax render cache (must load before quiz-engine) ── -->
 <script src="js/math-cache.js"></script>

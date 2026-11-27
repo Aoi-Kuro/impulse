@@ -179,24 +179,71 @@ function _buildMistakePanel(btn) {
   return panel;
 }
 
-// The list is typeset before its first opening, so it opens at its real
-// height and the maths doesn't arrive halfway through the animation.
-async function toggleMistakes(btn) {
-  if (btn.dataset.typesetting) return;
+// The card's list, built and typeset (hidden) once, so it opens at its real
+// height and the maths doesn't arrive halfway through the animation. The
+// typesetting is what makes a first opening slow (100-170 ms against 3-4
+// ms after), so it is done ahead of the tap where it can be
+// (prepareMistakePanels, and the hover / focus / touch start below).
+// Resolves to the panel; the same promise for every caller.
+function _ensureMistakePanel(btn) {
   const row = btn.closest('.card-check-row');
-  const card = row.closest('.problem-card');
-  let panel = row.nextElementSibling;
-  if (!panel || !panel.classList.contains('mistake-panel')) {
-    btn.dataset.typesetting = '1';
-    panel = _buildMistakePanel(btn);
+  const next = row && row.nextElementSibling;
+  // A list that has left the page since (nothing removes one today) is built again.
+  if (btn._mistakePanelEl && !btn._mistakePanelEl.isConnected) { btn._mistakePanel = null; btn._mistakePanelEl = null; }
+  if (next && next.classList.contains('mistake-panel') && !btn._mistakePanel) return Promise.resolve(next);
+  if (!btn._mistakePanel) {
+    const card = row.closest('.problem-card');
+    const panel = _buildMistakePanel(btn);
+    btn._mistakePanelEl = panel;
     panel.classList.add('mistake-panel-typesetting');
     row.after(panel);
     _markMistakeRow(card, card.dataset.mistakeRow);
-    await _typesetMistake(panel);
-    panel.classList.remove('mistake-panel-typesetting');
-    delete btn.dataset.typesetting;
+    btn._mistakePanel = _typesetMistake(panel).then(() => {
+      panel.classList.remove('mistake-panel-typesetting');
+      return panel;
+    });
   }
-  const open = !panel.classList.contains('open');
-  btn.setAttribute('aria-expanded', String(open));
-  smoothCardChange(card, () => panel.classList.toggle('open', open));
+  return btn._mistakePanel;
 }
+
+async function toggleMistakes(btn) {
+  if (btn.dataset.opening) return; // a second tap while the first is still waiting
+  btn.dataset.opening = '1';
+  try {
+    const panel = await _ensureMistakePanel(btn);
+    const card = panel.closest('.problem-card');
+    if (!card) return;
+    const open = !panel.classList.contains('open');
+    btn.setAttribute('aria-expanded', String(open));
+    smoothCardChange(card, () => panel.classList.toggle('open', open));
+  } finally {
+    delete btn.dataset.opening;
+  }
+}
+
+// Gets the lists of these buttons ready while the page is idle, one at a
+// time, so a tap never waits behind more than the one in progress. Called
+// once a practice exam is checked (quiz-engine.js checkAll).
+function prepareMistakePanels(buttons) {
+  const queue = [...buttons].filter((b) => !b._mistakePanel);
+  const idle = window.requestIdleCallback
+    ? (fn) => requestIdleCallback(fn, { timeout: 1500 })
+    : (fn) => setTimeout(fn, 200);
+  const step = () => {
+    const btn = queue.shift();
+    if (!btn) return;
+    if (!btn.isConnected || btn._mistakePanel || getMistakesMode() === 'off') { step(); return; }
+    _ensureMistakePanel(btn).then(() => idle(step), () => idle(step));
+  };
+  idle(step);
+}
+
+// Pointing at the button, focusing it or starting a touch on it starts the
+// typesetting, which usually finishes before the tap ends (Solve them all,
+// where getting all 150 cards ready up front would be wasteful).
+['pointerover', 'pointerdown', 'focusin'].forEach((type) => {
+  document.addEventListener(type, (e) => {
+    const btn = e.target && e.target.closest && e.target.closest('.mistake-btn');
+    if (btn && !btn._mistakePanel && btn.closest('.card-check-row')) _ensureMistakePanel(btn);
+  }, { passive: true });
+});

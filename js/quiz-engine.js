@@ -144,10 +144,23 @@ function _problemAttemptStatus(p, quizNum) {
   return rec.points === 1 ? 'correct' : rec.points === 0.9 ? 'partial' : 'wrong';
 }
 
-// Whether problem p passes quizIdx's active filter.
+// Whether quizIdx's filter block offers the "Adaptive ML" tab (js/adaptive.js):
+// a single-set draw, of a set this course has a trained model for.
+function _adaptiveTabAllowed(quizIdx) {
+  return typeof adaptiveAvailable === 'function' && adaptiveAvailable(quizIdx + 1)
+    && !(selectedCumulativeMode === 'cumulative' && selectedQuizNum >= 2);
+}
+
+// True when the next Random N draw is picked by Adaptive ML.
+function _adaptiveDrawActive() {
+  return _adaptiveTabAllowed(selectedQuizNum - 1) && cumulativeFilterMode[selectedQuizNum - 1] === 'adaptive';
+}
+
+// Whether problem p passes quizIdx's active filter. Adaptive ML passes
+// everything: it picks from the whole set itself (newQuiz).
 function problemPassesFilter(p, quizIdx) {
   const mode = cumulativeFilterMode[quizIdx] || 'topic';
-  if (mode === 'none') return true;
+  if (mode === 'none' || mode === 'adaptive') return true;
   if (mode === 'number') {
     const nf = cumulativeNumFilter[quizIdx];
     if (!nf) return true;
@@ -249,7 +262,8 @@ function _disarmResetConfirm(btn) {
 function doResetFilterPreferences() {
   Object.keys(localStorage).forEach(k => {
     if (k.startsWith(STORAGE_PREFIX + '_topics_q') || k.startsWith(STORAGE_PREFIX + '_filtermode_q') ||
-        k.startsWith(STORAGE_PREFIX + '_numfilter_q') || k.startsWith(STORAGE_PREFIX + '_typefilter_q')) {
+        k.startsWith(STORAGE_PREFIX + '_numfilter_q') || k.startsWith(STORAGE_PREFIX + '_typefilter_q') ||
+        k.startsWith(STORAGE_PREFIX + '_adaptivegoal_q')) {
       localStorage.removeItem(k);
     }
   });
@@ -295,8 +309,18 @@ function _animateHeightChange(el, mutateFn) {
   if (!el) { mutateFn(); return; }
   const startH = el.getBoundingClientRect().height;
   mutateFn();
-  const endH = el.scrollHeight;
-  if (Math.abs(endH - startH) < 1) return; // nothing worth animating
+  // The natural height of the new content: its layout box, measured with no
+  // height of our own left on it (a switch made mid-animation). Not
+  // scrollHeight, which also counts a child's transform, such as the
+  // fade-in's translateY on a newly shown Stats group, and ended the
+  // animation a few px too tall, so everything below snapped back.
+  el.style.transition = '';
+  el.style.height = '';
+  const endH = el.getBoundingClientRect().height;
+  if (Math.abs(endH - startH) < 1) {
+    el.style.overflow = '';
+    return; // nothing worth animating
+  }
   el.style.overflow = 'hidden';
   el.style.height = startH + 'px';
   void el.offsetHeight; // force reflow so the next assignment transitions
@@ -323,6 +347,11 @@ function renderFilterConfigArea(quizIdx, area) {
   const mode = cumulativeFilterMode[quizIdx] || 'topic';
   area.innerHTML = '';
   if (mode === 'none') return;
+
+  if (mode === 'adaptive') {
+    if (typeof adaptiveRenderConfig === 'function') adaptiveRenderConfig(quizIdx, area);
+    return;
+  }
 
   if (mode === 'topic') {
     const { allTopics } = loadTopicsForQuiz(quizIdx);
@@ -447,7 +476,11 @@ function buildQuizTopicBlock(container, quizIdx, label) {
   // this same key) is "No filter", not "Topic": resetting should hand back
   // the full, unfiltered pool rather than silently re-opting into one
   // particular filter type.
-  const mode = ['none', 'topic', 'number', 'type'].includes(savedMode) ? savedMode : 'none';
+  // 'adaptive' only where that tab exists: a saved choice from a single-set
+  // draw falls back to "No filter" in a multi-set one (they share this key).
+  const adaptiveOk = _adaptiveTabAllowed(quizIdx);
+  const mode = ['none', 'topic', 'number', 'type'].includes(savedMode) || (adaptiveOk && savedMode === 'adaptive')
+    ? savedMode : 'none';
   let numMeta;
   try { numMeta = JSON.parse(localStorage.getItem(numKey)); } catch(e) {}
   if (!numMeta || typeof numMeta !== 'object') numMeta = { incexc: 'include', ranges: '' };
@@ -455,19 +488,25 @@ function buildQuizTopicBlock(container, quizIdx, label) {
   cumulativeFilterMode[quizIdx] = mode;
   cumulativeNumFilter[quizIdx]  = { incexc: numMeta.incexc, ranges: parseNumRanges(numMeta.ranges), rangesRaw: numMeta.ranges || '' };
 
-  const header = document.createElement('div');
-  header.className = 'topic-selector-header';
-  header.textContent = label;
-  container.appendChild(header);
+  // No heading when there is only one set's filter (label null): the exam's
+  // title already names the set.
+  if (label) {
+    const header = document.createElement('div');
+    header.className = 'topic-selector-header';
+    header.textContent = label;
+    container.appendChild(header);
+  }
 
-  // ── Filter-type tabs: No filter / Topic / Number / Type ──
+  // ── Filter-type tabs: No filter / Topic / Number / Type (/ Adaptive ML) ──
   const tabsRow = document.createElement('div');
   tabsRow.className = 'filter-type-tabs';
+  tabsRow.dataset.quizIdx = quizIdx; // _syncFilterPending finds this set's tabs by it
   tabsRow.innerHTML = [
     { key: 'none',   label: 'No filter' },
     { key: 'topic',  label: 'Topic' },
     { key: 'number', label: 'Number' },
     { key: 'type',   label: 'Type' },
+    ...(adaptiveOk ? [{ key: 'adaptive', label: 'Adaptive ML' }] : []),
   ].map(t => `<button type="button" class="filter-type-tab${mode === t.key ? ' active' : ''}" data-mode="${t.key}">${t.label}</button>`).join('');
   container.appendChild(tabsRow);
   tabsRow.querySelectorAll('.filter-type-tab').forEach(btn => {
@@ -484,6 +523,11 @@ function buildQuizTopicBlock(container, quizIdx, label) {
 
 function initTopics() {
   const container = document.getElementById("topicSelector");
+  // The Reset button sits in the bottom row of this box, which is rebuilt
+  // below: taken out first and put back, the same element survives with its
+  // "Sure?" confirmation state.
+  const resetBtn = document.getElementById('filterResetBtn');
+  if (resetBtn) resetBtn.remove();
   container.innerHTML = '';
   cumulativeTopics = {};
   cumulativeFilterMode = {};
@@ -500,9 +544,22 @@ function initTopics() {
     // keys) as this quiz number's slot in cumulative mode, via the same
     // quizIdx = selectedQuizNum - 1. Every filter type here (No filter/
     // Topic/Number/Type) therefore already applies identically whichever
-    // mode the quiz itself is drawn in.
-    buildQuizTopicBlock(container, selectedQuizNum - 1, 'Problem Pool Filter');
+    // mode the quiz itself is drawn in. No heading: the bar above says
+    // "Problem pool filter" and the exam's title names the set.
+    buildQuizTopicBlock(container, selectedQuizNum - 1, null);
   }
+  // The bottom row of the box: Reset and one Apply button for the whole
+  // panel, on the right (filter changes only take effect on a new draw;
+  // Apply pulses while there is one to make, _syncFilterPending).
+  const applyRow = document.createElement('div');
+  applyRow.className = 'filter-apply-row';
+  applyRow.innerHTML = '<div class="filter-apply-actions">'
+    + '<button type="button" class="btn filter-apply-btn" id="filterApplyBtn" onclick="applyFilter()" disabled>Apply filter ↺</button>'
+    + '</div>';
+  if (resetBtn) applyRow.querySelector('#filterApplyBtn').before(resetBtn);
+  container.appendChild(applyRow);
+  _restoreFilterPanelOpen();
+  updateFilterActiveNote();
 }
 
 function pickRandom(arr, n) {
@@ -551,10 +608,280 @@ function _filterNarrowsCurrentPool() {
   });
 }
 
+// Whether the draw on screen came from Adaptive ML (set in newQuiz).
+let _lastDrawAdaptive = false;
+// After an Adaptive ML attempt is checked: the next draw, already picked by
+// the score panel's forecast (_renderAdaptiveForecast), for newQuiz to use.
+let _adaptivePlan = null;
+// Set by checkAll when the forecast is still to be shown for this attempt.
+let _adaptiveForecastDue = false;
+
+// ── Filter changes apply on the next draw ──
+// What each set's filter does, as text, per set of the draw. Settings that
+// change nothing count as no filter (every topic or type ticked, or none;
+// no numbers typed), so they are not shown as waiting to be applied.
+function _filterSignatures() {
+  const cumulative = selectedCumulativeMode === 'cumulative' && selectedQuizNum >= 2;
+  const indices = cumulative ? Array.from({ length: selectedQuizNum }, (_, i) => i) : [selectedQuizNum - 1];
+  return indices.map(i => {
+    const mode = cumulativeFilterMode[i] || 'none';
+    if (mode === 'adaptive') return _adaptiveTabAllowed(i) ? 'adaptive:' + getAdaptiveGoal(i + 1) : 'none';
+    if (mode === 'topic') {
+      const all = new Set(QUIZZES[i].problems.map(p => p.topic));
+      const sel = [...(cumulativeTopics[i] || [])].filter(t => all.has(t)).sort();
+      return sel.length === 0 || sel.length === all.size ? 'none' : 'topic:' + sel.join('|');
+    }
+    if (mode === 'number') {
+      const nf = cumulativeNumFilter[i] || {};
+      const r = [...(nf.ranges || [])].sort((a, b) => a - b);
+      return r.length ? `number:${nf.incexc}:${r.join(',')}` : 'none';
+    }
+    if (mode === 'type') {
+      const sel = [...(cumulativeTypeFilter[i] || [])].sort();
+      return sel.length === 0 || sel.length === FILTER_TYPE_STATUS_OPTIONS.length ? 'none' : 'type:' + sel.join(',');
+    }
+    return 'none';
+  });
+}
+
+// The signatures the exam on screen was drawn with (newQuiz), or null before
+// the first draw.
+let _drawFilterSigs = null;
+
+// Per set of the draw: true where the panel's settings differ from the draw's.
+function _filterPendingSets() {
+  const now = _filterSignatures();
+  if (!_drawFilterSigs || _drawFilterSigs.length !== now.length) return now.map(() => false);
+  return now.map((s, k) => s !== _drawFilterSigs[k]);
+}
+function _filterPending() { return _filterPendingSets().some(Boolean); }
+
+// The selected tab of each changed set pulses; the Apply button wakes up.
+function _syncFilterPending() {
+  const pendingSets = _filterPendingSets();
+  const cumulative = selectedCumulativeMode === 'cumulative' && selectedQuizNum >= 2;
+  document.querySelectorAll('#topicSelector .filter-type-tabs').forEach(row => {
+    const idx = Number(row.dataset.quizIdx);
+    const k = cumulative ? idx : 0;
+    row.querySelectorAll('.filter-type-tab').forEach(tab => {
+      tab.classList.toggle('pending', !!pendingSets[k] && tab.classList.contains('active'));
+    });
+  });
+  const pending = pendingSets.some(Boolean);
+  const btn = document.getElementById('filterApplyBtn');
+  if (btn) btn.disabled = !pending;
+}
+
+// What the info box above the cards says about the active filter, as
+// { title, lines }, or null when no filter narrows the draw. Adaptive ML
+// describes its draw (js/adaptive.js); Topic / Number / Type say what they
+// keep, per set, and how many problems that leaves.
+function _filterInfo() {
+  if (_filterPending()) {
+    return { title: 'Filter changed: not applied yet', lines: ['Press Apply filter ↺ to draw a new exam with it.'] };
+  }
+  if (_adaptiveDrawActive()) {
+    const n = _lastDrawAdaptive && typeof adaptiveNote === 'function' ? adaptiveNote() : null;
+    if (!n) return { title: 'Adaptive ML', lines: ['Your next draw (New exam) is picked for you.'] };
+    return { title: `Adaptive ML | ${n.goal}`, lines: [n.text, n.mix].filter(Boolean), extra: n.extra };
+  }
+  const cumulative = selectedCumulativeMode === 'cumulative' && selectedQuizNum >= 2;
+  const indices = cumulative ? Array.from({ length: selectedQuizNum }, (_, i) => i) : [selectedQuizNum - 1];
+  const lines = [];
+  indices.forEach(i => {
+    const problems = QUIZZES[i].problems;
+    const kept = problems.filter(p => problemPassesFilter(p, i)).length;
+    if (kept >= problems.length) return;
+    const mode = cumulativeFilterMode[i] || 'topic';
+    let what = '';
+    if (mode === 'topic') {
+      const all = new Set(problems.map(p => p.topic)).size;
+      const sel = [...(cumulativeTopics[i] || [])];
+      what = `Topic: ${sel.length} of ${all} topics` + (sel.length && sel.length <= 3 ? ` (${sel.join(', ')})` : '');
+    } else if (mode === 'number') {
+      const nf = cumulativeNumFilter[i] || {};
+      what = `Number: ${nf.incexc === 'exclude' ? 'without' : 'only'} ${(nf.rangesRaw || '').trim()}`;
+    } else if (mode === 'type') {
+      const sel = cumulativeTypeFilter[i] || new Set();
+      what = 'Type: ' + FILTER_TYPE_STATUS_OPTIONS.filter(o => sel.has(o.key)).map(o => o.label.toLowerCase()).join(', ');
+    }
+    // An empty pool: newQuiz() falls back to the whole current set; an
+    // earlier set in a multi-set draw just gives none.
+    const pool = kept > 0 ? `${kept} of ${problems.length} problems`
+      : i === selectedQuizNum - 1 ? 'no problems match, so the whole set is used' : 'no problems match';
+    lines.push((cumulative ? `Set #${i + 1} | ` : '') + `${what} | ${pool}`);
+  });
+  return lines.length ? { title: 'Filter is active', lines } : null;
+}
+
+// The info box: first in the problem list, under the header line. It sits
+// in a slot that stays on the page (render() keeps it when it replaces the
+// cards), so it can move instead of jumping: it folds open and shut, gap
+// below included (css/style.css .filter-info-slot), and eases to a new
+// height when its text changes. render() calls this again after each draw.
+// While the exam screen is opening (_filterInfoEntering, set by
+// startRandomQuiz until the first frame) it takes its final state at once:
+// the first call there can come before the draw (an Adaptive ML note is not
+// ready yet), and a fold started then would stall behind the typesetting of
+// the new problems and finish with a jump.
+let _filterInfoEntering = false;
+function _syncFilterInfoBox() {
+  const container = document.getElementById('quizContainer');
+  if (!container) return;
+  let slot = document.getElementById('filterInfoSlot');
+  const info = _filterInfo();
+  const fresh = !slot;
+  if (fresh) {
+    if (!info) return; // nothing to show, nothing to fold away
+    slot = document.createElement('div');
+    slot.id = 'filterInfoSlot';
+    slot.className = 'filter-info-slot collapsed';
+    slot.innerHTML = '<div class="filter-info-slot-inner"><div class="filter-info" id="filterInfoBox" role="note">'
+      + '<svg class="filter-info-icon" viewBox="0 0 24 24" aria-hidden="true">'
+      + '<circle cx="12" cy="12" r="9"/><path d="M12 10.8v5.7"/>'
+      + '<circle cx="12" cy="7.6" r="1.05" fill="currentColor" stroke="none"/></svg>'
+      + '<div class="filter-info-body"><div class="filter-info-title"></div></div></div></div>';
+    container.prepend(slot);
+  } else if (container.firstElementChild !== slot) {
+    container.prepend(slot);
+  }
+  const snap = (fn) => {
+    slot.classList.add('instant');
+    fn();
+    void slot.offsetHeight;
+    slot.classList.remove('instant');
+  };
+  if (!info) {
+    if (_filterInfoEntering) snap(() => slot.classList.add('collapsed'));
+    else slot.classList.add('collapsed');
+    slot.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  slot.removeAttribute('aria-hidden');
+  const sig = JSON.stringify(info);
+  const write = () => {
+    const body = slot.querySelector('.filter-info-body');
+    body.querySelector('.filter-info-title').textContent = info.title;
+    body.querySelectorAll('.filter-info-line, .filter-info-extra').forEach(el => el.remove());
+    [...info.lines.map(t => ['filter-info-line', t]), ...(info.extra ? [['filter-info-extra', info.extra]] : [])]
+      .forEach(([cls, t]) => {
+        const line = document.createElement('div');
+        line.className = cls;
+        line.textContent = t;
+        body.appendChild(line);
+      });
+    slot.dataset.sig = sig;
+  };
+  if (fresh || _filterInfoEntering) {
+    // First time on this exam screen, or the screen is just opening: shown
+    // at once, no fold.
+    snap(() => { write(); slot.classList.remove('collapsed'); });
+  } else if (slot.classList.contains('collapsed')) {
+    write();
+    slot.classList.remove('collapsed'); // folds open
+  } else if (slot.dataset.sig !== sig) {
+    _animateHeightChange(slot, write); // eases to the new text's height
+  }
+}
+
 function updateFilterActiveNote() {
+  // The header line is retired: the info box above the cards says it all.
   const note = document.getElementById('filterActiveNote');
-  if (!note) return;
-  note.style.display = _filterNarrowsCurrentPool() ? '' : 'none';
+  if (note) note.style.display = 'none';
+  _syncFilterInfoBox();
+  _syncFilterToggleState();
+  _syncFilterPending();
+}
+
+// ── The filter's bar at the top of the practice exam ──
+// Collapsed by default; opening or closing it is remembered in this browser.
+const FILTER_OPEN_KEY = STORAGE_PREFIX + '_filter_open';
+
+function _filterModeLabel(quizIdx) {
+  const mode = cumulativeFilterMode[quizIdx] || 'none';
+  if (mode === 'adaptive') {
+    const g = typeof ADAPTIVE_GOALS !== 'undefined' && ADAPTIVE_GOALS.find(x => x.key === getAdaptiveGoal(quizIdx + 1));
+    return 'Adaptive ML' + (g ? ` | ${g.label}` : '');
+  }
+  return { none: 'No filter', topic: 'Topic', number: 'Number', type: 'Type' }[mode] || 'No filter';
+}
+
+// What the bar says is chosen: the one set's filter, or each filtered set's.
+function _syncFilterToggleState() {
+  const el = document.getElementById('filterToggleState');
+  if (!el) return;
+  const cumulative = selectedCumulativeMode === 'cumulative' && selectedQuizNum >= 2;
+  const parts = [];
+  if (!cumulative) {
+    if ((cumulativeFilterMode[selectedQuizNum - 1] || 'none') !== 'none') parts.push(_filterModeLabel(selectedQuizNum - 1));
+  } else {
+    for (let i = 0; i < selectedQuizNum; i++) {
+      if ((cumulativeFilterMode[i] || 'none') !== 'none') parts.push(`Set #${i + 1}: ${_filterModeLabel(i)}`);
+    }
+  }
+  const pending = _filterPending();
+  el.textContent = (parts.length ? parts.join(' | ') : 'No filter') + (pending ? ' | not applied' : '');
+  el.classList.toggle('active', parts.length > 0);
+  el.classList.toggle('pending', pending);
+}
+
+// How long the fold takes (css/style.css .filter-body), or 0 when the
+// device asks for less motion.
+function _filterFoldMs() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 300;
+}
+
+// Opens or closes the panel. The fold itself is a CSS transition; without
+// `animate` (restoring the remembered state) it snaps instead.
+function _setFilterPanelOpen(open, animate) {
+  const wrap = document.getElementById('topicSelectorWrap');
+  const btn = document.getElementById('filterToggle');
+  if (!wrap || !btn) return;
+  if (!animate) wrap.classList.add('filter-instant');
+  wrap.classList.toggle('collapsed', !open);
+  btn.setAttribute('aria-expanded', String(open));
+  if (!animate) {
+    void wrap.offsetHeight; // settle the snapped size before transitions come back
+    wrap.classList.remove('filter-instant');
+  }
+}
+
+// The Apply button: asks first if answers would be lost, then folds the
+// filter away (and keeps it closed next time) and draws the new exam once
+// the fold has finished, so the heavy redraw never stutters the animation.
+// Cancelling the question leaves the panel open and nothing drawn.
+let _applyTimer = null;
+function applyFilter() {
+  confirmLeaveRandomQuiz(() => {
+    // With no filter left, the new exam has no info box: fold it away now,
+    // together with the panel, rather than during the redraw, when the page
+    // is too busy (cards, maths) to animate it smoothly.
+    if (!_adaptiveDrawActive() && !_filterNarrowsCurrentPool()) {
+      const slot = document.getElementById('filterInfoSlot');
+      if (slot) { slot.classList.add('collapsed'); slot.setAttribute('aria-hidden', 'true'); }
+    }
+    _setFilterPanelOpen(false, true);
+    try { localStorage.setItem(FILTER_OPEN_KEY, '0'); } catch (e) { /* not remembered */ }
+    clearTimeout(_applyTimer);
+    _applyTimer = setTimeout(() => {
+      _applyTimer = null;
+      // Only if the exam is still on screen (not left during the fold).
+      const appPage = document.getElementById('appPage');
+      if (appPage && appPage.classList.contains('visible') && !document.getElementById('solveAllMode').classList.contains('active')) newQuiz();
+    }, _filterFoldMs());
+  });
+}
+
+function toggleFilterPanel() {
+  const open = document.getElementById('topicSelectorWrap').classList.contains('collapsed');
+  _setFilterPanelOpen(open, true);
+  try { localStorage.setItem(FILTER_OPEN_KEY, open ? '1' : '0'); } catch (e) { /* not remembered */ }
+}
+
+function _restoreFilterPanelOpen() {
+  let open = false;
+  try { open = localStorage.getItem(FILTER_OPEN_KEY) === '1'; } catch (e) { /* default: closed */ }
+  _setFilterPanelOpen(open, false);
 }
 
 // ─── Live quiz timer (floating "00:00" clock, bottom-right — same visual
@@ -665,6 +992,9 @@ function stopLiveQuizTimer() {
 }
 
 function newQuiz() {
+  // The filter settings this draw uses: the panel compares against them to
+  // show changes that are not applied yet (_syncFilterPending).
+  _drawFilterSigs = _filterSignatures();
   // A fresh draw should reflect any attempt just recorded (checkAll()) —
   // e.g. a "Not attempted" Type-filter pool shrinking now that the
   // previous round's problems have a status. Cheap: just clears the cache,
@@ -686,10 +1016,32 @@ function newQuiz() {
     const currPick = pickRandomAvoidingLast(currPool, QUIZ_SIZE - QUIZ_CUMULATIVE_PREV_COUNT);
     quiz = pickRandom([...prevPick, ...currPick], QUIZ_SIZE);
   } else {
-    let pool = ACTIVE_PROBLEMS.filter(p => problemPassesFilter(p, selectedQuizNum - 1));
-    if (pool.length === 0) pool = ACTIVE_PROBLEMS;
-    // Final shuffle so topped-up repeats aren't always at the end.
-    quiz = pickRandom(pickRandomAvoidingLast(pool, Math.min(QUIZ_SIZE, pool.length)), QUIZ_SIZE);
+    // Adaptive ML (js/adaptive.js) picks the whole draw for the chosen goal;
+    // if it ever fails, the plain draw below still runs.
+    let picked = null;
+    _lastDrawAdaptive = false;
+    if (_adaptiveDrawActive()) {
+      try {
+        // The draw the score panel's forecast was about, if it still fits
+        // (same set, goal and size); else a fresh one.
+        const plan = _adaptivePlan;
+        if (plan && plan.quizNum === selectedQuizNum && plan.goal === getAdaptiveGoal(selectedQuizNum) && plan.size === QUIZ_SIZE) {
+          picked = adaptiveUsePlan(plan);
+        } else {
+          picked = adaptivePick(selectedQuizNum, getAdaptiveGoal(selectedQuizNum), QUIZ_SIZE, _lastDrawnKeys);
+        }
+      } catch (e) { console.error('Adaptive ML draw failed; drawing at random instead', e); }
+    }
+    _adaptivePlan = null;
+    if (picked && picked.length) {
+      quiz = pickRandom(picked, picked.length);
+      _lastDrawAdaptive = true;
+    } else {
+      let pool = ACTIVE_PROBLEMS.filter(p => problemPassesFilter(p, selectedQuizNum - 1));
+      if (pool.length === 0) pool = ACTIVE_PROBLEMS;
+      // Final shuffle so topped-up repeats aren't always at the end.
+      quiz = pickRandom(pickRandomAvoidingLast(pool, Math.min(QUIZ_SIZE, pool.length)), QUIZ_SIZE);
+    }
   }
   _lastDrawnKeys = new Set(quiz.map(mathCacheKeyFor));
   _attemptStartedAt = Date.now();
@@ -727,7 +1079,9 @@ function newQuiz() {
 
 function render() {
   const container = document.getElementById("quizContainer");
-  container.innerHTML = "";
+  // Everything but the info box's slot, which stays so it can animate
+  // between this draw's note and the next (_syncFilterInfoBox).
+  [...container.children].forEach(el => { if (el.id !== 'filterInfoSlot') el.remove(); });
   // Settings > Study > "Hide problem topic while active" reads this class
   // (see css/settings.css) — reset on every fresh render so a new attempt
   // always starts hidden again (per that setting) rather than staying
@@ -743,10 +1097,12 @@ function render() {
     card.innerHTML = `
       <div class="card-header">
         <span class="problem-num">${numDisplay}</span>
+        ${typeof adaptiveChipHtml === 'function' ? adaptiveChipHtml(p) : ''}
         ${typeof handoutButtonHtml === 'function' ? handoutButtonHtml(p._quizNum || selectedQuizNum) : ''}
         <span class="problem-topic">${p.topic}</span>
         ${typeof problemFlagHtml === 'function' ? problemFlagHtml(p._quizNum || selectedQuizNum, p.id) : ''}
       </div>
+      ${typeof adaptiveWhyHtml === 'function' ? adaptiveWhyHtml(p) : ''}
       <div class="problem-text">${p.text}</div>
       <div class="answer-row">
         ${answerInputHtml(`ans-${i}`)}
@@ -783,6 +1139,7 @@ function render() {
     });
   });
   renderMathIn(container);
+  _syncFilterInfoBox();
 
   // Show 📘 on the problems that have a published solution (the index may
   // still be loading on first paint; solutions.js calls this again when it
@@ -790,9 +1147,34 @@ function render() {
   if (typeof refreshSolutionButtons === 'function') refreshSolutionButtons();
 }
 
+// What the reader is looking at, and where it sits on screen: the Check
+// answers button when it is in view (it usually is, it was just tapped),
+// else the first card in view. checkAll() puts it back there after the
+// cards grow (_restoreViewAnchor). The site turns the browser's own scroll
+// anchoring off (css/style.css, html), so nothing else would.
+function _captureViewAnchor() {
+  const inView = el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < window.innerHeight; };
+  const btn = document.getElementById('checkBtn');
+  const el = btn && inView(btn) ? btn
+    : [...document.querySelectorAll('#quizContainer .problem-card')].find(c => c.getBoundingClientRect().bottom > 0);
+  return el ? { el, top: el.getBoundingClientRect().top } : null;
+}
+function _restoreViewAnchor(anchor) {
+  if (!anchor || !anchor.el.isConnected) return;
+  const dy = anchor.el.getBoundingClientRect().top - anchor.top;
+  if (Math.abs(dy) >= 1) window.scrollBy({ top: dy, left: 0, behavior: 'instant' });
+}
+
 function checkAll() {
   if (checked) return;
   checked = true;
+  // The forecast follows once the attempt is saved (onAttemptRecorded).
+  _adaptiveForecastDue = _lastDrawAdaptive;
+  const oldForecast = document.getElementById('resultForecast');
+  if (oldForecast) oldForecast.remove();
+  // Feedback lines and the Discuss / Solution rows make every card taller;
+  // keep the view still while they appear (most visible on phones).
+  const viewAnchor = _captureViewAnchor();
   document.getElementById("checkBtn").disabled = true;
 
   let totalPts = 0;
@@ -864,6 +1246,9 @@ function checkAll() {
     }).join("")
     + pqToggleButton(breakdownShowToggle);
   panel.classList.add("show");
+  // Put the view back where it was before the cards grew (nothing is drawn
+  // in between, so nothing visibly moves), then glide down to the score.
+  _restoreViewAnchor(viewAnchor);
   panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   // Settings > Study > "Hide problem topic while active" — scores are now
   // shown, so every card's topic label (top-right, see css/settings.css)
@@ -890,6 +1275,9 @@ function checkAll() {
   // happens to start it. Idempotent (see startForumProblemCountsPolling),
   // so this is safe to call even if it's already running.
   if (typeof startForumProblemCountsPolling === 'function') startForumProblemCountsPolling();
+  // Common mistakes lists, typeset in idle time while the results are read,
+  // so even the first tap on one opens at once (js/common-mistakes.js).
+  if (typeof prepareMistakePanels === 'function') prepareMistakePanels(document.querySelectorAll('#quizContainer .mistake-btn'));
   // ── Stats: record this attempt ──
   if (typeof recordAttemptFromQuiz !== 'undefined') {
     recordAttemptFromQuiz(
@@ -949,6 +1337,34 @@ function formatAttemptDuration(totalSeconds) {
 function onAttemptRecorded() {
   renderRecentAttemptsMini();
   renderAttemptTopicsMini();
+  _renderAdaptiveForecast();
+}
+
+// The score panel's Adaptive ML forecast, once per checked Adaptive ML
+// attempt, after it is saved (so the model includes it). It also picks the
+// next draw, which newQuiz then uses, so the forecast is for the very
+// problems that come next.
+function _renderAdaptiveForecast() {
+  if (!_adaptiveForecastDue || !checked) return;
+  _adaptiveForecastDue = false;
+  if (typeof adaptiveForecast !== 'function' || !adaptiveAvailable(selectedQuizNum)) return;
+  const panel = document.getElementById('resultPanel');
+  const breakdown = document.getElementById('resultBreakdown');
+  if (!panel || !breakdown || !panel.classList.contains('show')) return;
+  let html;
+  try {
+    _adaptivePlan = adaptivePlanNext(selectedQuizNum, getAdaptiveGoal(selectedQuizNum), QUIZ_SIZE, _lastDrawnKeys);
+    html = adaptiveForecastHtml(adaptiveForecast(selectedQuizNum, _adaptivePlan));
+  } catch (e) {
+    console.error('Adaptive ML forecast failed', e);
+    _adaptivePlan = null;
+    return;
+  }
+  const box = document.createElement('div');
+  box.id = 'resultForecast';
+  box.className = 'result-forecast';
+  box.innerHTML = html;
+  breakdown.after(box);
 }
 
 // ─── "Topics in this attempt" (under "Last attempts") ──────────────────────
@@ -999,7 +1415,7 @@ function renderRecentAttemptsMini() {
       return `
         <div class="recent-attempt-row">
           <span class="recent-attempt-meta">
-            <span class="score">${scoreStr}/${a.maxScore}</span> · Q${a.quizNum} · ${dateStr} · ${timeStr}
+            <span class="score">${scoreStr}/${a.maxScore}</span><span>Q${a.quizNum}</span><span>${dateStr}</span><span>${timeStr}</span>
           </span>
           <span class="recent-attempt-boxes pq-row">${boxes}</span>
         </div>`;
@@ -1275,6 +1691,9 @@ function _startRandomOrderSample() {
 }
 
 function openSolveAllModal() {
+  // The Adaptive ML order exists only for a set with a trained model.
+  const adaptiveBtn = document.getElementById('adaptiveOrderBtn');
+  if (adaptiveBtn) adaptiveBtn.style.display = typeof adaptiveAvailable === 'function' && adaptiveAvailable(selectedQuizNum) ? '' : 'none';
   setChoiceView('order');
   fadeInScreen(document.getElementById('choicePage'), 380);
   _startRandomOrderSample(); // after fadeInScreen un-hides the page, or tick() stops at once
@@ -1305,6 +1724,12 @@ function _startSolveAllCore(order) {
   // = a fresh shuffle each time. Progress is keyed by problem id, so it is
   // applied below regardless of the order chosen.
   solveAllProblems = [...pool];
+  // 'adaptive' = Adaptive ML's order for this student (js/adaptive.js), each
+  // card with its one-line reason; the set's own order if it fails.
+  if (order === 'adaptive' && typeof adaptiveSolveAllOrder === 'function' && adaptiveAvailable(selectedQuizNum)) {
+    try { solveAllProblems = adaptiveSolveAllOrder(selectedQuizNum, pool); }
+    catch (e) { console.error('Adaptive ML order failed; using the set order', e); }
+  }
   if (order === 'unordered') {
     for (let i = solveAllProblems.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -1611,10 +2036,12 @@ function buildSolveAllCards(container, batchSize = 12) {
           card.innerHTML = `
             <div class="card-header">
               <span class="problem-num">${problemLabel(p._quizNum || selectedQuizNum, p.id)}</span>
+              ${typeof adaptiveChipHtml === 'function' ? adaptiveChipHtml(p) : ''}
               ${typeof handoutButtonHtml === 'function' ? handoutButtonHtml(p._quizNum || selectedQuizNum) : ''}
               <span class="problem-topic">${p.topic}</span>
               ${typeof problemFlagHtml === 'function' ? problemFlagHtml(p._quizNum || selectedQuizNum, p.id) : ''}
             </div>
+            ${typeof adaptiveWhyHtml === 'function' ? adaptiveWhyHtml(p) : ''}
             <div class="problem-text">${cached !== null ? cached.html : p.text}</div>
             <div class="answer-row">
               ${answerInputHtml(`sa-ans-${i}`)}
@@ -2276,6 +2703,8 @@ function startSelected(pastGate) {
 function startRandomQuiz() {
   const appPage = document.getElementById('appPage');
   appPage.classList.add('visible');
+  _filterInfoEntering = true;
+  requestAnimationFrame(() => { _filterInfoEntering = false; });
   initTopics();
   newQuiz();
   // Settings > Study > "Full screen for Random N" — entered the moment
@@ -2564,7 +2993,7 @@ function exitAppOrChoiceToLanding() {
 
 // ─── Version checker ──────────────────────────────────────────────────────────
 // This page's current version. Bump this string whenever you publish an update.
-const CURRENT_VERSION = '14.5.2';
+const CURRENT_VERSION = '15.0.0';
 
 // The manifest is polled every "poll.update" of site-version.json
 // (js/site-config.js), 5 minutes by default, while the tab is visible.

@@ -444,6 +444,7 @@ function renderStats() {
   renderTable();
   renderTopicPerformance();
   renderProblemsOverview();
+  renderAdaptiveMap();
   if (typeof updateExportButtonState === 'function') updateExportButtonState();
 }
 
@@ -951,30 +952,16 @@ function renderProblemsOverview() {
 
   const scores = _poMode === 'best' ? _buildBestProblemScores() : _buildLatestProblemScores();
 
-  // One card per quiz slot (all 4, not just enabled ones) — same .quiz-badge
-  // look the Attempt log's "Quiz" column uses (color, dot, background) so
-  // this reads as the same quiz identity everywhere in Stats.
-  const sections = QUIZZES.map((q, i) => {
-    const quizNum = i + 1;
-    const color = quizColor(i);
-    const label = q.name ? `Set ${quizNum} | ${q.name}` : `Set ${quizNum}`;
-    const badgeHtml = `<span class="quiz-badge" style="background:${color}22;color:${color}">` +
-      `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color}"></span>${label}</span>`;
+  // One card for every available set, with the Topics card's sliding
+  // "Set 1 | 2 | 3 | 4" switch in its header (setProblemsQuiz): one grid at a
+  // time, the others kept hidden, so switching never rebuilds anything.
+  const sets = QUIZZES.map((q, i) => ({ q, quizNum: i + 1 }))
+    .filter(({ q }) => q.enabled && Array.isArray(q.problems) && q.problems.length > 0);
+  const available = sets.map(({ quizNum }) => quizNum);
+  const selected = _poSavedQuiz(available);
 
-    const hasProblems = q.enabled && Array.isArray(q.problems) && q.problems.length > 0;
-
-    if (!hasProblems) {
-      return `
-        <div class="stats-table-section problems-overview-section">
-          <div class="stats-table-header">
-            ${badgeHtml}
-          </div>
-          <div class="problems-overview-locked">This quiz is not yet available.</div>
-        </div>`;
-    }
-
-    const total = q.problems.length;
-    const attemptedCount = q.problems.reduce((n, p) => n + (scores.has(`${quizNum}_${p.id}`) ? 1 : 0), 0);
+  // No set badge: the switch in the header already says which set this is.
+  const groups = sets.map(({ q, quizNum }) => {
     const boxes = q.problems.map((p) => {
       const pLabel = problemLabel(quizNum, p.id);
       const rec = scores.get(`${quizNum}_${p.id}`);
@@ -994,11 +981,32 @@ function renderProblemsOverview() {
     }).join('');
 
     return `
+          <div class="po-group tp-group" data-quiz="${quizNum}"${quizNum === selected ? '' : ' hidden'}>
+            <div class="problems-overview-grid">${boxes}</div>
+          </div>`;
+  }).join('');
+
+  const selIdx = available.indexOf(selected);
+  // Every set's count in one cell, only the chosen one visible, so the cell
+  // is always as wide as the widest and nothing beside it moves on a switch.
+  const counts = sets.map(({ q, quizNum }) => {
+    const n = q.problems.reduce((k, p) => k + (scores.has(`${quizNum}_${p.id}`) ? 1 : 0), 0);
+    return `<span data-quiz="${quizNum}"${quizNum === selected ? ' class="on"' : ''}>${n}/${q.problems.length}<span class="po-count-word"> attempted</span></span>`;
+  }).join('');
+  const switchHtml = `
+          <div class="tp-switch" id="poSwitch" role="tablist" aria-label="Set"
+               style="--tp-n:${available.length};--tp-i:${selIdx};--tp-color:${quizColor(selected - 1)}">
+            <span class="tp-switch-pill" aria-hidden="true"></span>
+            ${available.map((n) => `<button type="button" role="tab" data-quiz="${n}" aria-selected="${n === selected}" onclick="setProblemsQuiz(${n})">Set ${n}</button>`).join('')}
+          </div>`;
+
+  wrap.innerHTML = `
       <div class="stats-table-section problems-overview-section">
-        <div class="stats-table-header po-section-header">
-          ${badgeHtml}
+        <div class="stats-table-header tp-header po-header">
+          <span class="stats-table-title">Problems</span>
+          ${switchHtml}
           ${_poModeSwitchRowHtml()}
-          <span class="stats-table-count">${attemptedCount}/${total} attempted</span>
+          <span class="stats-table-count po-count" id="poCount">${counts}</span>
         </div>
         <div class="problems-overview-body">
           <div class="problems-overview-legend">
@@ -1007,14 +1015,123 @@ function renderProblemsOverview() {
             <span class="po-legend-item"><span class="score-box score-box-wrong po-legend-swatch"></span>wrong</span>
             <span class="po-legend-item"><span class="score-box score-box-unattempted po-legend-swatch"></span>not attempted</span>
           </div>
-          <div class="problems-overview-grid">${boxes}</div>
-          <div class="problems-overview-footnote">Results shown are for Random ${QUIZ_SIZE} mode only: Entire Set attempts aren't reflected here.</div>
+          <div class="po-groups" id="poGroups">${groups}</div>
         </div>
       </div>`;
-  }).join('');
-
-  wrap.innerHTML = sections;
   _applyProblemsOverviewCols();
+}
+
+// Which set the Problems card shows, remembered in this browser apart from
+// the Topics card's choice.
+const PO_QUIZ_KEY = STORAGE_PREFIX + '_po_quiz';
+function _poSavedQuiz(available) {
+  let n = NaN;
+  try { n = parseInt(localStorage.getItem(PO_QUIZ_KEY), 10); } catch (e) { /* ignore */ }
+  return available.includes(n) ? n : available[0];
+}
+
+// Switches the Problems card in place, like setTopicQuiz: the pill slides,
+// the chosen set's grid fades in and the card eases to its height. A hidden
+// grid has no width, so its column count is worked out once it shows.
+function setProblemsQuiz(quizNum) {
+  try { localStorage.setItem(PO_QUIZ_KEY, String(quizNum)); } catch (e) { /* ignore */ }
+  const sw = document.getElementById('poSwitch');
+  if (!sw) return;
+  const btns = Array.from(sw.querySelectorAll('button[data-quiz]'));
+  const idx = btns.findIndex((b) => +b.dataset.quiz === quizNum);
+  if (idx < 0 || btns[idx].getAttribute('aria-selected') === 'true') return;
+  btns.forEach((b, i) => b.setAttribute('aria-selected', String(i === idx)));
+  sw.style.setProperty('--tp-i', idx);
+  sw.style.setProperty('--tp-color', quizColor(quizNum - 1));
+  document.querySelectorAll('#poCount > span').forEach((c) => c.classList.toggle('on', +c.dataset.quiz === quizNum));
+  const groupsEl = document.getElementById('poGroups');
+  const swap = () => {
+    document.querySelectorAll('#poGroups .po-group').forEach((g) => {
+      const show = +g.dataset.quiz === quizNum;
+      g.hidden = !show;
+      if (show) {
+        g.classList.remove('tp-enter');
+        void g.offsetWidth;                     // restart the fade
+        g.classList.add('tp-enter');
+      }
+    });
+    _applyProblemsOverviewCols();
+  };
+  if (typeof _animateHeightChange === 'function') _animateHeightChange(groupsEl, swap);
+  else swap();
+}
+
+// ── Adaptive ML card ──────────────────────────────────────────────────────────
+// Its own card under Problems: the chance map of one set at a time
+// (adaptiveProblemMapHtml, js/adaptive.js), with the same sliding Set switch,
+// remembered apart from the other cards. Nothing for a course without a
+// model, or sets it has none for.
+const AM_QUIZ_KEY = STORAGE_PREFIX + '_am_quiz';
+
+function renderAdaptiveMap() {
+  const wrap = document.getElementById('statsAdaptiveMapWrap');
+  if (!wrap) return;
+  const sets = typeof adaptiveAvailable === 'function'
+    ? QUIZZES.map((q, i) => ({ q, quizNum: i + 1 }))
+        .filter(({ q, quizNum }) => q.enabled && Array.isArray(q.problems) && q.problems.length && adaptiveAvailable(quizNum))
+    : [];
+  if (!sets.length) { wrap.innerHTML = ''; return; }
+  const available = sets.map(({ quizNum }) => quizNum);
+  let selected = NaN;
+  try { selected = parseInt(localStorage.getItem(AM_QUIZ_KEY), 10); } catch (e) { /* ignore */ }
+  if (!available.includes(selected)) selected = available[0];
+
+  let groups = '';
+  try {
+    groups = sets.map(({ q, quizNum }) => {
+      return `
+          <div class="am-group tp-group" data-quiz="${quizNum}"${quizNum === selected ? '' : ' hidden'}>
+            ${adaptiveProblemMapHtml(quizNum)}
+          </div>`;
+    }).join('');
+  } catch (e) {
+    console.error('Adaptive ML card failed', e);
+    wrap.innerHTML = '';
+    return;
+  }
+  const selIdx = available.indexOf(selected);
+  wrap.innerHTML = `
+      <div class="stats-table-section am-section">
+        <div class="stats-table-header am-header">
+          <span class="stats-table-title">Adaptive ML</span>
+          <div class="tp-switch" id="amSwitch" role="tablist" aria-label="Set"
+               style="--tp-n:${available.length};--tp-i:${selIdx};--tp-color:${quizColor(selected - 1)}">
+            <span class="tp-switch-pill" aria-hidden="true"></span>
+            ${available.map((n) => `<button type="button" role="tab" data-quiz="${n}" aria-selected="${n === selected}" onclick="setAdaptiveMapQuiz(${n})">Set ${n}</button>`).join('')}
+          </div>
+        </div>
+        <div class="am-body"><div id="amGroups">${groups}</div></div>
+      </div>`;
+}
+
+function setAdaptiveMapQuiz(quizNum) {
+  try { localStorage.setItem(AM_QUIZ_KEY, String(quizNum)); } catch (e) { /* ignore */ }
+  const sw = document.getElementById('amSwitch');
+  if (!sw) return;
+  const btns = Array.from(sw.querySelectorAll('button[data-quiz]'));
+  const idx = btns.findIndex((b) => +b.dataset.quiz === quizNum);
+  if (idx < 0 || btns[idx].getAttribute('aria-selected') === 'true') return;
+  btns.forEach((b, i) => b.setAttribute('aria-selected', String(i === idx)));
+  sw.style.setProperty('--tp-i', idx);
+  sw.style.setProperty('--tp-color', quizColor(quizNum - 1));
+  const swap = () => {
+    document.querySelectorAll('#amGroups .am-group').forEach((g) => {
+      const show = +g.dataset.quiz === quizNum;
+      g.hidden = !show;
+      if (show) {
+        g.classList.remove('tp-enter');
+        void g.offsetWidth;
+        g.classList.add('tp-enter');
+      }
+    });
+  };
+  if (typeof _animateHeightChange === 'function') _animateHeightChange(document.getElementById('amGroups'), swap);
+  else swap();
 }
 
 // ── Topic performance ─────────────────────────────────────────────────────────
@@ -1195,12 +1312,9 @@ function renderTopicPerformance() {
     q.problems.forEach((pr) => { if (pr.topic && !topics.includes(pr.topic)) topics.push(pr.topic); });
     const rows = topics.map((topic) => _tpRowHtml(topic, perf.get(`${quizNum}|${topic}`))).join('');
 
-    // Same .quiz-badge as the Attempt log and the grids below.
-    const color = quizColor(quizNum - 1);
-    const label = q.name ? `Set ${quizNum} | ${q.name}` : `Set ${quizNum}`;
+    // No set badge: the switch in the header already says which set this is.
     return `
         <div class="tp-group" data-quiz="${quizNum}"${quizNum === selected ? '' : ' hidden'}>
-          <div class="tp-group-head"><span class="quiz-badge" style="background:${color}22;color:${color}"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color}"></span>${_tpEsc(label)}</span></div>
           ${rows}
         </div>`;
   }).join('');
@@ -1222,7 +1336,6 @@ function renderTopicPerformance() {
         </div>
         <div class="tp-body">
           <div class="tp-groups" id="tpGroups">${groups}</div>
-          <div class="problems-overview-footnote">Average counts every answer, with its 95% interval as |—|; best takes each problem's best score. Random ${QUIZ_SIZE} mode only: Entire Set attempts aren't reflected here.</div>
         </div>
       </div>`;
 }

@@ -1609,11 +1609,139 @@
   /* Positioning context for .filter-reset-btn now lives on the wrapper
      (not #topicSelector itself), since #topicSelector's innerHTML gets
      wiped and rebuilt by initTopics() — see index.html comment. */
+  /* At the top of the practice exam, under the header line: the header leaves
+     1.8rem under itself, the cards are 1.4rem apart (main's gap), so up by
+     the difference and the same 1.4rem down to the first box or card. */
   .topic-selector-wrap {
     position: relative;
     max-width: 760px;
-    margin: 1.5rem auto 0;
+    margin: -0.4rem auto 1.4rem;
   }
+  /* The bar that names the chosen filter and opens it (toggleFilterPanel). */
+  .filter-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: calc(6px * var(--radius-mult));
+    padding: 0.65rem 1.1rem;
+    cursor: pointer;
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    transition: border-color 0.2s;
+  }
+  .filter-toggle:hover { border-color: var(--muted); }
+  .filter-toggle-chevron {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 0.2s;
+  }
+  .topic-selector-wrap:not(.collapsed) .filter-toggle-chevron { transform: rotate(90deg); }
+  .filter-toggle-title { flex-shrink: 0; }
+  .filter-toggle-state {
+    margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: none;
+  }
+  .filter-toggle-state.active { color: var(--accent); }
+  .filter-toggle-state.pending { color: var(--partial); }
+
+  /* Changes wait for a new draw: the Apply row at the bottom of the box, and
+     the selected tab of a changed set pulsing slowly until applied
+     (_syncFilterPending, js/quiz-engine.js). */
+  .filter-apply-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem 1rem;
+    margin-top: 0.2rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--border);
+  }
+  /* Reset on the left of the row: in flow here, not pinned to the corner,
+     so the first heading no longer keeps room for it. */
+  .filter-body .topic-selector-header:first-child { padding-right: 0; }
+  /* …and, beside Apply on the right, the same size as it. The two stay
+     together (one group) when a narrow screen wraps the row. */
+  .filter-apply-actions {
+    display: flex;
+    gap: 0.6rem;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+  .filter-apply-row .filter-reset-btn {
+    position: relative;
+    top: 0;
+    right: 0;
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    padding: 0.6rem 1.35rem;
+  }
+  /* Black and white: solid in the text colour while there is something to
+     apply, a grey outline when the exam already uses this filter. */
+  .filter-apply-btn {
+    background: var(--text);
+    color: var(--bg);
+    border: 1px solid var(--text);
+    font-weight: 600;
+  }
+  /* Only the colours change, never the weight: a lighter label would make
+     the button narrower and shift Reset beside it. */
+  .filter-apply-btn:disabled {
+    background: transparent;
+    color: var(--muted);
+    border-color: var(--border);
+    cursor: default;
+    opacity: 1;
+  }
+  @keyframes filter-pending-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  /* The changed tab and the Apply button pulse together. */
+  .filter-type-tab.active.pending,
+  .filter-apply-btn:not(:disabled) { animation: filter-pending-pulse 1.8s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .filter-type-tab.active.pending,
+    .filter-apply-btn:not(:disabled) { animation: none; }
+    .filter-type-tab.active.pending { border-style: dashed; }
+  }
+  /* Opening and closing fold the contents smoothly: the body is a one-row
+     grid whose row eases between its full height (1fr) and none (0fr). The
+     inner wrapper has no padding or border of its own, so it can reach 0.
+     Hidden from clicks and keyboard (visibility) once folded away. */
+  .filter-body {
+    display: grid;
+    grid-template-rows: 1fr;
+    margin-top: 0.5rem;
+    transition: grid-template-rows 0.28s ease, margin-top 0.28s ease, opacity 0.2s ease, visibility 0s;
+  }
+  .filter-body-inner { position: relative; min-height: 0; overflow: hidden; }
+  .topic-selector-wrap.collapsed .filter-body {
+    grid-template-rows: 0fr;
+    margin-top: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition: grid-template-rows 0.28s ease, margin-top 0.28s ease, opacity 0.2s ease, visibility 0s 0.28s;
+  }
+  /* Restoring the remembered state when an exam opens: no animation. */
+  .topic-selector-wrap.filter-instant .filter-body { transition: none; }
+  @media (prefers-reduced-motion: reduce) { .filter-body, .topic-selector-wrap.collapsed .filter-body { transition: none; } }
   .topic-selector {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -1693,7 +1821,8 @@
      was position:absolute (out of flow); it's now position:relative (so the
      .reset-confirm-ring below can anchor to it) but still pinned into the
      same top-right spot via the wrapping .topic-selector-wrap. */
-  .topic-selector-wrap { position: relative; }
+  /* (.topic-selector-wrap > …: the manual's picture of the filter.) */
+  .filter-body-inner > .filter-reset-btn,
   .topic-selector-wrap > .filter-reset-btn { position: absolute; top: 0.85rem; right: 1.1rem; }
   .filter-reset-btn:hover {
     color: var(--wrong);
@@ -1770,6 +1899,171 @@
   }
   @media (max-width: 480px) {
     .filter-type-tab { font-size: 0.62rem; padding: 0.4rem 0.15rem; }
+  }
+
+  /* ── Adaptive ML (js/adaptive.js): the goal chips under its filter tab,
+     the header note of its draw, and the one-line reason on each card. ── */
+  .adaptive-block { width: 100%; display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.2rem; }
+  /* One bordered list, a radio row per goal: name and what it does. */
+  .adaptive-list {
+    border: 1px solid var(--border);
+    border-radius: calc(6px * var(--radius-mult));
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .adaptive-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1.1rem 8.5rem minmax(0, 1fr);
+    gap: 0.8rem;
+    align-items: center;
+    text-align: left;
+    border: 0;
+    border-top: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    padding: 0.6rem 0.9rem;
+    cursor: pointer;
+    font: inherit;
+    transition: background 0.15s;
+  }
+  .adaptive-row:first-child { border-top: 0; }
+  .adaptive-row:hover { background: rgba(var(--accent-rgb),0.04); }
+  .adaptive-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .adaptive-radio {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    border: 1.5px solid var(--muted);
+    display: grid;
+    place-items: center;
+  }
+  .adaptive-row[aria-checked="true"] { background: rgba(var(--accent-rgb),0.08); }
+  .adaptive-row[aria-checked="true"] .adaptive-radio { border-color: var(--accent); }
+  .adaptive-row[aria-checked="true"] .adaptive-radio::after {
+    content: "";
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .adaptive-name { font-size: 0.86rem; font-weight: 600; }
+  .adaptive-row[aria-checked="true"] .adaptive-name { color: var(--accent); }
+  .adaptive-hint { font-size: 0.78rem; line-height: 1.45; color: var(--muted); }
+  /* Narrow screens: what the goal does goes under its name. */
+  @media (max-width: 560px) {
+    .adaptive-row { grid-template-columns: 1.1rem minmax(0, 1fr); row-gap: 0.1rem; }
+    .adaptive-hint { grid-column: 2; }
+  }
+
+  /* Info box first in the problem list (js/quiz-engine.js _syncFilterInfoBox):
+     what the active filter or the Adaptive ML goal does to this draw. A card
+     like the problems, tinted and edged with the accent so it reads as a
+     note, not a problem. */
+  /* The box's slot folds the box open and shut: one grid row easing between
+     full height and none, and the 1.4rem gap of main below it (its flex
+     gap) taken back by a negative margin while folded, so the cards slide
+     rather than jump. The inner wrapper has no padding, so it can reach 0. */
+  .filter-info-slot {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.28s ease, margin-bottom 0.28s ease, opacity 0.2s ease;
+  }
+  .filter-info-slot-inner { min-height: 0; overflow: hidden; }
+  .filter-info-slot.collapsed { grid-template-rows: 0fr; margin-bottom: -1.4rem; opacity: 0; }
+  .filter-info-slot.instant { transition: none; }
+  @media (prefers-reduced-motion: reduce) { .filter-info-slot { transition: none; } }
+  .filter-info {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8rem;
+    padding: 0.85rem 1.1rem;
+    background: rgba(var(--accent-rgb),0.06);
+    border: 1px solid rgba(var(--accent-rgb),0.3);
+    border-left: 3px solid var(--accent);
+    border-radius: calc(6px * var(--radius-mult));
+  }
+  .filter-info-icon {
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-top: 0.05rem;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    color: var(--accent);
+  }
+  .filter-info-body { min-width: 0; }
+  .filter-info-title {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    margin-bottom: 0.2rem;
+  }
+  .filter-info-line {
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  .filter-info-extra { color: var(--muted); font-size: 0.76rem; line-height: 1.5; margin-top: 0.15rem; }
+  /* Adaptive ML chip on a card: its group on the Stats chance map, in the
+     map's colours (css/stats.css .am-b0..4), tinted so the label reads.
+     Shown only once the card is checked (Check answers, or the card's own
+     check in Solve them all), with its reason line; while solving, nothing
+     says how likely a problem is. Right after the problem number, which
+     then takes the width of a three-digit one, so chips line up whether
+     the card is P8 or P111. */
+  .adaptive-chip, .adaptive-why-fold { display: none; }
+  .problem-card:is(.correct, .partial, .wrong) .adaptive-chip { display: inline-block; }
+  .problem-card:is(.correct, .partial, .wrong) .adaptive-why-fold { display: grid; }
+  /* The number gives up its push to the right (css/problem-flags.css) to
+     the chip, or to the Table button after it (css/handout.css). */
+  .problem-card:is(.correct, .partial, .wrong) .card-header > .problem-num:has(+ .adaptive-chip) { min-width: calc(4ch + 0.32em); margin-right: 0; }
+  .adaptive-chip { margin: -0.3rem auto -0.3rem 0; }
+  .adaptive-chip:has(+ .handout-btn) { margin-right: 0; }
+  /* On a narrow card a long topic gives way to the chip: cut with an
+     ellipsis on its one line, so the header keeps its height. */
+  .problem-card:is(.correct, .partial, .wrong) .card-header:has(> .adaptive-chip) > .problem-topic {
+    flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .adaptive-chip {
+    --ac: var(--muted);
+    flex-shrink: 0;
+    align-self: center;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    padding: 0.22rem 0.5rem;
+    border-radius: 99px;
+    border: 1px solid color-mix(in oklab, var(--ac) 40%, transparent);
+    background: color-mix(in oklab, var(--ac) 14%, transparent);
+    color: color-mix(in oklab, var(--ac) 80%, var(--text));
+    white-space: nowrap;
+  }
+  button.adaptive-chip { cursor: pointer; font-weight: inherit; }
+  button.adaptive-chip:hover { background: color-mix(in oklab, var(--ac) 24%, transparent); }
+  button.adaptive-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .adaptive-chip.ac-b0 { --ac: var(--wrong); }
+  .adaptive-chip.ac-b1 { --ac: color-mix(in oklab, var(--wrong) 55%, var(--muted)); }
+  .adaptive-chip.ac-b2 { --ac: var(--muted); }
+  .adaptive-chip.ac-b3 { --ac: color-mix(in oklab, var(--accent) 55%, var(--muted)); }
+  .adaptive-chip.ac-b4 { --ac: var(--accent); }
+  /* The reason line, folded until the chip is tapped. */
+  .adaptive-why-fold { grid-template-rows: 0fr; transition: grid-template-rows 0.22s ease; }
+  .adaptive-why-fold.open { grid-template-rows: 1fr; }
+  .adaptive-why-inner { min-height: 0; overflow: hidden; }
+  @media (prefers-reduced-motion: reduce) { .adaptive-why-fold { transition: none; } }
+  .adaptive-why {
+    padding: 0.55rem 1.1rem 0;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    line-height: 1.5;
+    color: var(--muted);
   }
 
   .filter-config-area {
@@ -1926,6 +2220,68 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+
+  /* ── Adaptive ML forecast in the score panel (js/adaptive.js
+     adaptiveForecastHtml): two figures, then the chance of each score and
+     forecast against score, side by side (stacked on phones). ── */
+  .result-forecast {
+    margin-top: 1.2rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    animation: rf-in 0.35s ease;
+  }
+  @keyframes rf-in { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .result-forecast { animation: none; } }
+  .rf-head {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .rf-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
+  .rf-stat {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: calc(6px * var(--radius-mult));
+    padding: 0.7rem 0.9rem;
+    min-width: 0;
+  }
+  .rf-stat-label { font-size: 0.74rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rf-stat-value { font-family: var(--mono); font-size: 1.8rem; font-weight: 700; color: var(--accent); line-height: 1.15; }
+  .rf-stat-sub { font-size: 0.78rem; color: var(--muted); }
+  .rf-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; }
+  .rf-panel { min-width: 0; }
+  .rf-panel-title { font-size: 0.74rem; color: var(--muted); margin-bottom: 0.3rem; }
+  .rf-chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .rf-chart text { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+  .rf-axis { stroke: var(--border); stroke-width: 1; }
+  .rf-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 4; }
+  .rf-bar-next { fill: var(--accent); }
+  .rf-bar-any { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+  .rf-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .rf-forecast { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+  .rf-scored { fill: var(--surface); stroke: var(--text); stroke-width: 2; }
+  .rf-junk { fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; opacity: 0.7; }
+  .rf-key-junk { position: relative; }
+  .rf-key-junk::before, .rf-key-junk::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: 0.85rem; height: 2px; background: var(--muted);
+    transform: translate(-50%, -50%) rotate(45deg); border-radius: 1px;
+  }
+  .rf-key-junk::after { transform: translate(-50%, -50%) rotate(-45deg); }
+  .rf-legend { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-size: 0.72rem; color: var(--muted); margin-top: 0.35rem; }
+  .rf-legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .rf-key { display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 2px; }
+  .rf-key-next { background: var(--accent); }
+  .rf-key-any { border: 1.5px solid var(--muted); }
+  .rf-key-line { height: 0.75rem; border-radius: 50%; background: var(--accent); }
+  .rf-key-scored { border-radius: 50%; border: 2px solid var(--text); }
+  @media (max-width: 560px) {
+    .rf-charts { grid-template-columns: minmax(0, 1fr); }
   }
 
   /* ── Score boxes: filled color = correctness, problem id shown inside ──
@@ -2092,7 +2448,11 @@
   .recent-attempt-row {
     display: contents;
   }
+  /* Score, set, date and time apart by a wide gap, no separator mark. */
   .recent-attempt-meta {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.9rem;
     font-family: var(--mono);
     font-size: 0.72rem;
     color: var(--muted);

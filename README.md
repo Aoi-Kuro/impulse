@@ -32,6 +32,7 @@ The procedure is described in [Deploying a new course](#deploying-a-new-course).
 - [Front-end subsystems](#front-end-subsystems)
   - [Page load order](#page-load-order)
   - [Quiz engine](#quiz-engine)
+  - [Adaptive ML](#adaptive-ml)
   - [Problem flags](#problem-flags)
   - [Exam handouts](#exam-handouts)
   - [Stats](#stats)
@@ -174,6 +175,8 @@ impulse/
 │   │   ├── handouts.js      Exam handouts per quiz (QUIZ_HANDOUTS), shown
 │   │   │                       by js/handout.js
 │   │   └── quizzes.js       QUIZZES registry + id/number helpers
+│   ├── adaptive-model.js    Adaptive ML model (written by the training
+│   │                        scripts, never by hand; see Adaptive ML)
 │   ├── images/quiz_1..4/    Figure images referenced from problem text
 │   │                        (+ quiz_2/handout-inertia.webp, the original
 │   │                        handout)
@@ -215,6 +218,10 @@ impulse/
 │   ├── stats-export.js      Export to PDF / Excel / CSV / TXT
 │   ├── attempts-sync.js     Attempt sync + shared "live dot" state machine
 │   ├── solve-all-sync.js    Solve-All progress sync (union merge)
+│   ├── adaptive.js          Adaptive ML: fits the student's own terms from
+│   │                        Stats attempts, picks a Random N draw per goal
+│   │                        and the Solve-All order, chips and reasons per
+│   │                        checked card, forecast, Stats chance map
 │   ├── math-cache.js        IndexedDB cache of typeset MathJax output
 │   ├── math-render.js       renderMathIn(el) wrapper around MathJax
 │   ├── figure.js            Solution-figure SVG normalize/sanitize/crop
@@ -702,14 +709,21 @@ row (a P⇄Q toggle switches cumulative rows between problem and quiz labels), a
 "Last attempts" mini-panel, per-problem forum buttons and, where published,
 "📘 Solution" buttons. Each attempt is recorded by `stats.js`.
 
-- **Problem Pool Filter**, per quiz, with four modes saved per quiz in
+- **Problem Pool Filter**, per quiz, with modes saved per quiz in
   localStorage: *none*, *topic* (checkboxes), *number* (ranges such as
-  `3, 5-6, 15-19`, include or exclude; numbers are the displayed ones, so a gap number matches nothing), and
+  `3, 5-6, 15-19`, include or exclude; numbers are the displayed ones, so a gap number matches nothing),
   *type* (attempt status: not attempted / wrong / almost correct / correct,
-  following the Last/Best switch of the Stats problems overview). An empty
-  filtered pool falls back to the whole quiz. A note appears under the header
-  when a filter narrows the draw. The "↺ Reset" button uses a tap-twice
-  confirmation with a countdown ring instead of `confirm()`.
+  following the Last/Best switch of the Stats problems overview), and
+  *Adaptive ML* in single-set Random N when the course's model is ready
+  ([Adaptive ML](#adaptive-ml)). An empty filtered pool falls back to the
+  whole quiz. The filter sits in a collapsible bar under the header
+  (open or closed is remembered, `<prefix>_filter_open`); a changed filter is
+  only used after **Apply filter** (the tab and the button pulse until then),
+  which folds the bar and draws a new attempt. An info box first in the
+  problem list says what the active filter or goal does to the draw; it folds
+  open and shut, and snaps to its final state while the exam screen opens.
+  The "↺ Reset" button uses a tap-twice confirmation with a countdown ring
+  instead of `confirm()`.
 - **Live timer** (`#liveQuizTimer`): a floating mm:ss clock while an attempt
   runs. `isQuizTimerActive()` and the `quiztimer:activechange` window event
   report whether an attempt is running, independently of whether the clock is
@@ -750,6 +764,50 @@ colour; a tap within `FLAG_MAGNET_PX` of a dot goes to the nearest flagged
 problem, centred on screen. The file is self-contained and watches the DOM
 with a `MutationObserver` instead of being called by the engine (the cards'
 `data-flag` attributes and the container's class included).
+
+### Adaptive ML
+
+`js/adaptive.js` and `course/adaptive-model.js`. A statistical model (no
+text AI) trained on the course's past Random N attempts predicts each
+student's chance of getting each problem right, and uses it to pick
+problems for a goal.
+
+**Model (P4).** Penalized logistic regression: `logit P = intercept +
+problem easiness + the student's skill (overall, in the set, in the topic) +
+9 learning weights × the student's history` (right / wrong earlier in the
+topic and set, last attempt's accuracy, solved / missed this very problem
+before). The model file holds the intercept, every problem's easiness, the
+9 weights and the 3 penalties, plus per problem its topic, first-time solve
+share and template family. No student data. The browser refits only the
+student's own terms from their Stats attempts (Newton steps), which gives
+the same predictions as the full fit. Attempts that were not a real try
+(nothing right, and under 20 s per answered problem or one value typed into
+4+ problems; `adaptiveIsJunkAttempt`) are left out on both sides.
+
+**Where it shows.** A filter mode in single-set Random N with six goals
+(Weak spots, Exam ready, Fix mistakes, New problems, Warm up, Challenge),
+each draw summed up in the info box ("Picked for you: 5 fair stretch | 2
+likely"); a chip per card after checking (how likely it was; tap for the
+reason); a score forecast on the result screen; the Adaptive ML order in
+Entire Set; and the Stats card ([Stats](#stats)).
+
+**Visibility bar.** Nothing of it shows unless the course's model passes
+`_adaptiveModelReady`: trained on this course's own answers (no `prior`),
+at least `ADAPTIVE_MIN_ANSWERS` (5,000) answers from `ADAPTIVE_MIN_STUDENTS`
+(100) students, and a held-out AUC of at least `ADAPTIVE_MIN_AUC` (0.68;
+a random middle attempt per student and set, later attempts hidden from
+training). Below the bar the model file still ships; the mode appears by
+itself with the first deploy of a retrained model that passes. As of
+15.0.0: PHYS 161 35,707 answers, 461 students, AUC 0.721 (shown); PHYS 162
+no single-set answers yet (hidden, a placeholder model with borrowed
+weights).
+
+**Retraining** (scripts kept outside the repo, with the data): export
+`public.quiz_attempts` read-only, build the answer table
+(`SP_ALL_FILE=<export> build_table.py <repo> <table>`), then
+`SP_ANSWERS=<table> export_model.py <repo>` writes `course/adaptive-model.js`
+(or `export_empty.py` for a course without enough data). Then bump the
+version and deploy as usual.
 
 ### Problem flags
 
@@ -815,14 +873,29 @@ The Stats screen contains:
   `get_total_quiz_attempts` and `get_my_total_quiz_attempts`, refreshed on
   Realtime pings plus a fallback every 45 s (`poll.stats`), and on return to
   the tab only when the last refresh is older than that.
-- **Chart (canvas, with tooltip) and filters.** The quizzes' colour legend
+- **A note** under the panel: everything below counts practice exams
+  (Random N) only.
+- **Chart (canvas, with tooltip) and filters**, one card: the Set / Mode
+  filters sit under the chart behind a divider. The quizzes' colour legend
   sits inside the chart's box, above the plot. With nothing to plot under the
   current filters, the box shows only a small empty state in the Attempt log's
   style (a line-graph icon and "It takes at least two dots to make a line"),
   with no grid or axes.
 - **Attempt log table**, with per-attempt delete and a sync dot.
-- **Topics** (`renderTopicPerformance`): between the attempt log and the
-  overview, the topics of one enabled quiz at a time (a sliding *Quiz 1–4*
+- **Adaptive ML** (`renderAdaptiveMap`, `adaptiveProblemMapHtml` in
+  `js/adaptive.js`), only when the course's model is ready: per set (switch
+  remembered as `<prefix>_am_quiz`) a square per problem, a row per topic,
+  coloured by the student's chance (Hard / Real stretch / Fair stretch /
+  Likely / Very likely), dot = solved, ring = missed and never solved; a hover
+  or tap box gives the numbers. The key is a side column with a vertical share
+  bar on a wide card and five tiles above the map on a narrow one (container
+  query). At the foot, two rings: the expected grade on a random attempt and
+  the chance of a full score.
+- **Problems** (all-problems overview): one card with a set switch
+  (`<prefix>_po_quiz`), one pill per problem, colored by that problem's
+  *Last* or *Best* score (switchable, remembered).
+- **Topics** (`renderTopicPerformance`): last on the screen,
+  the topics of one enabled quiz at a time (a sliding *Set 1–4*
   switch in its header, remembered as `<prefix>_tp_quiz`), each with two
   thin bars: *average* (the mean points of every answer in that topic) and
   *best* (each attempted problem's best score, averaged), in accent 1 and
@@ -833,8 +906,6 @@ The Stats screen contains:
   `renderAttemptTopicsMini` in `js/quiz-engine.js`): the same topic rows for
   just the topics that appeared in the attempt, without quiz grouping, built
   by the shared `topicRowsForAttemptHtml` / `_tpRowHtml` in `js/stats.js`.
-- **All-problems overview**: one pill per problem in every enabled quiz,
-  colored by that problem's *Last* or *Best* score (switchable, remembered).
 - **Attempt review screen** (`openAttemptReview`): a read-only replay of one
   attempt, reusing the live quiz card styles.
 - **Export** (`js/stats-export.js`): PDF, Excel (.xlsx), CSV or TXT, via an
@@ -2433,7 +2504,8 @@ Course-scoped keys start with `STORAGE_PREFIX` (shown as `<p>`).
 |---|---|---|
 | localStorage | `flux_settings` | All settings (not course-prefixed). |
 | localStorage | `<p>-theme`, `<p>-color-theme`, `<p>-custom-theme` | Day/night, preset, custom theme. |
-| localStorage | `<p>_stats_v2`, `<p>_po_mode`, `<p>_tp_quiz` | Attempt log; Last/Best overview mode; quiz shown in Topics. |
+| localStorage | `<p>_stats_v2`, `<p>_po_mode`, `<p>_tp_quiz`, `<p>_po_quiz`, `<p>_am_quiz` | Attempt log; Last/Best overview mode; set shown in Topics, Problems and Adaptive ML. |
+| localStorage | `<p>_adaptivegoal_q…`, `<p>_filter_open` | Adaptive ML goal per set; filter bar open or closed. |
 | localStorage | `<p>_sa_q…` | Solve-All progress per quiz and mode. |
 | localStorage | `<p>_topics_q…`, `<p>_filtermode_q…`, `<p>_numfilter_q…`, `<p>_typefilter_q…` | Problem Pool Filter state per quiz. |
 | localStorage | `<p>_forum_device_id`, `<p>_forum_device_secret`, `<p>_forum_device_token`, `<p>_forum_identity_token` | Device identity and tokens. |

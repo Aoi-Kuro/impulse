@@ -27,12 +27,14 @@
 // everyone who already used the site before it, never to first-time
 // visitors (js/splash.js, takeDeployMessage). '' = nothing special. Set or
 // clear it on every deploy; changing only the text shows it again too.
-const DEPLOY_MESSAGE = '';
+const DEPLOY_MESSAGE = 'Learn faster with ML-based mode (do not confuse with text AIs)';
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 // One entry per version as this course sees it: two entries with the same
 // version only for a major release (X.0.0, a headline plus its details).
 const CHANGELOG = [
+  { version: "15.0.0", note: "Adaptive ML in the problem filter: a model trained on past attempts picks practice exams for your goal (Weak spots, Exam ready, Fix mistakes, New problems, Warm up, Challenge), chips after checking show how likely each problem was for you, a score forecast after each attempt, and a chance map with expected grade and full score probability in Stats. Also a collapsible filter bar, smoother animations and a tidier Stats screen.", scope: 1 },
+  { version: "15.0.0", note: "ML-Based Mode!", scope: 1 },
   { version: "14.5.2", note: "Common mistakes for Set 4; a right number with a unit the site can't read now earns 0.9; a warning for Cyrillic letters.", scope: 1 },
   { version: "14.5.1", note: "Updated auto-moderation; UX fixes.", scope: 0 },
   { version: "14.5.0", note: "Accounts can now be deleted by their owners.", scope: 0 },

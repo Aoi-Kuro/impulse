@@ -193,11 +193,22 @@ function smoothCardChange(card, change) {
       { transform: ['translateY(0)', `translateY(${by}px)`], opacity: [1, 0] }, CARD_MOTION));
   });
 
-  // The cards below, as far as the screen shows them.
+  // The cards below, as far as the screen shows them, and then whatever
+  // follows the card list on the same screen (in a practice exam: Check
+  // answers, the score, Last attempts, the footer), which would otherwise
+  // snap into place while the cards above it are still sliding. Fixed or
+  // absolutely placed things (the floating clock, sticky score) stay put.
   const reach = window.innerHeight + Math.abs(delta);
-  for (let next = card.nextElementSibling; next; next = next.nextElementSibling) {
-    if (next.getBoundingClientRect().top > reach) break;
-    if (next.offsetHeight) slide(next, -delta);
+  let beyond = false;
+  for (let level = card; level && level.parentElement && level.parentElement !== document.body && !beyond;
+       level = level.parentElement) {
+    for (let next = level.nextElementSibling; next; next = next.nextElementSibling) {
+      if (!next.offsetHeight) continue;
+      if (next.getBoundingClientRect().top > reach) { beyond = true; break; }
+      const pos = getComputedStyle(next).position;
+      if (pos === 'fixed' || pos === 'absolute') continue;
+      slide(next, -delta);
+    }
   }
 
   const motion = { anims, moved, ghosts };
