@@ -27,7 +27,7 @@
 // everyone who already used the site before it, never to first-time
 // visitors (js/splash.js, takeDeployMessage). '' = nothing special. Set or
 // clear it on every deploy; changing only the text shows it again too.
-const DEPLOY_MESSAGE = 'Learn faster with ML-based mode (do not confuse with text AIs)';
+const DEPLOY_MESSAGE = '';
 
 // WARNING! The version has to be bumped in three places: here, in site-version.json ("version") and in quiz-engine.js
 // One entry per version as this course sees it: two entries with the same
