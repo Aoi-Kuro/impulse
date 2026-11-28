@@ -800,7 +800,8 @@ training). Below the bar the model file still ships; the mode appears by
 itself with the first deploy of a retrained model that passes. As of
 15.0.0: PHYS 161 35,707 answers, 461 students, AUC 0.721 (shown); PHYS 162
 no single-set answers yet (hidden, a placeholder model with borrowed
-weights).
+weights). Retrained on 28 November 2026, after the last exam: PHYS 161
+35,744 answers, 462 students, AUC 0.722.
 
 **Retraining** (scripts kept outside the repo, with the data): export
 `public.quiz_attempts` read-only, build the answer table
