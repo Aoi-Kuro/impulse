@@ -779,7 +779,11 @@ function adaptiveProblemMapHtml(quizNum) {
   const sideList = ADAPTIVE_BINS.map((b, i) => `<div class="am-side-item"><i class="am-key am-b${i}"></i><span>${short(b.label)}</span><b>${share(i)}</b></div>`)
     .reverse().join('');
 
-  const status = pr => (pr.solved ? 'solved' : pr.missed ? 'missed' : pr.seen ? 'seen' : 'new');
+  // Practice exams only, like everything else on the Stats screen: Entire Set
+  // progress (which the draws do use) would mark problems solved there that
+  // were never solved in an exam.
+  const status = pr => (pr.right > 0 ? 'solved'
+    : pr.seen > 0 && ctx.st.lastY.get(pr.key) === 0 ? 'missed' : pr.seen > 0 ? 'seen' : 'new');
   const statusWords = { solved: 'You solved it', missed: 'You missed it last time', seen: 'You have tried it', new: 'Not tried yet' };
   const byTopic = new Map();
   preds.forEach(pr => { if (!byTopic.has(pr.topic)) byTopic.set(pr.topic, []); byTopic.get(pr.topic).push(pr); });
